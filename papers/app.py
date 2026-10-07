@@ -27,9 +27,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import metadata as md  # noqa: E402
-from library import Library, is_video  # noqa: E402
+from library import Library, is_video, parse_my_names  # noqa: E402
 
-APP_VERSION = "1.4.5"
+APP_VERSION = "1.4.6"
 HERE = Path(__file__).resolve().parent
 # 설치판(PyInstaller)으로 묶였을 때는 화면 파일이 압축 해제 폴더에 있다
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", HERE))
@@ -248,7 +248,7 @@ class Handler(BaseHTTPRequestHandler):
     def info(self, qs):
         lib = state["lib"]
         self.send_json({"app": "papershelf", "version": APP_VERSION, "library": str(lib.root),
-                        "standalone": state["standalone"],
+                        "standalone": state["standalone"], "my_names": load_config().get("my_names", ""),
                         "online": state["online"], **lib.stats()})
 
     def settings(self, qs):
@@ -258,8 +258,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_error_json(400, "전체 경로를 입력하세요 (예: C:\\Users\\me\\Papers, /Users/me/Papers)")
         if not path.exists() and not path.parent.exists():
             return self.send_error_json(400, "상위 폴더가 존재하지 않습니다")
-        state["lib"] = Library(path)
         cfg = load_config()
+        if path.resolve() != state["lib"].root:
+            state["lib"] = Library(path)
+        if "my_names" in data:
+            cfg["my_names"] = str(data["my_names"]).strip()
+        state["lib"].my_names = parse_my_names(cfg.get("my_names", ""))
         cfg["library"] = str(state["lib"].root)
         save_config(cfg)
         self.info(qs)
@@ -268,7 +272,8 @@ class Handler(BaseHTTPRequestHandler):
         res = state["lib"].search(
             q=qs.get("q", ""), field=qs.get("field", "all"),
             year_from=qs.get("from") or None, year_to=qs.get("to") or None,
-            sort=qs.get("sort", "relevance"), review_only=qs.get("review") == "1", doc=qs.get("doc", "all"))
+            sort=qs.get("sort", "relevance"), review_only=qs.get("review") == "1", doc=qs.get("doc", "all"),
+            mine_only=qs.get("mine") == "1")
         self.send_json(res)
 
     def get_paper(self, qs, pid):
@@ -565,6 +570,7 @@ def main():
     cfg = load_config()
     root = args.library or cfg.get("library") or str(DEFAULT_LIBRARY)
     state["lib"] = Library(root)
+    state["lib"].my_names = parse_my_names(cfg.get("my_names", ""))
     state["online"] = not args.offline
     state["server"] = server
     cfg["library"] = str(state["lib"].root)

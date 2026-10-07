@@ -731,6 +731,14 @@ def extract(path, filename="", online=True, log=None, supplement=None):
             record["isbn"] = isbns[0]
         if isbns or pdf["page_count"] >= 120:
             record["type"] = "book"
+        else:
+            # 첫 페이지 표현으로 학술대회 논문·보고서를 짐작
+            head = clean_text(pdf["first"])[:1500]
+            if re.search(r"(?i)\b(proceedings of|conference on|symposium on|workshop on)\b|학술대회|학술발표", head):
+                record["type"] = "proceedings-article"
+            elif re.search(r"(?i)\b(technical report|tech\. rep\.|research report|working paper|white paper)\b"
+                           r"|연구\s*보고서|보고서", head):
+                record["type"] = "report"
 
     record.setdefault("arxiv_id", "")
     record.setdefault("isbn", "")
@@ -803,7 +811,10 @@ def citations(p):
         apa_authors = names[0] if names else ""
     t = (p.get("type") or "").lower()
     is_book = t in BOOK_TYPES
-    is_chapter = t == "book-chapter"
+    is_report = t.startswith("report")
+    # 학술대회 논문은 '책의 장'과 같은 꼴: In 논문집 이름 (pp.)
+    is_chapter = t == "book-chapter" or t.startswith("proceedings")
+    report_no = p.get("issue") or p.get("volume") or ""
     edition = str(p.get("edition") or "").strip()
     ed_txt = ""
     if edition:
@@ -822,6 +833,13 @@ def citations(p):
             apa += f" {doi_url}"
         journal = vol = ""  # 아래 학술지 형식은 건너뛴다
         doi_url = ""
+    elif is_report:
+        # Author (Year). Title (Report No. 12). 발행 기관. URL
+        institution = publisher or journal
+        apa = f"{apa_authors} ({year}). {title}" + (f" (Report No. {report_no})" if report_no else "") + "."
+        if institution:
+            apa += f" {institution}."
+        journal = vol = ""
     elif is_chapter:
         apa = f"{apa_authors} ({year}). {title}. In {journal}" + (f" (pp. {pages})" if pages else "") + "."
         if publisher:
@@ -860,6 +878,11 @@ def citations(p):
         if ed_txt:
             mla += f" {ed_txt[0].upper() + ed_txt[1:]},"
         mla += " " + ", ".join(x for x in (publisher, str(year)) if x) + "."
+    elif is_report:
+        mla = (f"{mla_auth}. " if mla_auth else "") + f"{title}."
+        mla += " " + ", ".join(x for x in (publisher or p.get("journal"), str(year)) if x) + "."
+        if report_no:
+            mla += f" Report no. {report_no}."
     else:
         mla = (f"{mla_auth}. " if mla_auth else "") + f"\u201c{title}.\u201d"
         parts = [p.get("journal")] if p.get("journal") else []
@@ -897,15 +920,24 @@ def bibtex(p):
         kind = "incollection"
     elif t in ("preprint", "posted-content"):
         kind = "misc"
+    elif t.startswith("report"):
+        kind = "techreport"
+    elif t == "dissertation":
+        kind = "phdthesis"
     fields = [("title", "{" + esc(p.get("title", "")) + "}")]
     authors = " and ".join(
         ", ".join(x for x in (a.get("family"), a.get("given")) if x) for a in (p.get("authors") or []))
     if authors:
         fields.append(("editor" if t == "edited-book" else "author", esc(authors)))
     venue_key = "booktitle" if kind in ("inproceedings", "incollection") else "journal"
+    publisher_key = "publisher"
+    if kind in ("techreport", "phdthesis"):
+        # 보고서·학위논문은 발행 기관(institution / school)
+        venue_key = "type" if kind == "techreport" else "note"
+        publisher_key = "institution" if kind == "techreport" else "school"
     for key, val in ((venue_key, p.get("journal")), ("year", p.get("year")), ("volume", p.get("volume")),
                      ("number", p.get("issue")), ("pages", (p.get("pages") or "").replace("-", "--")),
-                     ("publisher", p.get("publisher")), ("edition", p.get("edition")),
+                     (publisher_key, p.get("publisher")), ("edition", p.get("edition")),
                      ("isbn", p.get("isbn")), ("doi", p.get("doi")),
                      ("eprint", p.get("arxiv_id")), ("url", p.get("url"))):
         if val:

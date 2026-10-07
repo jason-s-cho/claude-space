@@ -18,8 +18,54 @@ import metadata as md
 
 META_DIR = ".papershelf"
 EDITABLE = ("title", "authors", "journal", "year", "volume", "issue", "pages", "publisher",
-            "doi", "arxiv_id", "url", "abstract", "tags", "notes", "type", "isbn", "edition")
+            "doi", "arxiv_id", "url", "abstract", "tags", "notes", "type", "isbn", "edition", "mine")
 BOOK_TYPES = tuple(sorted(md.BOOK_TYPES))
+
+# 왼쪽 '종류' 필터의 묶음 (Crossref 의 type 값 기준)
+DOC_GROUPS = {
+    "journal": ("journal-article",),
+    "proceedings": ("proceedings-article", "proceedings", "proceedings-series"),
+    "report": ("report", "report-component", "report-series"),
+    "book": BOOK_TYPES + ("book-chapter", "book-part", "book-section"),
+}
+KNOWN_TYPES = tuple(t for group in DOC_GROUPS.values() for t in group)
+
+
+def doc_group(kind):
+    for name, types in DOC_GROUPS.items():
+        if (kind or "") in types:
+            return name
+    return "other"
+
+
+def _nk(s):
+    return re.sub(r"[^\w]", "", unicodedata.normalize("NFKC", s or "").lower())
+
+
+def parse_my_names(text):
+    """설정의 '내 이름' 칸: 'Seungmin Cho; S. Cho; 조승민' → 이름 목록."""
+    out = []
+    for part in re.split(r"[;\n]+", text or ""):
+        part = part.strip()
+        if part:
+            out.append(md.split_name(part))
+    return out
+
+
+def author_is(a, me):
+    """저자 a 가 내 이름 me 와 같은 사람으로 보이는지."""
+    a_full = _nk((a.get("family") or "") + (a.get("given") or ""))
+    me_full = _nk((me.get("family") or "") + (me.get("given") or ""))
+    if md.is_hangul(me_full) or not me.get("given"):
+        # 한글 이름이나 한 덩어리 이름: 성·이름 순서와 상관없이 통째로 비교
+        return bool(me_full) and me_full in (a_full, _nk((a.get("given") or "") + (a.get("family") or "")))
+    if _nk(a.get("family")) != _nk(me.get("family")):
+        return False
+    me_given = [t for t in re.split(r"[\s.\-]+", me["given"]) if t]
+    a_given = [t for t in re.split(r"[\s.\-]+", a.get("given") or "") if t]
+    if all(len(t) == 1 for t in me_given):  # 'S. M. Cho' 처럼 머리글자로 적은 경우
+        return "".join(t[0] for t in a_given).lower().startswith("".join(me_given).lower())
+    return _nk(" ".join(a_given)) == _nk(" ".join(me_given))
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS papers (
@@ -42,7 +88,8 @@ CREATE TABLE IF NOT EXISTS papers (
     cited_by INTEGER,
     cited_by_source TEXT DEFAULT '',
     cited_by_url TEXT DEFAULT '',
-    cited_by_at REAL
+    cited_by_at REAL,
+    mine INTEGER
 );
 CREATE INDEX IF NOT EXISTS papers_doi ON papers(doi);
 CREATE INDEX IF NOT EXISTS papers_year ON papers(year);
@@ -57,6 +104,7 @@ MIGRATIONS = [
     ("cited_by_source", "ALTER TABLE papers ADD COLUMN cited_by_source TEXT DEFAULT ''"),
     ("cited_by_url", "ALTER TABLE papers ADD COLUMN cited_by_url TEXT DEFAULT ''"),
     ("cited_by_at", "ALTER TABLE papers ADD COLUMN cited_by_at REAL"),
+    ("mine", "ALTER TABLE papers ADD COLUMN mine INTEGER"),  # 1 내 저작, 0 아님, NULL 이름으로 자동 판단
 ]
 SUPP_SUFFIX = " - Supplementary"
 VIDEO_SUFFIX = " - Supplementary Video"
@@ -160,6 +208,7 @@ class Library:
             d.mkdir(exist_ok=True)
         self.db_path = self.meta_dir / "library.db"
         self.lock = threading.Lock()
+        self.my_names = []  # 설정의 '내 이름' (parse_my_names 결과)
         with self.connect() as c:
             c.executescript(SCHEMA)
             cols = {r["name"] for r in c.execute("PRAGMA table_info(papers)")}
@@ -182,9 +231,20 @@ class Library:
             p.pop("fulltext", None)
         p["needs_review"] = bool(p.get("needs_review"))
         p["kind"] = p.get("kind") or "main"
+        p["doc_group"] = doc_group(p.get("type"))
+        p["is_mine"] = self.is_mine(p)
         p["scholar_authors"] = md.scholar_authors(p["authors"])
         p["missing"] = not (self.root / p["file_name"]).exists()
         return p
+
+    def is_mine(self, p):
+        """직접 표시한 값이 있으면 그대로, 없으면 저자 중에 설정의 '내 이름'이 있는지."""
+        if p.get("mine") is not None:
+            return bool(p["mine"])
+        if not self.my_names:
+            return False
+        authors = p["authors"] if isinstance(p.get("authors"), list) else json.loads(p.get("authors") or "[]")
+        return any(author_is(a, me) for a in authors for me in self.my_names)
 
     def get(self, pid, with_text=False):
         with self.connect() as c:
@@ -491,6 +551,9 @@ class Library:
             fields["doi"] = md.clean_doi(fields["doi"] or "").lower()
         if "isbn" in fields:
             fields["isbn"] = md.format_isbn(fields["isbn"]) or str(fields["isbn"] or "").strip()
+        if "mine" in fields:
+            # True: 내 저작, False: 아님, None: 설정의 내 이름으로 자동 판단
+            fields["mine"] = None if fields["mine"] is None else int(bool(fields["mine"]))
         if "source" in data:
             fields["source"] = data["source"]
         fields["needs_review"] = int(bool(data.get("needs_review", False)))
@@ -707,7 +770,7 @@ class Library:
     # ------------------------------------------------------------ 검색
 
     def search(self, q="", field="all", year_from=None, year_to=None, sort="relevance",
-               review_only=False, doc="all", limit=1000):
+               review_only=False, doc="all", mine_only=False, limit=1000):
         terms = parse_terms(q)
         cols = SEARCH_FIELDS.get(field, SEARCH_FIELDS["all"])
         where, args = [], []
@@ -723,11 +786,12 @@ class Library:
             args.append(int(year_to))
         if review_only:
             where.append("needs_review = 1")
-        book_like = BOOK_TYPES + ("book-chapter",)
-        if doc in ("book", "paper"):
-            marks = ",".join("?" * len(book_like))
-            where.append(f"coalesce(type,'') {'IN' if doc == 'book' else 'NOT IN'} ({marks})")
-            args += list(book_like)
+        if doc in DOC_GROUPS or doc in ("paper", "other"):
+            # paper: 책이 아닌 모든 것, other: 어느 묶음에도 들지 않는 것(프리프린트·학위논문 등)
+            types = DOC_GROUPS["book"] if doc == "paper" else KNOWN_TYPES if doc == "other" else DOC_GROUPS[doc]
+            marks = ",".join("?" * len(types))
+            where.append(f"coalesce(type,'') {'IN' if doc in DOC_GROUPS else 'NOT IN'} ({marks})")
+            args += list(types)
         sql = "SELECT * FROM papers" + (" WHERE " + " AND ".join(where) if where else "")
 
         with self.connect() as c:
@@ -762,6 +826,8 @@ class Library:
             results.append(p)
 
         results = self._group_supplements(results)
+        if mine_only:
+            results = [p for p in results if p.get("is_mine")]
 
         if sort == "cited":
             results.sort(key=lambda p: (p.get("cited_by") is not None, p.get("cited_by") or 0, p.get("year") or 0),
@@ -821,9 +887,14 @@ class Library:
             review = c.execute("SELECT count(*) FROM papers WHERE needs_review=1").fetchone()[0]
             years = [r[0] for r in c.execute("SELECT DISTINCT year FROM papers WHERE year IS NOT NULL ORDER BY year")]
             supps = c.execute("SELECT count(*) FROM papers WHERE kind='supp'").fetchone()[0]
-            books = c.execute(f"SELECT count(*) FROM papers WHERE kind='main' AND type IN ({','.join('?' * len(BOOK_TYPES))})",
-                              BOOK_TYPES).fetchone()[0]
-        return {"total": total, "needs_review": review, "years": years, "supplements": supps, "books": books}
+            mains = c.execute("SELECT type, authors, mine FROM papers WHERE kind='main'").fetchall()
+        groups = {name: 0 for name in (*DOC_GROUPS, "other")}
+        mine = 0
+        for r in mains:
+            groups[doc_group(r["type"])] += 1
+            mine += self.is_mine({"authors": r["authors"], "mine": r["mine"]})
+        return {"total": total, "needs_review": review, "years": years, "supplements": supps,
+                "books": groups["book"], "groups": groups, "mine": mine}
 
     def all_papers(self):
         with self.connect() as c:

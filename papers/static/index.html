@@ -141,6 +141,22 @@ aside.side > section { min-width: 0; }
 .pager .gap { color: var(--ink-soft); padding: 0 4px; }
 .result .actions .cited { color: var(--byline); font-weight: 500; font-variant-numeric: tabular-nums; }
 .result .actions a.cited:hover { color: var(--accent); text-decoration: underline; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips label { cursor: pointer; }
+.chips input { position: absolute; opacity: 0; pointer-events: none; }
+.chips span { display: inline-block; padding: 4px 12px; border: 1px solid var(--rule); border-radius: 999px; font-size: 0.86rem; color: var(--ink-soft); background: var(--sheet); }
+.chips input:checked + span { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.chips input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.chips .supp-chip { margin-left: 8px; padding-left: 10px; border-left: 1px solid var(--rule); }
+.mine-row { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; cursor: pointer; }
+.mine-row[hidden] { display: none; }
+.tag.mine { background: color-mix(in srgb, #d4a017 18%, transparent); color: #a07400; }
+:root[data-theme="dark"] .tag.mine { color: #f0c64a; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tag.mine { color: #f0c64a; } }
+.mine-toggle { width: 100%; text-align: left; border: 1px solid var(--rule); background: var(--sheet); border-radius: 8px; padding: 6px 10px; margin: 0 0 6px; cursor: pointer; color: var(--ink-soft); font-size: 0.9rem; }
+.mine-toggle:hover { border-color: #d4a017; }
+.mine-toggle.on { border-color: #d4a017; background: color-mix(in srgb, #d4a017 14%, transparent); color: var(--ink); font-weight: 600; }
+.opt .n, .mine-toggle .n { font-family: var(--font-mono); font-size: 0.75rem; color: var(--ink-soft); margin-left: 4px; font-weight: 400; }
 .supp-list { display: grid; gap: 4px; margin-top: 8px; }
 .supp-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; border: 1px solid var(--rule); border-radius: 8px; padding: 4px 4px 4px 10px; }
 .supp-row .mono { overflow-wrap: anywhere; font-size: 0.8rem; }
@@ -256,6 +272,7 @@ dialog::backdrop { background: rgb(10 14 22 / 0.45); }
     </section>
     <section>
       <h3>종류</h3>
+      <button type="button" class="mine-toggle" id="mineToggle" aria-pressed="false">★ 내 논문·책 <span class="n" id="mineCount"></span></button>
       <div class="opt-list" id="docOpts"></div>
     </section>
     <section>
@@ -335,9 +352,16 @@ dialog::backdrop { background: rgb(10 14 22 / 0.45); }
       <div class="classify">
         <div class="row">
           <strong style="font-size:.85rem">분류</strong>
-          <label><input type="radio" name="kind" value="main"> 본문 (논문·책)</label>
-          <label><input type="radio" name="kind" value="supp"> 보충자료</label>
+          <div class="chips" role="radiogroup" aria-label="분류">
+            <label><input type="radio" name="doctype" value="journal-article"><span>학술지 논문</span></label>
+            <label><input type="radio" name="doctype" value="proceedings-article"><span>학술대회 논문</span></label>
+            <label><input type="radio" name="doctype" value="report"><span>보고서</span></label>
+            <label><input type="radio" name="doctype" value="book"><span>책</span></label>
+            <label><input type="radio" name="doctype" value="other"><span>기타</span></label>
+            <label class="supp-chip"><input type="radio" name="doctype" value="supp"><span>보충자료</span></label>
+          </div>
         </div>
+        <label class="mine-row"><input type="checkbox" id="f-mine"> <span>★ 내 논문·책</span> <span class="hint" id="mineHint"></span></label>
         <select id="parentSel" aria-label="이 보충자료가 딸린 본문 논문"></select>
         <div class="hint" id="classifyHint"></div>
       </div>
@@ -356,13 +380,13 @@ dialog::backdrop { background: rgb(10 14 22 / 0.45); }
         <div class="field span2"><label for="f-journal" id="journalLabel">저널·학회</label><input id="f-journal" name="journal"></div>
         <div class="field"><label for="f-year">연도</label><input id="f-year" name="year" inputmode="numeric"></div>
         <div class="field"><label for="f-publisher">출판사</label><input id="f-publisher" name="publisher"></div>
-        <div class="field"><label for="f-volume">권</label><input id="f-volume" name="volume"></div>
-        <div class="field"><label for="f-issue">호</label><input id="f-issue" name="issue"></div>
+        <div class="field"><label for="f-volume" id="volumeLabel">권</label><input id="f-volume" name="volume"></div>
+        <div class="field"><label for="f-issue" id="issueLabel">호</label><input id="f-issue" name="issue"></div>
         <div class="field"><label for="f-pages">쪽</label><input id="f-pages" name="pages"></div>
         <div class="field"><label for="f-type">종류</label>
           <select id="f-type" name="type">
             <option value="journal-article">학술지 논문</option>
-            <option value="proceedings-article">학회 논문</option>
+            <option value="proceedings-article">학술대회 논문</option>
             <option value="preprint">프리프린트</option>
             <option value="book-chapter">책의 장</option>
             <option value="book">책</option>
@@ -402,6 +426,12 @@ dialog::backdrop { background: rgb(10 14 22 / 0.45); }
         <div class="hint">논문 PDF와 색인(.papershelf 폴더)이 이곳에 저장됩니다. 없는 폴더면 새로 만듭니다.</div>
       </div>
       <div class="field">
+        <label for="s-names">내 이름 (저자 표기)</label>
+        <input id="s-names" placeholder="예: Gildong Hong; G. Hong; 홍길동">
+        <div class="hint">논문에 실린 여러 표기를 세미콜론(;)으로 구분해 적으면, 저자에 내 이름이 있는 논문·책을 ‘★ 내 저작’으로 따로 모아 볼 수 있습니다.
+          머리글자(G. Hong)는 같은 성의 다른 사람과 겹칠 수 있으니, 잘못 표시된 논문은 수정 창에서 끄면 됩니다.</div>
+      </div>
+      <div class="field">
         <label for="s-theme">화면</label>
         <select id="s-theme"><option value="">시스템 설정 따름</option><option value="light">밝게</option><option value="dark">어둡게</option></select>
       </div>
@@ -430,9 +460,9 @@ dialog::backdrop { background: rgb(10 14 22 / 0.45); }
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const thisYear = new Date().getFullYear();
-const TYPE_LABEL = { "journal-article": "", "proceedings-article": "학회", "preprint": "프리프린트", "posted-content": "프리프린트", "book-chapter": "책의 장", "book": "책", "monograph": "책", "edited-book": "편저", "reference-book": "책", "dissertation": "학위논문", "report": "보고서" };
+const TYPE_LABEL = { "journal-article": "", "proceedings-article": "학술대회", "proceedings": "학술대회", "preprint": "프리프린트", "posted-content": "프리프린트", "book-chapter": "책의 장", "book": "책", "monograph": "책", "edited-book": "편저", "reference-book": "책", "dissertation": "학위논문", "report": "보고서" };
 
-const view = { q: "", field: "all", from: "", to: "", sort: "relevance", review: false, doc: "all", page: 1 };
+const view = { q: "", field: "all", from: "", to: "", sort: "relevance", review: false, doc: "all", mine: false, page: 1 };
 const clampPer = (n) => Math.min(50, Math.max(10, Math.round((Number(n) || 10) / 10) * 10));
 view.perPage = clampPer(store("papershelf.perPage"));
 view.abs = ["off", "short", "full"].includes(store("papershelf.abs")) ? store("papershelf.abs") : "short";
@@ -468,9 +498,14 @@ function renderSide() {
   const yearChoices = [["", "전체 기간"], [thisYear, `${thisYear}년부터`], [thisYear - 1, `${thisYear - 1}년부터`], [thisYear - 4, `${thisYear - 4}년부터`], [thisYear - 10, `${thisYear - 10}년부터`]];
   $("#yearOpts").innerHTML = yearChoices.map(([y, label]) =>
     `<button type="button" class="opt ${String(view.from) === String(y) && !view.to ? "on" : ""}" data-from="${y}">${label}</button>`).join("");
-  const docs = [["all", "전체"], ["paper", "논문"], ["book", "책"]];
-  $("#docOpts").innerHTML = docs.map(([k, label]) =>
-    `<button type="button" class="opt ${view.doc === k ? "on" : ""}" data-doc="${k}">${label}</button>`).join("");
+  const g = lastInfo?.groups || {};
+  const docs = [["all", "전체"], ["journal", "학술지 논문"], ["proceedings", "학술대회 논문"], ["book", "책"], ["report", "보고서"], ["other", "기타"]];
+  $("#docOpts").innerHTML = docs
+    .filter(([k]) => k === "all" || k === view.doc || g[k] || !lastInfo)  // 하나도 없는 종류는 숨김
+    .map(([k, label]) => `<button type="button" class="opt ${view.doc === k ? "on" : ""}" data-doc="${k}">${label}${g[k] ? ` <span class="n">${g[k]}</span>` : ""}</button>`).join("");
+  $("#mineToggle").classList.toggle("on", view.mine);
+  $("#mineToggle").setAttribute("aria-pressed", view.mine);
+  $("#mineCount").textContent = lastInfo?.mine ? lastInfo.mine : "";
   const sorts = [["relevance", "관련도순"], ["cited", "인용순"], ["added", "추가한 순"], ["year", "연도순"], ["title", "제목순"]];
   $("#sortOpts").innerHTML = sorts.map(([k, label]) =>
     `<button type="button" class="opt ${view.sort === k ? "on" : ""}" data-sort="${k}">${label}</button>`).join("");
@@ -489,6 +524,14 @@ $("#sortOpts").addEventListener("click", (e) => {
 });
 for (const id of ["#yFrom", "#yTo"]) $(id).addEventListener("change", () => {
   view.from = $("#yFrom").value.replace(/\D/g, ""); view.to = $("#yTo").value.replace(/\D/g, ""); refresh();
+});
+$("#mineToggle").addEventListener("click", () => {
+  if (!view.mine && !lastInfo?.my_names && !lastInfo?.mine) {
+    toast("설정에서 ‘내 이름’을 먼저 적어 주세요");
+    $("#settingsBtn").click();
+    return;
+  }
+  view.mine = !view.mine; refresh();
 });
 $("#docOpts").addEventListener("click", (e) => {
   const b = e.target.closest("[data-doc]"); if (!b) return;
@@ -523,11 +566,13 @@ async function refresh(keepPage = false) {
   if (view.to) params.set("to", view.to);
   if (view.review) params.set("review", "1");
   if (view.doc !== "all") params.set("doc", view.doc);
+  if (view.mine) params.set("mine", "1");
   try {
     const [res, info] = await Promise.all([api("/api/papers?" + params), api("/api/info")]);
     lastTerms = res.terms;
     lastRes = res; lastInfo = info;
     standalone = !!info.standalone;
+    renderSide();  // 종류별 개수가 새 정보로 보이도록
     renderResults(res, info);
   } catch (err) {
     $("#count").textContent = "불러오지 못했습니다: " + err.message;
@@ -537,7 +582,7 @@ async function refresh(keepPage = false) {
 function renderResults(res, info) {
   $("#libPath").textContent = info.library;
   $("#libPath").title = "논문 폴더";
-  const filtered = view.q || view.from || view.to || view.review || view.doc !== "all";
+  const filtered = view.q || view.from || view.to || view.review || view.doc !== "all" || view.mine;
   $("#count").innerHTML = filtered
     ? `검색결과 <b>${res.total}</b>개 <span>/ 전체 ${info.total}편</span>`
     : `전체 <b>${info.total}</b>편` + (info.books ? ` (책 ${info.books}권)` : "") + (info.supplements ? ` · 보충자료 ${info.supplements}개` : "") + (info.needs_review ? ` · 확인 필요 <b>${info.needs_review}</b>편` : "");
@@ -629,7 +674,9 @@ function snippetHTML(p) {
 function resultHTML(p) {
   const venue = [p.journal, p.year].filter(Boolean).join(", ");
   const ed = p.edition ? (/^\d+$/.test(p.edition) ? `${p.edition}판` : p.edition) : "";
-  const by = isBook(p)
+  const by = (p.type || "").startsWith("report")
+    ? [p.scholar_authors, p.year, p.publisher || p.journal].filter(Boolean)  // 보고서: 저자 - 연도 - 발행 기관
+    : isBook(p)
     ? [p.scholar_authors + (p.type === "edited-book" && p.scholar_authors ? " (편)" : ""), [ed, p.year].filter(Boolean).join(" "), p.publisher].filter(Boolean)
     : [p.scholar_authors, venue, p.publisher && p.publisher !== p.journal ? p.publisher : ""].filter(Boolean);
   const kind = TYPE_LABEL[p.type] ? `[${TYPE_LABEL[p.type]}] ` : "";
@@ -638,7 +685,7 @@ function resultHTML(p) {
   const doi = p.doi ? `<a href="https://doi.org/${esc(p.doi)}" target="_blank" rel="noopener">DOI</a>` : (p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">${isBook(p) ? "책 정보" : "원문 페이지"}</a>` : "");
   const bookMeta = isBook(p) ? [p.isbn ? `ISBN ${p.isbn}` : "", p.page_count ? `${p.page_count}쪽` : ""].filter(Boolean).join(" · ") : "";
   return `<article class="result" data-id="${p.id}" data-kind="${p.kind}">
-    <h2 class="r-title"><span style="color:var(--ink-soft);font-size:.85rem">${esc(kind)}</span><a href="${pdfHref}" target="_blank" rel="noopener">${highlight(p.title || "제목 없음")}</a>${p.needs_review ? '<span class="tag warn" title="온라인에서 정보를 찾지 못해 PDF에서 추정했습니다">확인 필요</span>' : ""}${p.missing ? '<span class="tag miss">파일 없음</span>' : ""}${p.kind === "supp" ? '<span class="tag supp" title="본문 논문이 서재에 없습니다. 본문을 추가하면 자동으로 묶입니다.">보충자료 · 본문 없음</span>' : ""}</h2>
+    <h2 class="r-title"><span style="color:var(--ink-soft);font-size:.85rem">${esc(kind)}</span><a href="${pdfHref}" target="_blank" rel="noopener">${highlight(p.title || "제목 없음")}</a>${p.is_mine ? '<span class="tag mine" title="내 논문·책">★ 내 저작</span>' : ""}${p.needs_review ? '<span class="tag warn" title="온라인에서 정보를 찾지 못해 PDF에서 추정했습니다">확인 필요</span>' : ""}${p.missing ? '<span class="tag miss">파일 없음</span>' : ""}${p.kind === "supp" ? '<span class="tag supp" title="본문 논문이 서재에 없습니다. 본문을 추가하면 자동으로 묶입니다.">보충자료 · 본문 없음</span>' : ""}</h2>
     <div class="pdf-tag"><a href="${pdfHref}" target="_blank" rel="noopener"><b>[PDF]</b>열기</a></div>
     <div class="byline">${highlight(by.join(" - "))}</div>
     ${snippetHTML(p)}
@@ -713,10 +760,26 @@ function fillEdit(p) {
   f.elements.authors.value = authorsToText(p.authors);
   syncTypeFields();
 }
+const CHIP_TYPES = ["journal-article", "proceedings-article", "report", "book"];
+function chipFor(t) {
+  if (BOOK_TYPES.includes(t)) return "book";
+  if ((t || "").startsWith("proceedings")) return "proceedings-article";
+  if ((t || "").startsWith("report")) return "report";
+  return CHIP_TYPES.includes(t) ? t : "other";
+}
 function syncTypeFields() {
   const t = $("#f-type").value, book = BOOK_TYPES.includes(t), chapter = t === "book-chapter";
+  const proc = t.startsWith("proceedings"), report = t.startsWith("report");
   document.querySelectorAll("#editForm .bookonly").forEach((el) => { el.hidden = !(book || chapter); });
-  $("#journalLabel").textContent = chapter ? "책 제목" : book ? "총서(시리즈)" : "저널·학회";
+  $("#journalLabel").textContent = chapter ? "책 제목" : book ? "총서(시리즈)" : proc ? "학술대회·논문집 이름" : report ? "보고서 시리즈" : "저널·학회";
+  $("#volumeLabel").textContent = report ? "과제·문서 번호" : "권";
+  $("#issueLabel").textContent = report ? "보고서 번호" : "호";
+  // 위쪽 분류 칩도 맞춘다(보충자료 선택 중이면 그대로)
+  const cur = document.querySelector('#editForm [name="doctype"]:checked');
+  if (!cur || cur.value !== "supp") {
+    const want = chipFor(t);
+    for (const r of document.querySelectorAll('#editForm [name="doctype"]')) r.checked = r.value === want;
+  }
   $("#abstractLabel").textContent = book ? "책 소개" : "초록";
   $("#authorsLabel").textContent = t === "edited-book" ? "편집자" : "저자";
 }
@@ -735,11 +798,18 @@ async function openEdit(id) {
   $("#parentSel").innerHTML = `<option value="">— 본문 논문 고르기 —</option>` + mains.map((m) =>
     `<option value="${m.id}" ${m.id === editing.parent_id ? "selected" : ""}>${esc(m.who)}${m.year ? " (" + m.year + ")" : ""} · ${esc(m.title)}</option>`).join("");
   setKind(editing.kind === "supp" ? "supp" : "main");
+  $("#f-mine").checked = !!editing.is_mine;
+  delete $("#f-mine").dataset.touched;
+  $("#mineHint").textContent = editing.mine == null
+    ? (editing.is_mine ? "— 설정의 ‘내 이름’과 저자가 같아 자동으로 표시됨" : (lastInfo?.my_names ? "" : "— 설정에 내 이름을 적어 두면 자동으로 표시됩니다"))
+    : "— 직접 정함";
   $("#editDlg").showModal();
 }
 function setKind(kind) {
-  for (const r of document.querySelectorAll('#editForm [name="kind"]')) r.checked = r.value === kind;
+  const want = kind === "supp" ? "supp" : chipFor($("#f-type").value);
+  for (const r of document.querySelectorAll('#editForm [name="doctype"]')) r.checked = r.value === want;
   const supp = kind === "supp";
+  document.querySelector("#editForm .mine-row").hidden = supp;
   $("#parentSel").hidden = !supp;
   const linked = supp && (editing.kind === "supp" ? editing.parent_id : true);
   $("#editForm").classList.toggle("locked", !!linked);
@@ -747,12 +817,23 @@ function setKind(kind) {
     ? "보충자료는 본문 논문의 서지 정보를 그대로 따르고, 파일 이름도 ‘본문 이름 - Supplementary.pdf’로 맞춥니다. 태그·메모만 따로 적을 수 있습니다."
     : (editing.supplements?.length ? `이 논문에 보충자료 ${editing.supplements.length}개가 묶여 있습니다.` : "");
 }
-$("#editForm").addEventListener("change", (e) => { if (e.target.name === "kind") setKind(e.target.value); });
+$("#editForm").addEventListener("change", (e) => {
+  if (e.target.name !== "doctype") return;
+  const v = e.target.value;
+  if (v === "supp") return setKind("supp");
+  // 분류 칩 → 아래 '종류' 칸. '기타'는 지금 종류가 네 묶음 밖이면 그대로 둔다
+  const sel = $("#f-type");
+  if (v === "other") { if (CHIP_TYPES.includes(chipFor(sel.value)) && chipFor(sel.value) !== "other") sel.value = ""; }
+  else if (chipFor(sel.value) !== v) sel.value = v;
+  setKind("main");
+  syncTypeFields();
+});
+$("#f-mine").addEventListener("change", () => { $("#f-mine").dataset.touched = "1"; $("#mineHint").textContent = ""; });
 
 $("#editForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const f = e.target, data = {};
-  const kind = f.querySelector('[name="kind"]:checked')?.value || "main";
+  const kind = f.querySelector('[name="doctype"]:checked')?.value === "supp" ? "supp" : "main";
   const parentId = Number($("#parentSel").value) || null;
   const kindChanged = kind !== (editing.kind || "main") || (kind === "supp" && parentId !== (editing.parent_id || null));
   if (kindChanged) {
@@ -767,6 +848,7 @@ $("#editForm").addEventListener("submit", async (e) => {
     } catch (err) { $("#fetchMsg").style.color = ""; $("#fetchMsg").textContent = err.message; return; }
   }
   for (const k of ["title", "journal", "year", "publisher", "volume", "issue", "pages", "doi", "url", "tags", "abstract", "notes", "type", "isbn", "edition"]) data[k] = f.elements[k].value.trim();
+  if ($("#f-mine").dataset.touched) data.mine = $("#f-mine").checked;  // 직접 바꿨을 때만 고정
   data.authors = textToAuthors(f.elements.authors.value);
   data.needs_review = false;
   try {
@@ -829,13 +911,14 @@ $("#deleteBtn").addEventListener("click", async () => {
 $("#settingsBtn").addEventListener("click", async () => {
   const info = await api("/api/info");
   $("#appVersion").textContent = `논문 서재 ${info.version || ""}`;
+  $("#s-names").value = info.my_names || "";
   $("#s-lib").value = info.library; $("#s-theme").value = store("papershelf.theme") || ""; $("#settingsMsg").textContent = "";
   $("#settingsDlg").showModal();
 });
 $("#settingsForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   try {
-    await api("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ library: $("#s-lib").value }) });
+    await api("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ library: $("#s-lib").value, my_names: $("#s-names").value }) });
     store("papershelf.theme", $("#s-theme").value); applyTheme($("#s-theme").value);
     $("#settingsDlg").close(); refresh();
   } catch (err) { $("#settingsMsg").textContent = err.message; }
