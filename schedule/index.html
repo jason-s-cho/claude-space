@@ -148,6 +148,9 @@ a.body:hover .title { text-decoration: underline; }
 .opt { display: flex; align-items: flex-start; gap: 8px; font-size: 0.88rem; }
 .opt input { margin-top: 4px; accent-color: var(--c-gcal); }
 .opt small { display: block; color: var(--ink-soft); font-size: 0.78rem; }
+[hidden] { display: none !important; }
+.backup { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; }
+.backup .btn { padding: 4px 10px; font-size: 0.82rem; }
 .toast { position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); background: var(--ink); color: var(--sheet); padding: 8px 14px; border-radius: 8px; font-size: 0.88rem; max-width: calc(100vw - 32px); width: max-content; }
 @media (prefers-reduced-motion: no-preference) { .toast { transition: opacity .2s; } }
 </style>
@@ -200,6 +203,12 @@ a.body:hover .title { text-decoration: underline; }
     </section>
   </div>
   <div class="status" id="status">불러오는 중…</div>
+  <div class="backup">
+    <span class="status">일정 백업</span>
+    <button class="btn" id="exportBtn" type="button" title="일정을 JSON 파일로 저장합니다">내보내기</button>
+    <button class="btn" id="importBtn" type="button" title="내보낸 JSON 파일에서 일정을 가져옵니다">가져오기</button>
+    <input type="file" id="importFile" accept=".json,application/json" hidden>
+  </div>
 </div>
 
 <dialog id="dlg">
@@ -830,6 +839,95 @@ document.addEventListener("keydown", e => {
   if (e.key === "n") { e.preventDefault(); openEditor(null); }
   if (e.key === "ArrowLeft" && e.altKey) shiftMonth(-1);
   if (e.key === "ArrowRight" && e.altKey) shiftMonth(1);
+});
+
+// ---------- 내보내기 / 가져오기 ----------
+const BACKUP_APP = "schedule-notebook";
+const isDate = s => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s) && ymd(parse(s)) === s;
+const isTime = s => typeof s === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(s);
+const dupKey = e => [e.date, e.start || "", e.end || "", String(e.title || "").trim()].join("|");
+
+function exportEvents() {
+  if (state.mode === "loading") { toast("일정을 불러오는 중입니다. 잠시 후 다시 눌러 주세요."); return; }
+  if (!state.events.length) { toast("내보낼 일정이 없습니다."); return; }
+  // Google 캘린더 연결 정보(gcalId)는 계정에 묶여 있으므로 백업에 넣지 않는다.
+  const events = state.events.map(({ gcalId, source, ...e }) => e);
+  const payload = { app: BACKUP_APP, version: 1, exportedAt: new Date().toISOString(), events };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = `schedule-backup-${state.today}.json`;
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  toast(`내보내기 파일을 만들었습니다 · 일정 ${events.length}개`);
+}
+
+// 가져온 값을 검사하고 앱이 쓰는 형태로 정리한다. 쓸 수 없으면 null.
+function cleanEvent(x) {
+  if (!x || typeof x !== "object" || typeof x.title !== "string" || !x.title.trim() || !isDate(x.date)) return null;
+  const start = isTime(x.start) ? x.start : "";
+  let end = isTime(x.end) ? x.end : "";
+  if (!start || (end && end < start)) end = "";
+  return {
+    id: typeof x.id === "string" && /^[\w-]{1,64}$/.test(x.id) ? x.id : newId(),
+    title: x.title.trim().slice(0, 120), date: x.date, start, end,
+    cat: CATS.some(c => c.id === x.cat) ? x.cat : "etc",
+    note: typeof x.note === "string" ? x.note.slice(0, 1000) : "",
+    done: x.done === true,
+    created: typeof x.created === "string" ? x.created : new Date().toISOString(),
+  };
+}
+
+async function importFile(file) {
+  if (state.mode === "loading") { toast("일정을 불러오는 중입니다. 잠시 후 다시 시도하세요."); return; }
+  if (file.size > 5 * 1024 * 1024) { toast("파일이 너무 큽니다 (최대 5MB)."); return; }
+  let data;
+  try { data = JSON.parse(await file.text()); } catch { toast("올바른 JSON 파일이 아닙니다."); return; }
+  const list = Array.isArray(data) ? data : (data && data.app === BACKUP_APP && Array.isArray(data.events) ? data.events : null);
+  if (!list) { toast("일정 수첩에서 내보낸 파일이 아닙니다."); return; }
+  if (list.length > 5000) { toast("일정이 너무 많습니다 (최대 5000개)."); return; }
+
+  // 기존 일정은 건드리지 않는다. 같은 날짜·시간·제목이 이미 있으면 건너뛴다.
+  const seen = new Set(state.events.map(dupKey));
+  const ids = new Set(state.events.map(e => e.id));
+  const add = [];
+  let dup = 0, bad = 0;
+  for (const raw of list) {
+    const e = cleanEvent(raw);
+    if (!e) { bad++; continue; }
+    const k = dupKey(e);
+    if (seen.has(k)) { dup++; continue; }
+    seen.add(k);
+    if (ids.has(e.id)) e.id = newId();
+    ids.add(e.id);
+    add.push(e);
+  }
+
+  if (add.length) {
+    try {
+      if (state.mode === "db") {
+        for (let i = 0; i < add.length; i += 20) {
+          await Promise.all(add.slice(i, i + 20).map(({ id, ...body }) => col.doc(id).set(body)));
+        }
+      } else {
+        state.events.push(...add);
+        if (!lsSave()) { state.events = state.events.filter(e => !add.includes(e)); throw new Error("이 브라우저에서는 저장할 수 없습니다."); }
+        render();
+      }
+    } catch (err) { toast("가져오기에 실패했습니다. " + errMsg(err)); return; }
+  }
+  const parts = [`${add.length}개 추가`];
+  if (dup) parts.push(`${dup}개는 이미 있어 건너뜀`);
+  if (bad) parts.push(`${bad}개는 형식이 맞지 않아 제외`);
+  toast("가져오기 완료 · " + parts.join(", "));
+}
+
+$("exportBtn").addEventListener("click", exportEvents);
+$("importBtn").addEventListener("click", () => $("importFile").click());
+$("importFile").addEventListener("change", async e => {
+  const f = e.target.files[0];
+  e.target.value = ""; // 같은 파일을 다시 고를 수 있게
+  if (f) await importFile(f);
 });
 
 let toastTimer;
