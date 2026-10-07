@@ -34,6 +34,11 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 Name: "autostart"; Description: "Windows 시작할 때 자동 실행 (최소화한 채로)"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
+[InstallDelete]
+; 업데이트할 때 이전 버전의 내부 부품을 먼저 지운다(논문·설정은 다른 곳에 있어 지워지지 않음)
+Type: filesandordirs; Name: "{app}\_internal"
+Type: files; Name: "{app}\PaperShelf.exe"
+
 [Files]
 Source: "..\dist\PaperShelf\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
