@@ -16,6 +16,7 @@ import sys
 import threading
 import traceback
 import urllib.parse
+import urllib.request
 import uuid
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -26,16 +27,34 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import metadata as md  # noqa: E402
 from library import Library  # noqa: E402
 
+APP_VERSION = "1.0.0"
 HERE = Path(__file__).resolve().parent
+# 설치판(PyInstaller)으로 묶였을 때는 화면 파일이 압축 해제 폴더에 있다
+RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", HERE))
+FROZEN = getattr(sys, "frozen", False)
+LOG_PATH = Path.home() / ".papershelf.log"
 CONFIG_PATH = Path.home() / ".papershelf.json"
 DEFAULT_LIBRARY = Path.home() / "Papers"
 MAX_UPLOAD = 300 * 1024 * 1024
 
-state = {"lib": None, "online": True}
+state = {"lib": None, "online": True, "server": None, "on_quit": None}
 
 
 def log(*a):
-    print(*a, flush=True)
+    try:
+        print(*a, flush=True)
+    except Exception:
+        pass
+
+
+def setup_logging():
+    """창 없는 설치판에서는 print 할 곳이 없으므로 로그 파일로 보낸다."""
+    if sys.stdout is None or sys.stderr is None or FROZEN:
+        try:
+            f = open(LOG_PATH, "a", encoding="utf-8", buffering=1)
+        except Exception:
+            f = open(os.devnull, "w")
+        sys.stdout = sys.stderr = f
 
 
 def load_config():
@@ -129,7 +148,7 @@ class Handler(BaseHTTPRequestHandler):
     # ------------------------------------------------------------ 화면·파일
 
     def index(self, qs):
-        body = (HERE / "static" / "index.html").read_bytes()
+        body = (RESOURCE_DIR / "static" / "index.html").read_bytes()
         self.send_response(200)
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -158,7 +177,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def info(self, qs):
         lib = state["lib"]
-        self.send_json({"library": str(lib.root), "online": state["online"], **lib.stats()})
+        self.send_json({"app": "papershelf", "version": APP_VERSION, "library": str(lib.root),
+                        "online": state["online"], **lib.stats()})
 
     def settings(self, qs):
         data = self.read_json()
@@ -298,6 +318,10 @@ class Handler(BaseHTTPRequestHandler):
         res = state["lib"].rescan(online=state["online"], log=log)
         self.send_json(res)
 
+    def quit(self, qs):
+        self.send_json({"ok": True})
+        threading.Thread(target=shutdown, daemon=True).start()
+
     def export_bib(self, qs):
         body = "\n\n".join(md.bibtex(p) for p in state["lib"].all_papers()).encode("utf-8")
         self.send_response(200)
@@ -326,31 +350,93 @@ ROUTES = [
     ("POST", r"/api/open-folder", Handler.open_folder),
     ("POST", r"/api/rescan", Handler.rescan),
     ("GET", r"/api/export\.bib", Handler.export_bib),
+    ("POST", r"/api/quit", Handler.quit),
 ]
 
 
+def shutdown():
+    if state["server"]:
+        state["server"].shutdown()
+    if state["on_quit"]:
+        state["on_quit"]()
+
+
+def open_library_folder():
+    root = state["lib"].root
+    system = platform.system()
+    cmd = ["explorer", str(root)] if system == "Windows" else ["open" if system == "Darwin" else "xdg-open", str(root)]
+    subprocess.Popen(cmd)
+
+
+def already_running(port):
+    """같은 포트에 논문 서재가 이미 떠 있으면 True."""
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/info", timeout=2) as r:
+            return json.loads(r.read()).get("app") == "papershelf"
+    except Exception:
+        return False
+
+
 def main():
+    setup_logging()
     ap = argparse.ArgumentParser(description="논문 서재")
     ap.add_argument("--library", help="논문을 보관할 폴더 (기본: 지난번 폴더 또는 ~/Papers)")
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--offline", action="store_true", help="Crossref·arXiv 조회를 하지 않음")
     ap.add_argument("--no-browser", action="store_true", help="브라우저를 자동으로 열지 않음")
-    args = ap.parse_args()
+    ap.add_argument("--no-tray", action="store_true", help="알림 영역(메뉴 막대) 아이콘을 띄우지 않음")
+    args, _ = ap.parse_known_args()  # macOS 가 붙이는 -psn_… 인자 무시
+
+    url = f"http://127.0.0.1:{args.port}/"
+    try:
+        server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+    except OSError:
+        if already_running(args.port):
+            # 이미 켜져 있으면 화면만 다시 연다
+            if not args.no_browser:
+                webbrowser.open(url)
+            return
+        raise
 
     cfg = load_config()
     root = args.library or cfg.get("library") or str(DEFAULT_LIBRARY)
     state["lib"] = Library(root)
     state["online"] = not args.offline
+    state["server"] = server
     cfg["library"] = str(state["lib"].root)
     save_config(cfg)
 
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
-    url = f"http://127.0.0.1:{args.port}/"
-    log(f"논문 서재: {url}")
+    log(f"논문 서재 {APP_VERSION}: {url}")
     log(f"논문 폴더: {state['lib'].root}")
-    log("끝내려면 이 창에서 Ctrl+C")
     if not args.no_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
+
+    use_tray = FROZEN and not args.no_tray
+    if use_tray:
+        try:
+            import tray
+            icon = tray.make(RESOURCE_DIR / "static" / "icon.png", url,
+                             open_folder=open_library_folder, quit=shutdown)
+        except Exception as e:
+            log("알림 영역 아이콘을 띄우지 못했습니다:", e)
+            use_tray = False
+    if use_tray:
+        state["on_quit"] = icon.stop
+        stopped = threading.Event()
+
+        def serve():
+            server.serve_forever()
+            stopped.set()
+        threading.Thread(target=serve, daemon=True).start()
+        try:
+            icon.run()  # macOS 는 아이콘이 메인 스레드에서 돌아야 한다
+        except Exception as e:
+            log("알림 영역 아이콘 오류:", e)
+            state["on_quit"] = None
+        stopped.wait()  # 아이콘이 실패해도 서버는 '앱 종료'까지 계속 돈다
+        return
+
+    log("끝내려면 이 창에서 Ctrl+C (또는 화면의 설정 → 앱 종료)")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

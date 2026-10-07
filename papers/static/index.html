@@ -352,8 +352,9 @@ dialog::backdrop { background: rgb(10 14 22 / 0.45); }
         <select id="s-theme"><option value="">시스템 설정 따름</option><option value="light">밝게</option><option value="dark">어둡게</option></select>
       </div>
       <div class="msg" id="settingsMsg"></div>
+      <div class="hint" id="appVersion"></div>
     </div>
-    <footer><span></span><div class="right"><button class="btn" type="button" data-close>취소</button><button class="btn primary" type="submit">저장</button></div></footer>
+    <footer><button class="btn danger" type="button" id="quitBtn" title="논문 서재 프로그램을 끕니다">앱 종료</button><div class="right"><button class="btn" type="button" data-close>취소</button><button class="btn primary" type="submit">저장</button></div></footer>
   </form>
 </dialog>
 
@@ -633,6 +634,7 @@ $("#deleteBtn").addEventListener("click", async () => {
 /* ---------- 설정 ---------- */
 $("#settingsBtn").addEventListener("click", async () => {
   const info = await api("/api/info");
+  $("#appVersion").textContent = `논문 서재 ${info.version || ""}`;
   $("#s-lib").value = info.library; $("#s-theme").value = store("papershelf.theme") || ""; $("#settingsMsg").textContent = "";
   $("#settingsDlg").showModal();
 });
@@ -643,6 +645,11 @@ $("#settingsForm").addEventListener("submit", async (e) => {
     store("papershelf.theme", $("#s-theme").value); applyTheme($("#s-theme").value);
     $("#settingsDlg").close(); refresh();
   } catch (err) { $("#settingsMsg").textContent = err.message; }
+});
+$("#quitBtn").addEventListener("click", async () => {
+  if (!confirm("논문 서재를 끌까요? 다시 쓰려면 프로그램을 다시 실행하세요.")) return;
+  await api("/api/quit", { method: "POST" }).catch(() => {});
+  document.body.innerHTML = '<div class="empty" style="min-height:100vh;align-content:center"><h2>논문 서재를 껐습니다</h2><div>이 탭은 닫아도 됩니다.</div></div>';
 });
 $("#openFolderBtn").addEventListener("click", () => api("/api/open-folder", { method: "POST" }).catch((err) => toast(err.message)));
 $("#rescanBtn").addEventListener("click", async () => {
