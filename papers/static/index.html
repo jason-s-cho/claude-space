@@ -1,0 +1,661 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>논문 서재</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Crect x=%224%22 y=%222%22 width=%2216%22 height=%2220%22 rx=%222%22 fill=%22%231a4fc4%22/%3E%3Cpath d=%22M8 7h8M8 11h8M8 15h5%22 stroke=%22white%22 stroke-width=%221.6%22/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: Google Scholar형 — 위에 검색창, 왼쪽에 기간·정렬, 가운데에 결과 목록. 창 전체가 PDF 놓는 곳. */
+:root {
+  --paper: #f6f7f9;
+  --sheet: #ffffff;
+  --ink: #1d2433;
+  --ink-soft: #5b6476;
+  --rule: #dde1e8;
+  --accent: #1a4fc4;
+  --accent-soft: #e7edfb;
+  --link: #1a0dab;
+  --byline: #1e7a3c;
+  --warn: #b25e09;
+  --warn-soft: #fdf1e2;
+  --danger: #c0392b;
+  --mark: #fff0a8;
+  --font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #12151c; --sheet: #1a1f29; --ink: #e7eaf0; --ink-soft: #9aa3b5; --rule: #2c3342;
+    --accent: #7d9ef0; --accent-soft: #233154; --link: #8ab4f8; --byline: #6cc58a;
+    --warn: #f0a85a; --warn-soft: #3a2a17; --danger: #f0806f; --mark: #5a4b12;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --paper: #12151c; --sheet: #1a1f29; --ink: #e7eaf0; --ink-soft: #9aa3b5; --rule: #2c3342;
+  --accent: #7d9ef0; --accent-soft: #233154; --link: #8ab4f8; --byline: #6cc58a;
+  --warn: #f0a85a; --warn-soft: #3a2a17; --danger: #f0806f; --mark: #5a4b12;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--paper); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.55; min-height: 100vh; }
+button, input, select, textarea { font: inherit; color: inherit; }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+a { color: var(--link); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* 상단 */
+header.top { background: var(--sheet); border-bottom: 1px solid var(--rule); padding: 14px 24px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 20px; align-items: center; position: sticky; top: 0; z-index: 5; }
+.brand { display: flex; align-items: baseline; gap: 8px; white-space: nowrap; }
+.brand h1 { margin: 0; font-size: 1.3rem; font-weight: 700; letter-spacing: -0.01em; }
+.brand h1 span { color: var(--accent); }
+form.search { display: flex; max-width: 720px; width: 100%; border: 1px solid var(--rule); border-radius: 999px; background: var(--paper); overflow: hidden; }
+form.search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+form.search select { border: 0; background: transparent; padding: 0 6px 0 16px; color: var(--ink-soft); border-right: 1px solid var(--rule); cursor: pointer; }
+form.search input { flex: 1; min-width: 0; border: 0; background: transparent; padding: 10px 14px; outline: none; }
+form.search button { border: 0; background: var(--accent); color: var(--sheet); padding: 0 20px; font-weight: 600; cursor: pointer; }
+.top-actions { display: flex; gap: 6px; }
+
+.btn { border: 1px solid var(--rule); background: var(--sheet); border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: 0.88rem; white-space: nowrap; }
+.btn:hover { border-color: var(--ink-soft); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--sheet); font-weight: 600; }
+.btn.danger { color: var(--danger); }
+.btn:disabled { opacity: 0.5; cursor: default; }
+
+/* 본문 */
+.layout { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 32px; max-width: 1180px; margin: 0 auto; padding: 22px 24px 80px; }
+aside.side { display: grid; gap: 22px; align-content: start; position: sticky; top: 90px; }
+.side h3 { margin: 0 0 6px; font-size: 0.75rem; letter-spacing: 0.08em; color: var(--ink-soft); font-weight: 600; }
+.opt-list { display: grid; gap: 1px; }
+.opt { border: 0; background: none; text-align: left; padding: 4px 8px; border-radius: 6px; cursor: pointer; color: var(--ink-soft); font-size: 0.9rem; }
+.opt:hover { background: var(--accent-soft); color: var(--ink); }
+.opt.on { color: var(--accent); font-weight: 600; }
+.range { display: flex; align-items: center; gap: 4px; padding: 4px 8px; font-size: 0.85rem; color: var(--ink-soft); }
+.range input { width: 62px; padding: 3px 6px; border: 1px solid var(--rule); border-radius: 6px; background: var(--sheet); }
+.check { display: flex; gap: 8px; align-items: center; padding: 4px 8px; font-size: 0.9rem; color: var(--ink-soft); cursor: pointer; }
+
+.dropcard { border: 1.5px dashed var(--rule); border-radius: var(--radius); padding: 16px 14px; text-align: center; color: var(--ink-soft); font-size: 0.85rem; background: var(--sheet); display: grid; gap: 8px; justify-items: center; }
+.dropcard svg { color: var(--accent); }
+
+.summary { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: baseline; color: var(--ink-soft); font-size: 0.85rem; border-bottom: 1px solid var(--rule); padding-bottom: 8px; margin-bottom: 6px; }
+.summary .lib { overflow-wrap: anywhere; }
+
+/* 결과 한 건 — Scholar 모양 */
+.result { padding: 16px 0 14px; border-bottom: 1px solid var(--rule); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 18px; }
+.result .r-title { font-size: 1.12rem; line-height: 1.35; margin: 0; font-weight: 500; overflow-wrap: anywhere; }
+.result .r-title a { color: var(--link); text-decoration: none; }
+.result .r-title a:hover { text-decoration: underline; }
+.result .r-title a:visited { color: color-mix(in srgb, var(--link) 70%, purple); }
+.result .pdf-tag { grid-column: 2; grid-row: 1; font-size: 0.82rem; align-self: start; padding-top: 3px; white-space: nowrap; }
+.result .pdf-tag a { text-decoration: none; color: var(--link); }
+.result .pdf-tag b { color: var(--ink-soft); font-weight: 600; margin-right: 4px; }
+.result .byline { grid-column: 1 / -1; color: var(--byline); font-size: 0.88rem; overflow-wrap: anywhere; }
+.result .snippet { grid-column: 1 / -1; font-size: 0.9rem; color: var(--ink); opacity: 0.88; overflow-wrap: anywhere; }
+.result .snippet .where { font-size: 0.75rem; color: var(--ink-soft); border: 1px solid var(--rule); border-radius: 4px; padding: 0 5px; margin-right: 6px; }
+.result .actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; font-size: 0.83rem; margin-top: 2px; }
+.result .actions button, .result .actions a { border: 0; background: none; padding: 0; color: var(--ink-soft); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
+.result .actions button:hover, .result .actions a:hover { color: var(--accent); }
+.result .file { grid-column: 1 / -1; font-size: 0.75rem; color: var(--ink-soft); overflow-wrap: anywhere; }
+.tag { display: inline-block; font-size: 0.72rem; padding: 0 7px; border-radius: 999px; vertical-align: 2px; margin-left: 6px; font-weight: 600; }
+.tag.warn { background: var(--warn-soft); color: var(--warn); }
+.tag.miss { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
+.tag.kw { background: var(--accent-soft); color: var(--accent); font-weight: 500; margin: 0 4px 0 0; }
+mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1px; }
+
+.empty { padding: 60px 20px; text-align: center; color: var(--ink-soft); display: grid; gap: 10px; justify-items: center; }
+.empty h2 { margin: 0; color: var(--ink); font-size: 1.15rem; }
+
+/* 끌어다 놓기 덮개 */
+.overlay { position: fixed; inset: 0; background: color-mix(in srgb, var(--accent) 14%, transparent); backdrop-filter: blur(2px); display: none; place-items: center; z-index: 40; pointer-events: none; }
+.overlay.on { display: grid; }
+.overlay div { background: var(--sheet); border: 2px dashed var(--accent); border-radius: 16px; padding: 40px 56px; text-align: center; font-size: 1.1rem; font-weight: 600; color: var(--accent); }
+.overlay small { display: block; font-weight: 400; color: var(--ink-soft); font-size: 0.85rem; margin-top: 6px; }
+
+/* 올리기 진행 상황 */
+.tray { position: fixed; right: 20px; bottom: 20px; width: min(420px, calc(100vw - 32px)); background: var(--sheet); border: 1px solid var(--rule); border-radius: 12px; box-shadow: 0 10px 30px rgb(0 0 0 / 0.14); z-index: 30; display: none; max-height: 55vh; overflow: hidden; }
+.tray.on { display: grid; grid-template-rows: auto minmax(0, 1fr); }
+.tray header { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--rule); font-weight: 600; font-size: 0.9rem; }
+.tray header button { border: 0; background: none; cursor: pointer; color: var(--ink-soft); font-size: 1.1rem; }
+.tray ul { list-style: none; margin: 0; padding: 4px 0; overflow: auto; }
+.tray li { padding: 8px 14px; display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 2px 8px; font-size: 0.84rem; }
+.tray li .from { color: var(--ink-soft); overflow-wrap: anywhere; }
+.tray li .to { grid-column: 2; overflow-wrap: anywhere; }
+.tray li.added .ico { color: var(--byline); }
+.tray li.duplicate .ico { color: var(--warn); }
+.tray li.error .ico { color: var(--danger); }
+.spin { width: 14px; height: 14px; border: 2px solid var(--rule); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; margin-top: 3px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* 대화 상자 */
+dialog { border: 1px solid var(--rule); border-radius: 14px; padding: 0; background: var(--sheet); color: var(--ink); width: min(680px, calc(100vw - 32px)); max-height: calc(100vh - 48px); }
+dialog::backdrop { background: rgb(10 14 22 / 0.45); }
+.dlg { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; max-height: calc(100vh - 50px); }
+.dlg > header { padding: 16px 20px 10px; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.dlg > header h3 { margin: 0; font-size: 1.05rem; }
+.dlg > header button { border: 0; background: none; font-size: 1.3rem; cursor: pointer; color: var(--ink-soft); }
+.dlg .body { padding: 4px 20px 16px; overflow: auto; display: grid; gap: 12px; }
+.dlg > footer { padding: 12px 20px; border-top: 1px solid var(--rule); display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.dlg > footer .right { display: flex; gap: 8px; margin-left: auto; }
+.grid2 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.field { display: grid; gap: 4px; }
+.field.span2 { grid-column: span 2; }
+.field.span4 { grid-column: 1 / -1; }
+.field label { font-size: 0.78rem; color: var(--ink-soft); }
+.field input, .field textarea, .field select { width: 100%; border: 1px solid var(--rule); border-radius: 8px; padding: 7px 10px; background: var(--paper); }
+.field textarea { resize: vertical; min-height: 70px; }
+.hint { font-size: 0.78rem; color: var(--ink-soft); }
+.fetchbox { display: grid; gap: 8px; border: 1px solid var(--rule); border-radius: 10px; padding: 12px; background: var(--paper); }
+.fetchbox .row { display: flex; gap: 8px; }
+.fetchbox input { flex: 1; min-width: 0; border: 1px solid var(--rule); border-radius: 8px; padding: 6px 10px; background: var(--sheet); }
+.cands { display: grid; gap: 4px; }
+.cand { border: 1px solid var(--rule); border-radius: 8px; padding: 8px 10px; background: var(--sheet); text-align: left; cursor: pointer; display: grid; gap: 2px; }
+.cand:hover { border-color: var(--accent); }
+.cand b { font-weight: 500; color: var(--link); }
+.cand span { font-size: 0.8rem; color: var(--byline); }
+.msg { font-size: 0.84rem; color: var(--danger); min-height: 1em; }
+
+.cite-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--rule); }
+.cite-tabs button { border: 0; background: none; padding: 6px 12px; cursor: pointer; color: var(--ink-soft); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.cite-tabs button.on { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+.cite-text { white-space: pre-wrap; background: var(--paper); border: 1px solid var(--rule); border-radius: 8px; padding: 12px; font-size: 0.88rem; overflow-wrap: anywhere; margin: 0; }
+.cite-text.mono { font-size: 0.8rem; }
+
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: var(--paper); padding: 8px 16px; border-radius: 8px; font-size: 0.88rem; z-index: 60; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
+.toast.on { opacity: 1; }
+
+@media (max-width: 860px) {
+  header.top { grid-template-columns: 1fr; gap: 10px; padding: 12px 16px; position: static; }
+  .top-actions { flex-wrap: wrap; }
+  .layout { grid-template-columns: 1fr; padding: 16px 16px 80px; gap: 16px; }
+  aside.side { position: static; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+  .grid2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .field.span2 { grid-column: 1 / -1; }
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="brand"><h1>논문 <span>서재</span></h1></div>
+  <form class="search" id="searchForm" role="search">
+    <select id="field" aria-label="검색 범위">
+      <option value="all">전체</option>
+      <option value="title">제목</option>
+      <option value="author">저자</option>
+      <option value="journal">저널</option>
+      <option value="fulltext">본문</option>
+    </select>
+    <input id="q" type="search" placeholder="제목, 저자, 저널, 키워드, DOI…  ( / 키로 바로 검색)" autocomplete="off">
+    <button type="submit" aria-label="검색">검색</button>
+  </form>
+  <div class="top-actions">
+    <button class="btn" id="pickBtn" type="button">PDF 추가</button>
+    <button class="btn" id="rescanBtn" type="button" title="폴더에 직접 넣은 PDF를 등록하고 사라진 파일을 정리합니다">폴더 다시 읽기</button>
+    <button class="btn" id="settingsBtn" type="button" aria-label="설정">설정</button>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="side">
+    <section>
+      <h3>기간</h3>
+      <div class="opt-list" id="yearOpts"></div>
+      <div class="range">
+        <input id="yFrom" inputmode="numeric" placeholder="시작" aria-label="시작 연도"> –
+        <input id="yTo" inputmode="numeric" placeholder="끝" aria-label="끝 연도">
+      </div>
+    </section>
+    <section>
+      <h3>정렬</h3>
+      <div class="opt-list" id="sortOpts"></div>
+    </section>
+    <section>
+      <h3>보기</h3>
+      <label class="check"><input type="checkbox" id="reviewOnly"> 확인 필요한 논문만</label>
+    </section>
+    <section class="dropcard">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3m0 0-4 4m4-4 4 4"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>
+      <div>PDF를 이 창 아무 곳에나<br>끌어다 놓으세요</div>
+      <div class="hint">제목·저자·저널을 찾아<br>이름을 바꿔 저장합니다</div>
+    </section>
+    <section>
+      <h3>내보내기</h3>
+      <div class="opt-list">
+        <a class="opt" href="/api/export.bib" download>BibTeX 전체 (.bib)</a>
+        <button class="opt" type="button" id="openFolderBtn">논문 폴더 열기</button>
+      </div>
+    </section>
+  </aside>
+
+  <main>
+    <div class="summary">
+      <span id="count">불러오는 중…</span>
+      <span class="lib mono" id="libPath"></span>
+    </div>
+    <div id="results"></div>
+  </main>
+</div>
+
+<input type="file" id="fileInput" accept="application/pdf,.pdf" multiple hidden>
+
+<div class="overlay" id="overlay"><div>여기에 놓으면 서재에 추가합니다<small>PDF만 받습니다 · 여러 개도 됩니다</small></div></div>
+
+<section class="tray" id="tray" aria-live="polite">
+  <header><span id="trayTitle">추가 중</span><button type="button" id="trayClose" aria-label="닫기">×</button></header>
+  <ul id="trayList"></ul>
+</section>
+
+<dialog id="citeDlg">
+  <div class="dlg">
+    <header><h3>인용</h3><button type="button" data-close aria-label="닫기">×</button></header>
+    <div class="body">
+      <div class="cite-tabs" id="citeTabs"></div>
+      <pre class="cite-text" id="citeText"></pre>
+    </div>
+    <footer><span></span><div class="right"><button class="btn primary" type="button" id="copyCite">복사</button></div></footer>
+  </div>
+</dialog>
+
+<dialog id="editDlg">
+  <form class="dlg" id="editForm" method="dialog">
+    <header><h3>서지 정보 수정</h3><button type="button" data-close aria-label="닫기">×</button></header>
+    <div class="body">
+      <div class="fetchbox">
+        <div class="hint">DOI나 arXiv ID를 넣으면 정보를 다시 받아옵니다. 제목 일부로 Crossref에서 찾을 수도 있습니다.</div>
+        <div class="row">
+          <input id="fetchKey" placeholder="10.1038/nature14539  ·  1706.03762  ·  제목 일부">
+          <button class="btn" type="button" id="fetchBtn">가져오기</button>
+        </div>
+        <div class="msg" id="fetchMsg"></div>
+        <div class="cands" id="cands"></div>
+      </div>
+      <div class="grid2">
+        <div class="field span4"><label for="f-title">제목</label><input id="f-title" name="title" required></div>
+        <div class="field span4"><label for="f-authors">저자 <span class="hint">— 세미콜론(;)으로 구분, 예: Ashish Vaswani; Noam Shazeer; 김철수</span></label><input id="f-authors" name="authors"></div>
+        <div class="field span2"><label for="f-journal">저널·학회</label><input id="f-journal" name="journal"></div>
+        <div class="field"><label for="f-year">연도</label><input id="f-year" name="year" inputmode="numeric"></div>
+        <div class="field"><label for="f-publisher">출판사</label><input id="f-publisher" name="publisher"></div>
+        <div class="field"><label for="f-volume">권</label><input id="f-volume" name="volume"></div>
+        <div class="field"><label for="f-issue">호</label><input id="f-issue" name="issue"></div>
+        <div class="field"><label for="f-pages">쪽</label><input id="f-pages" name="pages"></div>
+        <div class="field"><label for="f-type">종류</label>
+          <select id="f-type" name="type">
+            <option value="journal-article">학술지 논문</option>
+            <option value="proceedings-article">학회 논문</option>
+            <option value="preprint">프리프린트</option>
+            <option value="book-chapter">책의 장</option>
+            <option value="book">책</option>
+            <option value="dissertation">학위논문</option>
+            <option value="report">보고서</option>
+            <option value="">기타</option>
+          </select>
+        </div>
+        <div class="field span2"><label for="f-doi">DOI</label><input id="f-doi" name="doi" class="mono"></div>
+        <div class="field span2"><label for="f-url">URL</label><input id="f-url" name="url"></div>
+        <div class="field span4"><label for="f-tags">키워드·태그 <span class="hint">— 쉼표로 구분, 검색에 쓰입니다</span></label><input id="f-tags" name="tags"></div>
+        <div class="field span4"><label for="f-abstract">초록</label><textarea id="f-abstract" name="abstract" rows="4"></textarea></div>
+        <div class="field span4"><label for="f-notes">메모</label><textarea id="f-notes" name="notes" rows="3"></textarea></div>
+      </div>
+      <div class="hint" id="editFile"></div>
+    </div>
+    <footer>
+      <button class="btn danger" type="button" id="deleteBtn">서재에서 삭제</button>
+      <div class="right">
+        <button class="btn" type="button" data-close>취소</button>
+        <button class="btn primary" type="submit">저장 (파일 이름도 맞춤)</button>
+      </div>
+    </footer>
+  </form>
+</dialog>
+
+<dialog id="settingsDlg">
+  <form class="dlg" id="settingsForm" method="dialog">
+    <header><h3>설정</h3><button type="button" data-close aria-label="닫기">×</button></header>
+    <div class="body">
+      <div class="field">
+        <label for="s-lib">논문 폴더</label>
+        <input id="s-lib" class="mono" required>
+        <div class="hint">논문 PDF와 색인(.papershelf 폴더)이 이곳에 저장됩니다. 없는 폴더면 새로 만듭니다.</div>
+      </div>
+      <div class="field">
+        <label for="s-theme">화면</label>
+        <select id="s-theme"><option value="">시스템 설정 따름</option><option value="light">밝게</option><option value="dark">어둡게</option></select>
+      </div>
+      <div class="msg" id="settingsMsg"></div>
+    </div>
+    <footer><span></span><div class="right"><button class="btn" type="button" data-close>취소</button><button class="btn primary" type="submit">저장</button></div></footer>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const thisYear = new Date().getFullYear();
+const TYPE_LABEL = { "journal-article": "", "proceedings-article": "학회", "preprint": "프리프린트", "posted-content": "프리프린트", "book-chapter": "책", "book": "책", "dissertation": "학위논문", "report": "보고서" };
+
+const view = { q: "", field: "all", from: "", to: "", sort: "relevance", review: false };
+let lastTerms = [];
+let papersById = new Map();
+
+function store(key, val) { try { if (val === undefined) return localStorage.getItem(key); localStorage.setItem(key, val); } catch { return null; } }
+function applyTheme(t) { if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme; }
+applyTheme(store("papershelf.theme") || "");
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, opts);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+
+function toast(msg) {
+  const t = $("#toast");
+  t.textContent = msg;
+  t.classList.add("on");
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => t.classList.remove("on"), 2200);
+}
+
+/* ---------- 사이드바 ---------- */
+function renderSide() {
+  const yearChoices = [["", "전체 기간"], [thisYear, `${thisYear}년부터`], [thisYear - 1, `${thisYear - 1}년부터`], [thisYear - 4, `${thisYear - 4}년부터`], [thisYear - 10, `${thisYear - 10}년부터`]];
+  $("#yearOpts").innerHTML = yearChoices.map(([y, label]) =>
+    `<button type="button" class="opt ${String(view.from) === String(y) && !view.to ? "on" : ""}" data-from="${y}">${label}</button>`).join("");
+  const sorts = [["relevance", "관련도순"], ["added", "추가한 순"], ["year", "연도순"], ["title", "제목순"]];
+  $("#sortOpts").innerHTML = sorts.map(([k, label]) =>
+    `<button type="button" class="opt ${view.sort === k ? "on" : ""}" data-sort="${k}">${label}</button>`).join("");
+  $("#yFrom").value = view.from; $("#yTo").value = view.to;
+}
+$("#yearOpts").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-from]"); if (!b) return;
+  view.from = b.dataset.from; view.to = ""; refresh();
+});
+$("#sortOpts").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-sort]"); if (!b) return;
+  view.sort = b.dataset.sort; refresh();
+});
+for (const id of ["#yFrom", "#yTo"]) $(id).addEventListener("change", () => {
+  view.from = $("#yFrom").value.replace(/\D/g, ""); view.to = $("#yTo").value.replace(/\D/g, ""); refresh();
+});
+$("#reviewOnly").addEventListener("change", (e) => { view.review = e.target.checked; refresh(); });
+
+/* ---------- 검색 ---------- */
+$("#searchForm").addEventListener("submit", (e) => { e.preventDefault(); view.q = $("#q").value.trim(); view.field = $("#field").value; refresh(); });
+$("#field").addEventListener("change", () => { if ($("#q").value.trim()) $("#searchForm").requestSubmit(); });
+let typing;
+$("#q").addEventListener("input", () => { clearTimeout(typing); typing = setTimeout(() => $("#searchForm").requestSubmit(), 300); });
+document.addEventListener("keydown", (e) => {
+  if (e.key === "/" && !/INPUT|TEXTAREA|SELECT/.test(document.activeElement.tagName) && !document.querySelector("dialog[open]")) { e.preventDefault(); $("#q").focus(); }
+});
+
+function highlight(text) {
+  let out = esc(text);
+  for (const t of lastTerms) {
+    if (!t) continue;
+    const re = new RegExp(esc(t).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi");
+    out = out.replace(re, (m) => `<mark>${m}</mark>`);
+  }
+  return out;
+}
+
+async function refresh() {
+  renderSide();
+  const params = new URLSearchParams({ q: view.q, field: view.field, sort: view.sort });
+  if (view.from) params.set("from", view.from);
+  if (view.to) params.set("to", view.to);
+  if (view.review) params.set("review", "1");
+  try {
+    const [res, info] = await Promise.all([api("/api/papers?" + params), api("/api/info")]);
+    lastTerms = res.terms;
+    renderResults(res, info);
+  } catch (err) {
+    $("#count").textContent = "불러오지 못했습니다: " + err.message;
+  }
+}
+
+function renderResults(res, info) {
+  $("#libPath").textContent = info.library;
+  $("#libPath").title = "논문 폴더";
+  const filtered = view.q || view.from || view.to || view.review;
+  $("#count").innerHTML = filtered
+    ? `검색결과 <b>${res.total}</b>개 <span>/ 전체 ${info.total}편</span>`
+    : `전체 <b>${info.total}</b>편` + (info.needs_review ? ` · 확인 필요 <b>${info.needs_review}</b>편` : "");
+  papersById = new Map(res.papers.map((p) => [p.id, p]));
+  const box = $("#results");
+  if (!res.papers.length) {
+    box.innerHTML = info.total
+      ? `<div class="empty"><h2>찾는 논문이 없습니다</h2><div>검색어를 줄이거나 범위를 ‘전체’ 또는 ‘본문’으로 바꿔 보세요.</div></div>`
+      : `<div class="empty"><h2>서재가 비어 있습니다</h2><div>논문 PDF를 이 창에 끌어다 놓으면<br>제목·저자·저널을 찾아 <span class="mono">${esc(info.library)}</span> 에 정리해 둡니다.</div><button class="btn primary" type="button" onclick="document.getElementById('fileInput').click()">PDF 고르기</button></div>`;
+    return;
+  }
+  box.innerHTML = res.papers.map(resultHTML).join("");
+}
+
+function resultHTML(p) {
+  const venue = [p.journal, p.year].filter(Boolean).join(", ");
+  const by = [p.scholar_authors, venue, p.publisher && p.publisher !== p.journal ? p.publisher : ""].filter(Boolean);
+  const kind = TYPE_LABEL[p.type] ? `[${TYPE_LABEL[p.type]}] ` : "";
+  const tags = (p.tags || "").split(/[,;]/).map((s) => s.trim()).filter(Boolean);
+  const pdfHref = `/pdf/${p.id}/${encodeURIComponent(p.file_name)}`;
+  const doi = p.doi ? `<a href="https://doi.org/${esc(p.doi)}" target="_blank" rel="noopener">DOI</a>` : (p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">원문 페이지</a>` : "");
+  return `<article class="result" data-id="${p.id}">
+    <h2 class="r-title"><span style="color:var(--ink-soft);font-size:.85rem">${esc(kind)}</span><a href="${pdfHref}" target="_blank" rel="noopener">${highlight(p.title || "제목 없음")}</a>${p.needs_review ? '<span class="tag warn" title="온라인에서 정보를 찾지 못해 PDF에서 추정했습니다">확인 필요</span>' : ""}${p.missing ? '<span class="tag miss">파일 없음</span>' : ""}</h2>
+    <div class="pdf-tag"><a href="${pdfHref}" target="_blank" rel="noopener"><b>[PDF]</b>열기</a></div>
+    <div class="byline">${highlight(by.join(" - "))}</div>
+    ${p.snippet ? `<div class="snippet">${p.in_fulltext ? '<span class="where">본문</span>' : ""}${highlight(p.snippet)}</div>` : ""}
+    <div class="actions">
+      <button type="button" data-act="cite">❝ 인용</button>
+      <button type="button" data-act="edit">✎ 수정</button>
+      <button type="button" data-act="reveal">폴더에서 보기</button>
+      ${doi}
+      ${tags.map((t) => `<span class="tag kw">${highlight(t)}</span>`).join("")}
+    </div>
+    <div class="file mono">${esc(p.file_name)}</div>
+  </article>`;
+}
+
+$("#results").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-act]"); if (!b) return;
+  const id = Number(b.closest(".result").dataset.id);
+  if (b.dataset.act === "cite") openCite(id);
+  else if (b.dataset.act === "edit") openEdit(id);
+  else if (b.dataset.act === "reveal") api(`/api/papers/${id}/reveal`, { method: "POST" }).catch((err) => toast(err.message));
+});
+
+/* ---------- 인용 ---------- */
+let citeData = null, citeKind = store("papershelf.cite") || "APA";
+async function openCite(id) {
+  const p = await api(`/api/papers/${id}`);
+  citeData = p.citations;
+  renderCite();
+  $("#citeDlg").showModal();
+}
+function renderCite() {
+  $("#citeTabs").innerHTML = Object.keys(citeData).map((k) => `<button type="button" class="${k === citeKind ? "on" : ""}" data-k="${k}">${k}</button>`).join("");
+  $("#citeText").textContent = citeData[citeKind];
+  $("#citeText").classList.toggle("mono", citeKind === "BibTeX");
+}
+$("#citeTabs").addEventListener("click", (e) => { const b = e.target.closest("[data-k]"); if (!b) return; citeKind = b.dataset.k; store("papershelf.cite", citeKind); renderCite(); });
+$("#copyCite").addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText(citeData[citeKind]); toast("복사했습니다"); }
+  catch { const r = document.createRange(); r.selectNodeContents($("#citeText")); getSelection().removeAllRanges(); getSelection().addRange(r); toast("선택했습니다 — Ctrl+C로 복사하세요"); }
+});
+
+/* ---------- 수정 ---------- */
+let editing = null;
+function authorsToText(list) {
+  return (list || []).map((a) => /[가-힣]/.test((a.family || "") + (a.given || "")) ? (a.family || "") + (a.given || "") : [a.given, a.family].filter(Boolean).join(" ")).join("; ");
+}
+function textToAuthors(s) {
+  return s.split(";").map((x) => x.trim()).filter(Boolean).map((name) => {
+    if (/[가-힣]/.test(name) || !name.includes(" ")) return { given: "", family: name };
+    if (name.includes(",")) { const [f, g] = name.split(",").map((t) => t.trim()); return { given: g, family: f }; }
+    const i = name.lastIndexOf(" "); return { given: name.slice(0, i), family: name.slice(i + 1) };
+  });
+}
+function fillEdit(p) {
+  const f = $("#editForm");
+  for (const k of ["title", "journal", "year", "publisher", "volume", "issue", "pages", "doi", "url", "tags", "abstract", "notes"]) {
+    if (f.elements[k]) f.elements[k].value = p[k] ?? "";
+  }
+  const typeSel = f.elements.type;
+  const t = p.type === "posted-content" ? "preprint" : (p.type || "");
+  typeSel.value = [...typeSel.options].some((o) => o.value === t) ? t : "";
+  f.elements.authors.value = authorsToText(p.authors);
+}
+async function openEdit(id) {
+  editing = await api(`/api/papers/${id}`);
+  fillEdit(editing);
+  $("#fetchKey").value = editing.doi || editing.arxiv_id || "";
+  $("#fetchMsg").textContent = editing.needs_review ? "온라인에서 정보를 찾지 못해 PDF에서 추정한 값입니다. 확인해 주세요." : "";
+  $("#fetchMsg").style.color = "var(--warn)";
+  $("#cands").innerHTML = "";
+  $("#editFile").innerHTML = `파일: <span class="mono">${esc(editing.file_name)}</span>` + (editing.original_name ? ` · 원래 이름: <span class="mono">${esc(editing.original_name)}</span>` : "");
+  $("#editDlg").showModal();
+}
+$("#editForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const f = e.target, data = {};
+  for (const k of ["title", "journal", "year", "publisher", "volume", "issue", "pages", "doi", "url", "tags", "abstract", "notes", "type"]) data[k] = f.elements[k].value.trim();
+  data.authors = textToAuthors(f.elements.authors.value);
+  data.needs_review = false;
+  try {
+    const p = await api(`/api/papers/${editing.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+    $("#editDlg").close();
+    toast("저장했습니다 → " + p.file_name);
+    refresh();
+  } catch (err) { $("#fetchMsg").style.color = ""; $("#fetchMsg").textContent = err.message; }
+});
+$("#fetchBtn").addEventListener("click", async () => {
+  const key = $("#fetchKey").value.trim(); if (!key) return;
+  const msg = $("#fetchMsg"); msg.style.color = "var(--ink-soft)"; msg.textContent = "찾는 중…"; $("#cands").innerHTML = "";
+  const doiMatch = key.match(/10\.\d{4,9}\/\S+/);
+  const arxivMatch = key.match(/^(?:arxiv:)?(\d{4}\.\d{4,5}|[a-z\-]+\/\d{7})(v\d+)?$/i);
+  try {
+    if (doiMatch || arxivMatch) {
+      const body = doiMatch ? { doi: doiMatch[0] } : { arxiv_id: arxivMatch[1] };
+      editing = await api(`/api/papers/${editing.id}/refetch`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      fillEdit(editing);
+      msg.style.color = "var(--byline)"; msg.textContent = "가져와서 저장했습니다. 파일 이름도 바꿨습니다.";
+      refresh();
+    } else {
+      const res = await api("/api/lookup?q=" + encodeURIComponent(key));
+      msg.textContent = res.items.length ? "맞는 논문을 고르세요." : "찾지 못했습니다.";
+      $("#cands").innerHTML = res.items.map((it, i) => `<button type="button" class="cand" data-i="${i}"><b>${esc(it.title)}</b><span>${esc([it.scholar_authors, [it.journal, it.year].filter(Boolean).join(", ")].filter(Boolean).join(" - "))}</span></button>`).join("");
+      $("#cands").onclick = async (ev) => {
+        const c = ev.target.closest("[data-i]"); if (!c) return;
+        const it = res.items[Number(c.dataset.i)];
+        if (it.doi) { $("#fetchKey").value = it.doi; $("#fetchBtn").click(); }
+        else { fillEdit({ ...editing, ...it }); msg.textContent = "값을 채웠습니다. 저장을 누르세요."; $("#cands").innerHTML = ""; }
+      };
+    }
+  } catch (err) { msg.style.color = ""; msg.textContent = err.message; }
+});
+$("#fetchKey").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("#fetchBtn").click(); } });
+$("#deleteBtn").addEventListener("click", async () => {
+  if (!confirm(`‘${editing.title}’을(를) 서재에서 뺄까요?\nPDF는 논문 폴더의 .papershelf/trash 로 옮겨집니다.`)) return;
+  await api(`/api/papers/${editing.id}`, { method: "DELETE" });
+  $("#editDlg").close(); toast("삭제했습니다"); refresh();
+});
+
+/* ---------- 설정 ---------- */
+$("#settingsBtn").addEventListener("click", async () => {
+  const info = await api("/api/info");
+  $("#s-lib").value = info.library; $("#s-theme").value = store("papershelf.theme") || ""; $("#settingsMsg").textContent = "";
+  $("#settingsDlg").showModal();
+});
+$("#settingsForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    await api("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ library: $("#s-lib").value }) });
+    store("papershelf.theme", $("#s-theme").value); applyTheme($("#s-theme").value);
+    $("#settingsDlg").close(); refresh();
+  } catch (err) { $("#settingsMsg").textContent = err.message; }
+});
+$("#openFolderBtn").addEventListener("click", () => api("/api/open-folder", { method: "POST" }).catch((err) => toast(err.message)));
+$("#rescanBtn").addEventListener("click", async () => {
+  const b = $("#rescanBtn"); b.disabled = true; b.textContent = "읽는 중…";
+  try {
+    const r = await api("/api/rescan", { method: "POST" });
+    const parts = [];
+    if (r.added.length) parts.push(`새로 등록 ${r.added.length}편`);
+    if (r.relinked) parts.push(`이름 바뀐 파일 ${r.relinked}개 연결`);
+    if (r.duplicates) parts.push(`중복 ${r.duplicates}개 건너뜀`);
+    if (r.removed) parts.push(`사라진 파일 ${r.removed}개 정리`);
+    if (r.failed.length) parts.push(`실패 ${r.failed.length}개`);
+    toast(parts.length ? parts.join(" · ") : "바뀐 것이 없습니다");
+    refresh();
+  } catch (err) { toast(err.message); }
+  finally { b.disabled = false; b.textContent = "폴더 다시 읽기"; }
+});
+document.querySelectorAll("dialog").forEach((d) => d.addEventListener("click", (e) => {
+  if (e.target === d || e.target.closest("[data-close]")) d.close();
+}));
+
+/* ---------- 끌어다 놓기 · 올리기 ---------- */
+let dragDepth = 0;
+const hasFiles = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
+window.addEventListener("dragenter", (e) => { if (!hasFiles(e)) return; e.preventDefault(); dragDepth++; $("#overlay").classList.add("on"); });
+window.addEventListener("dragover", (e) => { if (hasFiles(e)) e.preventDefault(); });
+window.addEventListener("dragleave", (e) => { if (!hasFiles(e)) return; dragDepth = Math.max(0, dragDepth - 1); if (!dragDepth) $("#overlay").classList.remove("on"); });
+window.addEventListener("drop", (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault(); dragDepth = 0; $("#overlay").classList.remove("on");
+  addFiles([...e.dataTransfer.files]);
+});
+$("#pickBtn").addEventListener("click", () => $("#fileInput").click());
+$("#fileInput").addEventListener("change", (e) => { addFiles([...e.target.files]); e.target.value = ""; });
+$("#trayClose").addEventListener("click", () => { $("#tray").classList.remove("on"); $("#trayList").innerHTML = ""; });
+
+const queue = [];
+let running = 0, pending = 0;
+function addFiles(files) {
+  const list = $("#trayList");
+  $("#tray").classList.add("on");
+  for (const file of files) {
+    const li = document.createElement("li");
+    li.innerHTML = `<span class="ico"><span class="spin"></span></span><span class="from">${esc(file.name)}</span><span class="to">대기 중</span>`;
+    list.prepend(li);
+    if (!/\.pdf$/i.test(file.name) && file.type !== "application/pdf") { setItem(li, "error", "PDF 파일이 아니어서 건너뛰었습니다"); continue; }
+    queue.push({ file, li }); pending++;
+  }
+  updateTrayTitle();
+  pump();
+}
+function setItem(li, kind, html) {
+  li.className = kind;
+  li.querySelector(".ico").innerHTML = { added: "✓", duplicate: "≡", error: "!" }[kind] || '<span class="spin"></span>';
+  li.querySelector(".to").innerHTML = html;
+}
+function updateTrayTitle() { $("#trayTitle").textContent = pending ? `추가 중 · 남은 파일 ${pending}개` : "모두 처리했습니다"; }
+function pump() {
+  while (running < 2 && queue.length) {
+    const { file, li } = queue.shift();
+    running++;
+    li.querySelector(".to").textContent = "제목·저자 찾는 중…";
+    upload(file).then((r) => {
+      if (r.status === "added") setItem(li, "added", `<span class="mono">${esc(r.paper.file_name)}</span>` + (r.paper.needs_review ? ' <span class="tag warn">확인 필요</span>' : ""));
+      else setItem(li, "duplicate", `이미 서재에 있습니다 — ${esc(r.paper.title)}`);
+    }).catch((err) => setItem(li, "error", esc(err.message)))
+      .finally(() => { running--; pending--; updateTrayTitle(); refresh(); pump(); });
+  }
+}
+async function upload(file) {
+  const res = await fetch("/api/papers", { method: "POST", headers: { "Content-Type": "application/pdf", "X-Filename": encodeURIComponent(file.name) }, body: file });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+
+refresh();
+</script>
+</body>
+</html>
