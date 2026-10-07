@@ -59,6 +59,25 @@ MIGRATIONS = [
     ("cited_by_at", "ALTER TABLE papers ADD COLUMN cited_by_at REAL"),
 ]
 SUPP_SUFFIX = " - Supplementary"
+VIDEO_SUFFIX = " - Supplementary Video"
+VIDEO_EXTS = {".mp4", ".m4v", ".mov", ".avi", ".mkv", ".webm", ".wmv", ".mpg", ".mpeg", ".ogv", ".3gp", ".flv"}
+
+
+def is_video(name):
+    return Path(name).suffix.lower() in VIDEO_EXTS
+
+
+def supp_label(name):
+    return VIDEO_SUFFIX if is_video(name) else SUPP_SUFFIX
+
+
+def original_key(name):
+    """보충자료 파일 이름에서 출판사 번호만 남긴다.
+    '41586_2020_1234_MOESM2_ESM.mp4' → '41586_2020_1234', '1-s2.0-S0010-mmc3.mp4' → '1-s2.0-s0010'."""
+    stem = Path(name or "").stem.lower()
+    stem = re.sub(r"[_\-\s]*(moesm\d+[_\-]?esm|mmc\d+|main|supp\w*|si\d*|esi|movie\s*s?\d*|video\s*s?\d*|"
+                  r"media[_\-]?\d+|s\d+)$", "", stem)
+    return stem.strip("_- .")
 
 # 검색 범위별 대상 칸과 관련도 가중치
 SEARCH_FIELDS = {
@@ -181,14 +200,15 @@ class Library:
     # ------------------------------------------------------------ 이름 정하기
 
     def _unique_target(self, name, current=None):
-        stem = name[:-4]
+        stem, ext = Path(name).stem, Path(name).suffix
         target = self.root / name
         n = 2
         while target.exists():
             if current is not None and os.path.samefile(target, current):
                 break  # 이미 그 이름(대소문자만 다른 경우 포함)
-            # 보충자료는 'X - Supplementary 2.pdf', 그 밖에는 'X (2).pdf'
-            target = self.root / (f"{stem} {n}.pdf" if stem.endswith(SUPP_SUFFIX) else f"{stem} ({n}).pdf")
+            # 보충자료는 'X - Supplementary 2.pdf', 'X - Supplementary Video 2.mp4', 그 밖에는 'X (2).pdf'
+            numbered = stem.endswith(SUPP_SUFFIX) or stem.endswith(VIDEO_SUFFIX)
+            target = self.root / (f"{stem} {n}{ext}" if numbered else f"{stem} ({n}){ext}")
             n += 1
         return target
 
@@ -278,6 +298,60 @@ class Library:
                 self._adopt_orphans(c, pid)
         return "added", self.get(pid)
 
+    def find_parent_by_name(self, original_name):
+        """출판사 번호가 같은 파일(예: 같은 논문의 MOESM1 PDF)이 딸린 본문 논문."""
+        key = original_key(original_name)
+        if len(key) < 6:
+            return None
+        with self.connect() as c:
+            for row in c.execute("SELECT id, kind, parent_id, original_name FROM papers WHERE original_name IS NOT NULL"):
+                if original_key(row["original_name"]) == key:
+                    return row["parent_id"] if row["kind"] == "supp" and row["parent_id"] else (
+                        row["id"] if row["kind"] == "main" else None)
+        return None
+
+    def import_video(self, src, original_name, parent_id=None, in_place=False):
+        """보충 동영상을 본문 논문에 묶어 '본문 이름 - Supplementary Video.mp4' 로 저장한다.
+
+        parent_id 가 없으면 파일 이름으로 본문을 찾고, 못 찾으면 LookupError('needs_parent').
+        반환: (상태, 항목 dict).
+        """
+        src = Path(src)
+        sha = sha256_file(src)
+        with self.connect() as c:
+            dup = self.find_duplicate(c, sha=sha)
+        if dup:
+            if not in_place:
+                src.unlink(missing_ok=True)
+            return "duplicate", self.to_dict(dup)
+        if not parent_id:
+            parent_id = self.find_parent_by_name(original_name)
+        if not parent_id:
+            raise LookupError("needs_parent")
+        with self.lock, self.connect() as c:
+            parent = c.execute("SELECT * FROM papers WHERE id=?", (parent_id,)).fetchone()
+            if parent is None:
+                raise LookupError("묶을 본문 논문이 없습니다")
+            parent = self._main_of(c, parent)
+            rec = self._inherit({}, parent)
+            ext = Path(original_name).suffix.lower() or src.suffix.lower()
+            target = self._unique_target(Path(parent["file_name"]).stem + VIDEO_SUFFIX + ext,
+                                         current=src if in_place else None)
+            shutil.move(str(src), str(target))
+            now = time.time()
+            cur = c.execute(
+                """INSERT INTO papers (file_name, original_name, sha256, title, authors, authors_text,
+                   journal, year, volume, issue, pages, publisher, doi, arxiv_id, url, abstract, type,
+                   tags, notes, source, needs_review, fulltext, added_at, updated_at, kind, parent_id,
+                   isbn, edition)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (target.name, original_name, sha, rec["title"], json.dumps(rec["authors"], ensure_ascii=False),
+                 parent["authors_text"], rec["journal"], rec["year"], rec["volume"], rec["issue"], rec["pages"],
+                 rec["publisher"], rec["doi"], rec["arxiv_id"], rec["url"], "", rec["type"], "", "",
+                 rec["source"], 0, "", now, now, "supp", parent["id"], rec["isbn"], rec["edition"]))
+            pid = cur.lastrowid
+        return "added", self.get(pid)
+
     # ------------------------------------------------------------ 보충자료 묶기
 
     def _main_of(self, c, row):
@@ -356,9 +430,11 @@ class Library:
             if p["missing"]:
                 continue
             current = self.path_of(p)
-            if current.name.startswith(base + SUPP_SUFFIX):
+            label = supp_label(current.name)
+            # 이미 'base - Supplementary[ Video][ 2].ext' 꼴이면 그대로 둔다
+            if current.name.startswith(base + label) and re.fullmatch(r"( \d+)?\.\w+", current.name[len(base + label):]):
                 continue
-            target = self._unique_target(base + SUPP_SUFFIX + ".pdf", current=current)
+            target = self._unique_target(base + label + current.suffix.lower(), current=current)
             if target.name != current.name:
                 os.replace(current, target)
                 c.execute("UPDATE papers SET file_name=? WHERE id=?", (target.name, row["id"]))
@@ -378,6 +454,8 @@ class Library:
                     raise ValueError("자기 자신에 묶을 수 없습니다")
                 self._attach_locked(c, pid, main)
             else:
+                if is_video(row["file_name"]):
+                    raise ValueError("동영상은 본문이 될 수 없습니다. 다른 논문에 묶거나 삭제해 주세요.")
                 c.execute("UPDATE papers SET kind='main', parent_id=NULL, needs_review=1, updated_at=? WHERE id=?",
                           (time.time(), pid))
                 self._rename_locked(c, pid)
@@ -548,7 +626,25 @@ class Library:
         added, moved, dups, removed, failed = [], 0, 0, 0, []
         with self.connect() as c:
             known = {r["file_name"]: r["id"] for r in c.execute("SELECT id, file_name FROM papers")}
+        mains = None
         for path in sorted(self.root.iterdir()):
+            if path.is_file() and is_video(path.name) and not path.name.startswith(".") and path.name not in known:
+                # '본문 이름 …' 으로 시작하는 동영상만 그 논문에 묶는다
+                if mains is None:
+                    with self.connect() as c:
+                        mains = [(Path(r["file_name"]).stem, r["id"]) for r in
+                                 c.execute("SELECT id, file_name FROM papers WHERE kind='main'")]
+                hit = max((m for m in mains if path.name.startswith(m[0])), key=lambda m: len(m[0]), default=None)
+                if hit:
+                    try:
+                        status, p = self.import_video(path, path.name, parent_id=hit[1], in_place=True)
+                        if status == "added":
+                            added.append(p)
+                        else:
+                            dups += 1
+                    except Exception as e:
+                        failed.append({"file": path.name, "error": str(e)})
+                continue
             if not path.is_file() or path.suffix.lower() != ".pdf" or path.name.startswith("."):
                 continue
             if path.name in known:
@@ -713,6 +809,7 @@ class Library:
                 for r in c.execute(q, chunk):
                     supps.setdefault(r["parent_id"], []).append(
                         {"id": r["id"], "file_name": r["file_name"], "original_name": r["original_name"],
+                         "video": is_video(r["file_name"]),
                          "missing": not (self.root / r["file_name"]).exists(), "matched": r["id"] in by_id})
         for p in out:
             p["supplements"] = supps.get(p["id"], [])

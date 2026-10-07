@@ -141,6 +141,10 @@ aside.side > section { min-width: 0; }
 .pager .gap { color: var(--ink-soft); padding: 0 4px; }
 .result .actions .cited { color: var(--byline); font-weight: 500; font-variant-numeric: tabular-nums; }
 .result .actions a.cited:hover { color: var(--accent); text-decoration: underline; }
+.supp-list { display: grid; gap: 4px; margin-top: 8px; }
+.supp-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; border: 1px solid var(--rule); border-radius: 8px; padding: 4px 4px 4px 10px; }
+.supp-row .mono { overflow-wrap: anywhere; font-size: 0.8rem; }
+.btn.small { padding: 2px 10px; font-size: 0.8rem; }
 mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1px; }
 
 .empty { padding: 60px 20px; text-align: center; color: var(--ink-soft); display: grid; gap: 10px; justify-items: center; }
@@ -234,7 +238,7 @@ dialog::backdrop { background: rgb(10 14 22 / 0.45); }
     <button type="submit" aria-label="검색">검색</button>
   </form>
   <div class="top-actions">
-    <button class="btn" id="pickBtn" type="button">PDF 추가</button>
+    <button class="btn" id="pickBtn" type="button" title="논문·책 PDF나 보충 동영상">파일 추가</button>
     <button class="btn" id="rescanBtn" type="button" title="폴더에 직접 넣은 PDF를 등록하고 사라진 파일을 정리합니다">폴더 다시 읽기</button>
     <button class="btn" id="settingsBtn" type="button" aria-label="설정">설정</button>
   </div>
@@ -282,7 +286,7 @@ dialog::backdrop { background: rgb(10 14 22 / 0.45); }
       <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3m0 0-4 4m4-4 4 4"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>
       <div>논문·책 PDF를 이 창<br>아무 곳에나 끌어다 놓으세요</div>
       <div class="hint">제목·저자·저널(책은 ISBN)을<br>찾아 이름을 바꿔 저장합니다</div>
-      <div class="hint">보충자료는 본문 논문에<br>자동으로 묶습니다</div>
+      <div class="hint">보충자료(PDF·동영상)는<br>본문 논문에 자동으로 묶습니다</div>
     </section>
     <section>
       <h3>내보내기</h3>
@@ -304,9 +308,9 @@ dialog::backdrop { background: rgb(10 14 22 / 0.45); }
   </main>
 </div>
 
-<input type="file" id="fileInput" accept="application/pdf,.pdf" multiple hidden>
+<input type="file" id="fileInput" accept="application/pdf,.pdf,video/*,.mp4,.m4v,.mov,.avi,.mkv,.webm,.wmv,.mpg,.mpeg" multiple hidden>
 
-<div class="overlay" id="overlay"><div>빈 곳에 놓으면 서재에 추가합니다<small>논문 위에 놓으면 그 논문의 보충자료로 묶습니다 · PDF만, 여러 개도 됩니다</small></div></div>
+<div class="overlay" id="overlay"><div>빈 곳에 놓으면 서재에 추가합니다<small>논문 위에 놓으면 그 논문의 보충자료로 묶습니다 · PDF·동영상, 여러 개도 됩니다</small></div></div>
 
 <section class="tray" id="tray" aria-live="polite">
   <header><span id="trayTitle">추가 중</span><button type="button" id="trayClose" aria-label="닫기">×</button></header>
@@ -405,6 +409,18 @@ dialog::backdrop { background: rgb(10 14 22 / 0.45); }
       <div class="hint" id="appVersion"></div>
     </div>
     <footer><button class="btn danger" type="button" id="quitBtn" title="논문 서재 프로그램을 끕니다">앱 종료</button><div class="right"><button class="btn" type="button" data-close>취소</button><button class="btn primary" type="submit">저장</button></div></footer>
+  </form>
+</dialog>
+
+<dialog id="pickDlg">
+  <form class="dlg" method="dialog" id="pickForm">
+    <header><h3>어느 논문의 보충 동영상인가요?</h3><button type="button" data-close aria-label="닫기">×</button></header>
+    <div class="body">
+      <div class="hint" id="pickFile"></div>
+      <div class="field"><input id="pickQ" type="search" placeholder="제목·저자·연도로 찾기" autocomplete="off" aria-label="논문 찾기"></div>
+      <div class="cands" id="pickList"></div>
+    </div>
+    <footer><span class="hint">목록의 논문 위에 동영상을 끌어다 놓아도 됩니다</span><div class="right"><button class="btn" type="button" data-close>건너뛰기</button></div></footer>
   </form>
 </dialog>
 
@@ -627,7 +643,7 @@ function resultHTML(p) {
     <div class="byline">${highlight(by.join(" - "))}</div>
     ${snippetHTML(p)}
     ${(p.supplements || []).length ? `<div class="supps"><span class="lbl">📎 보충자료</span>${p.supplements.map((sp, i) =>
-      `<a class="${sp.matched && lastTerms.length ? "hit" : ""} ${sp.missing ? "miss" : ""}" href="/pdf/${sp.id}/${encodeURIComponent(sp.file_name)}" target="_blank" rel="noopener" title="${esc(sp.file_name)}${sp.original_name ? "\n원래 이름: " + esc(sp.original_name) : ""}">S${i + 1} · ${esc(shortSupp(sp.file_name, p.file_name))}</a>`).join("")}</div>` : ""}
+      `<a class="${sp.matched && lastTerms.length ? "hit" : ""} ${sp.missing ? "miss" : ""}" href="/pdf/${sp.id}/${encodeURIComponent(sp.file_name)}" target="_blank" rel="noopener" title="${esc(sp.file_name)}${sp.original_name ? "\n원래 이름: " + esc(sp.original_name) : ""}">${sp.video ? "🎬 " : ""}S${i + 1} · ${esc(shortSupp(sp.file_name, p.file_name))}</a>`).join("")}</div>` : ""}
     <div class="actions">
       ${citedHTML(p)}
       <button type="button" data-act="cite">❝ 인용</button>
@@ -713,7 +729,8 @@ async function openEdit(id) {
   $("#fetchMsg").style.color = "var(--warn)";
   $("#cands").innerHTML = "";
   $("#editFile").innerHTML = `파일: <span class="mono">${esc(editing.file_name)}</span>` + (editing.original_name ? ` · 원래 이름: <span class="mono">${esc(editing.original_name)}</span>` : "")
-    + (editing.supplements?.length ? `<br>보충자료 ${editing.supplements.length}개: ` + editing.supplements.map((x) => `<span class="mono">${esc(x.file_name)}</span>`).join(", ") : "");
+    + (editing.supplements?.length ? `<div class="supp-list"><b>보충자료 ${editing.supplements.length}개</b>` + editing.supplements.map((x) =>
+      `<div class="supp-row"><span class="mono">${esc(x.file_name)}</span><button type="button" class="btn danger small" data-del-supp="${x.id}">빼기</button></div>`).join("") + "</div>" : "");
   const mains = (await api("/api/mains")).items.filter((m) => m.id !== editing.id);
   $("#parentSel").innerHTML = `<option value="">— 본문 논문 고르기 —</option>` + mains.map((m) =>
     `<option value="${m.id}" ${m.id === editing.parent_id ? "selected" : ""}>${esc(m.who)}${m.year ? " (" + m.year + ")" : ""} · ${esc(m.title)}</option>`).join("");
@@ -789,6 +806,18 @@ $("#fetchBtn").addEventListener("click", async () => {
   } catch (err) { msg.style.color = ""; msg.textContent = err.message; }
 });
 $("#fetchKey").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("#fetchBtn").click(); } });
+$("#editFile").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-del-supp]"); if (!b) return;
+  const id = Number(b.dataset.delSupp);
+  const sp = editing.supplements.find((x) => x.id === id);
+  if (!confirm(`보충자료 ‘${sp?.file_name}’을(를) 이 논문에서 뺄까요?\n파일은 논문 폴더의 .papershelf/trash 로 옮겨집니다.`)) return;
+  try {
+    await api(`/api/papers/${id}`, { method: "DELETE" });
+    editing.supplements = editing.supplements.filter((x) => x.id !== id);
+    b.closest(".supp-row").remove();
+    toast("보충자료를 뺐습니다"); refresh(true);
+  } catch (err) { toast(err.message); }
+});
 $("#deleteBtn").addEventListener("click", async () => {
   const extra = editing.supplements?.length ? `\n딸린 보충자료 ${editing.supplements.length}개도 함께 빠집니다.` : "";
   if (!confirm(`‘${editing.title}’${editing.kind === "supp" ? " 보충자료" : ""}을(를) 서재에서 뺄까요?${extra}\nPDF는 논문 폴더의 .papershelf/trash 로 옮겨집니다.`)) return;
@@ -911,18 +940,35 @@ $("#trayClose").addEventListener("click", () => { $("#tray").classList.remove("o
 
 const queue = [];
 let running = 0, pending = 0;
+const isVideoFile = (f) => /\.(mp4|m4v|mov|avi|mkv|webm|wmv|mpe?g|ogv|3gp|flv)$/i.test(f.name) || (f.type || "").startsWith("video/");
+const isPdfFile = (f) => /\.pdf$/i.test(f.name) || f.type === "application/pdf";
+
 function addFiles(files, parent = null) {
   const list = $("#trayList");
   $("#tray").classList.add("on");
+  // 한 번에 넣은 묶음: 동영상은 함께 넣은 PDF가 다 끝난 뒤에 처리해서, 그 논문에 묶을 수 있게 한다
+  const batch = { pdfLeft: 0, mains: new Map(), videos: [] };
   for (const file of files) {
     const li = document.createElement("li");
-    li.innerHTML = `<span class="ico"><span class="spin"></span></span><span class="from">${esc(file.name)}${parent ? ` → ‘${esc(parent.title)}’의 보충자료` : ""}</span><span class="to">대기 중</span>`;
+    li.innerHTML = `<span class="ico"><span class="spin"></span></span><span class="from">${isVideoFile(file) ? "🎬 " : ""}${esc(file.name)}${parent ? ` → ‘${esc(parent.title)}’의 보충자료` : ""}</span><span class="to">대기 중</span>`;
     list.prepend(li);
-    if (!/\.pdf$/i.test(file.name) && file.type !== "application/pdf") { setItem(li, "error", "PDF 파일이 아니어서 건너뛰었습니다"); continue; }
-    queue.push({ file, li, parent }); pending++;
+    if (isVideoFile(file)) { batch.videos.push({ file, li, parent, batch, video: true }); pending++; continue; }
+    if (!isPdfFile(file)) { setItem(li, "error", "PDF나 동영상 파일이 아니어서 건너뛰었습니다"); continue; }
+    batch.pdfLeft++;
+    queue.push({ file, li, parent, batch }); pending++;
   }
+  if (!batch.pdfLeft) releaseVideos(batch);
   updateTrayTitle();
   pump();
+}
+function releaseVideos(batch) {
+  // 같이 넣은 본문 논문이 하나뿐이면 그 논문에 묶는다
+  const only = batch.mains.size === 1 ? [...batch.mains.values()][0] : null;
+  for (const v of batch.videos) {
+    if (!v.parent && only) v.parent = only;
+    queue.push(v);
+  }
+  batch.videos = [];
 }
 function setItem(li, kind, html) {
   li.className = kind;
@@ -932,25 +978,95 @@ function setItem(li, kind, html) {
 function updateTrayTitle() { $("#trayTitle").textContent = pending ? `추가 중 · 남은 파일 ${pending}개` : "모두 처리했습니다"; }
 function pump() {
   while (running < 2 && queue.length) {
-    const { file, li, parent } = queue.shift();
+    const job = queue.shift();
+    const { file, li, parent, batch } = job;
     running++;
-    li.querySelector(".to").textContent = "제목·저자 찾는 중…";
-    upload(file, parent?.id).then((r) => {
-      const supp = r.paper.kind === "supp" ? (r.paper.parent_id ? ' <span class="tag supp">보충자료로 묶음</span>' : ' <span class="tag supp">보충자료 · 본문 없음</span>') : "";
-      if (r.status === "added") setItem(li, "added", `<span class="mono">${esc(r.paper.file_name)}</span>` + supp + (r.paper.needs_review ? ' <span class="tag warn">확인 필요</span>' : ""));
-      else setItem(li, "duplicate", `이미 서재에 있습니다 — ${esc(r.paper.title)}`);
-    }).catch((err) => setItem(li, "error", esc(err.message)))
-      .finally(() => { running--; pending--; updateTrayTitle(); refresh(true); pump(); });
+    li.querySelector(".to").textContent = job.video ? "올리는 중…" : "제목·저자 찾는 중…";
+    prepare(job).then((go) => go ? upload(file, job.parent?.id, job.video ? (pct) => { li.querySelector(".to").textContent = `올리는 중 ${pct}%`; } : null) : null)
+      .then((r) => {
+        if (!r) { setItem(li, "error", "어느 논문인지 고르지 않아 건너뛰었습니다"); return; }
+        const pp = r.paper;
+        if (!job.video && pp.kind === "main") batch.mains.set(pp.id, { id: pp.id, title: pp.title });
+        const supp = pp.kind === "supp" ? (pp.parent_id ? ` <span class="tag supp">${job.video ? "보충 동영상으로 묶음" : "보충자료로 묶음"}</span>` : ' <span class="tag supp">보충자료 · 본문 없음</span>') : "";
+        if (r.status === "added") setItem(li, "added", `<span class="mono">${esc(pp.file_name)}</span>` + supp + (pp.needs_review ? ' <span class="tag warn">확인 필요</span>' : ""));
+        else setItem(li, "duplicate", `이미 서재에 있습니다 — ${esc(pp.title)}`);
+      })
+      .catch(async (err) => {
+        if (err.needsParent) {
+          const chosen = await pickParent(file.name);
+          if (chosen) { job.parent = chosen; li.querySelector(".from").innerHTML += ` → ‘${esc(chosen.title)}’의 보충자료`; queue.unshift(job); pending++; return; }
+          setItem(li, "error", "어느 논문인지 고르지 않아 건너뛰었습니다");
+          return;
+        }
+        setItem(li, "error", esc(err.message));
+      })
+      .finally(() => {
+        running--; pending--;
+        if (!job.video && batch && --batch.pdfLeft === 0) releaseVideos(batch);
+        updateTrayTitle(); refresh(true); pump();
+      });
   }
 }
-async function upload(file, parentId) {
-  const headers = { "Content-Type": "application/pdf", "X-Filename": encodeURIComponent(file.name) };
-  if (parentId) headers["X-Parent-Id"] = String(parentId);
-  const res = await fetch("/api/papers", { method: "POST", headers, body: file });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || res.statusText);
-  return data;
+async function prepare(job) {
+  // 묶을 논문이 정해지지 않은 동영상: 올리기 전에 파일 이름으로 찾아보고, 없으면 사용자에게 묻는다
+  if (!job.video || job.parent) return true;
+  const m = await api("/api/match-parent?name=" + encodeURIComponent(job.file.name)).catch(() => ({ id: null }));
+  if (m.id) { job.parent = m; return true; }
+  const chosen = await pickParent(job.file.name);
+  if (!chosen) return false;
+  job.parent = chosen;
+  job.li.querySelector(".from").innerHTML += ` → ‘${esc(chosen.title)}’의 보충자료`;
+  return true;
 }
+function upload(file, parentId, onProgress) {
+  // XHR: 큰 동영상의 올리기 진행률을 보여 주려고
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/papers");
+    xhr.setRequestHeader("Content-Type", file.type || "application/octet-stream");
+    xhr.setRequestHeader("X-Filename", encodeURIComponent(file.name));
+    if (parentId) xhr.setRequestHeader("X-Parent-Id", String(parentId));
+    if (onProgress) xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100)); };
+    xhr.onload = () => {
+      let data = {};
+      try { data = JSON.parse(xhr.responseText); } catch {}
+      if (xhr.status >= 200 && xhr.status < 300) return resolve(data);
+      const err = new Error(data.error || xhr.statusText || "올리지 못했습니다");
+      err.needsParent = !!data.needs_parent;
+      reject(err);
+    };
+    xhr.onerror = () => reject(new Error("앱과 연결이 끊겼습니다"));
+    xhr.send(file);
+  });
+}
+
+/* 보충 동영상을 묶을 논문 고르기 */
+let pickResolve = null, pickItems = [];
+async function pickParent(fileName) {
+  pickItems = (await api("/api/mains").catch(() => ({ items: [] }))).items;
+  $("#pickFile").innerHTML = `<span class="mono">${esc(fileName)}</span>`;
+  $("#pickQ").value = "";
+  renderPick();
+  $("#pickDlg").showModal();
+  $("#pickQ").focus();
+  return new Promise((res) => { pickResolve = res; });
+}
+function renderPick() {
+  const q = $("#pickQ").value.trim().toLowerCase();
+  const items = pickItems.filter((m) => !q || `${m.title} ${m.who} ${m.year || ""}`.toLowerCase().includes(q)).slice(0, 30);
+  $("#pickList").innerHTML = items.length
+    ? items.map((m) => `<button type="button" class="cand" data-pick="${m.id}"><b>${esc(m.title)}</b><span>${esc(m.who)}${m.year ? " · " + m.year : ""}</span></button>`).join("")
+    : '<div class="hint">맞는 논문이 없습니다</div>';
+}
+$("#pickQ").addEventListener("input", renderPick);
+$("#pickList").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-pick]"); if (!b) return;
+  const m = pickItems.find((x) => x.id === Number(b.dataset.pick));
+  const r = pickResolve; pickResolve = null;
+  $("#pickDlg").close();
+  r?.({ id: m.id, title: m.title });
+});
+$("#pickDlg").addEventListener("close", () => { const r = pickResolve; pickResolve = null; r?.(null); });
 
 refresh();
 </script>

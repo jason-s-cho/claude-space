@@ -8,6 +8,7 @@
 
 import argparse
 import json
+import mimetypes
 import os
 import platform
 import re
@@ -26,9 +27,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import metadata as md  # noqa: E402
-from library import Library  # noqa: E402
+from library import Library, is_video  # noqa: E402
 
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.5.0"
 HERE = Path(__file__).resolve().parent
 # 설치판(PyInstaller)으로 묶였을 때는 화면 파일이 압축 해제 폴더에 있다
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", HERE))
@@ -37,6 +38,7 @@ LOG_PATH = Path.home() / ".papershelf.log"
 CONFIG_PATH = Path.home() / ".papershelf.json"
 DEFAULT_LIBRARY = Path.home() / "Papers"
 MAX_UPLOAD = 300 * 1024 * 1024
+MAX_VIDEO_UPLOAD = 8 * 1024 * 1024 * 1024
 
 state = {"lib": None, "online": True, "server": None, "on_quit": None, "standalone": False}
 cite_job = {"running": False, "done": 0, "total": 0, "found": 0, "finished_at": None}
@@ -200,21 +202,46 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def pdf(self, qs, pid):
+        """논문 PDF·보충 동영상 파일. 동영상 앞뒤 넘기기를 위해 Range 요청도 받는다."""
         lib = state["lib"]
         p = lib.get(int(pid))
         if not p or p["missing"]:
             return self.send_error_json(404, "파일이 없습니다")
         path = lib.path_of(p)
         size = path.stat().st_size
-        self.send_response(200)
-        self.send_header("Content-Type", "application/pdf")
-        self.send_header("Content-Length", str(size))
+        ctype = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        start, end = 0, size - 1
+        m = re.match(r"bytes=(\d*)-(\d*)$", self.headers.get("Range") or "")
+        if m and size:
+            if m.group(1):
+                start = int(m.group(1))
+                end = min(int(m.group(2)), size - 1) if m.group(2) else size - 1
+            elif m.group(2):  # 끝에서 n 바이트
+                start = max(0, size - int(m.group(2)))
+            if start > end or start >= size:
+                self.send_response(416)
+                self.send_header("Content-Range", f"bytes */{size}")
+                self.end_headers()
+                return
+            self.send_response(206)
+            self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+        else:
+            self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(end - start + 1))
         quoted = urllib.parse.quote(path.name)
         self.send_header("Content-Disposition", f"inline; filename*=UTF-8''{quoted}")
         self.end_headers()
-        with open(path, "rb") as f:
-            while chunk := f.read(1 << 16):
-                self.wfile.write(chunk)
+        remaining = end - start + 1
+        try:
+            with open(path, "rb") as f:
+                f.seek(start)
+                while remaining > 0 and (chunk := f.read(min(1 << 16, remaining))):
+                    self.wfile.write(chunk)
+                    remaining -= len(chunk)
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # 동영상 재생 중 앞뒤로 넘기면 브라우저가 연결을 끊는다
 
     # ------------------------------------------------------------ API
 
@@ -262,6 +289,12 @@ class Handler(BaseHTTPRequestHandler):
                 p["parent"] = dict(r) if r else None
         return p
 
+    def match_parent(self, qs):
+        """동영상 파일 이름으로 본문 논문을 미리 찾아 본다(큰 파일을 올리기 전에)."""
+        pid = state["lib"].find_parent_by_name(qs.get("name", ""))
+        p = state["lib"].get(pid) if pid else None
+        self.send_json({"id": p["id"], "title": p["title"]} if p else {"id": None})
+
     def mains(self, qs):
         with state["lib"].connect() as c:
             rows = c.execute("SELECT id, title, year, authors FROM papers WHERE kind='main' ORDER BY title").fetchall()
@@ -282,10 +315,11 @@ class Handler(BaseHTTPRequestHandler):
         lib = state["lib"]
         name = urllib.parse.unquote(self.headers.get("X-Filename") or "paper.pdf")
         name = os.path.basename(name.replace("\\", "/")) or "paper.pdf"
+        video = is_video(name)
         length = int(self.headers.get("Content-Length") or 0)
-        if length <= 0 or length > MAX_UPLOAD:
+        if length <= 0 or length > (MAX_VIDEO_UPLOAD if video else MAX_UPLOAD):
             return self.send_error_json(400, "파일 크기가 올바르지 않습니다")
-        tmp = lib.tmp_dir / f"{uuid.uuid4().hex}.pdf"
+        tmp = lib.tmp_dir / f"{uuid.uuid4().hex}{Path(name).suffix.lower() if video else '.pdf'}"
         remaining = length
         with open(tmp, "wb") as f:
             while remaining > 0:
@@ -294,11 +328,25 @@ class Handler(BaseHTTPRequestHandler):
                     break
                 f.write(chunk)
                 remaining -= len(chunk)
+        parent_id = self.headers.get("X-Parent-Id")
+        if video:
+            try:
+                status, p = lib.import_video(tmp, name, parent_id=int(parent_id) if parent_id and parent_id.isdigit() else None)
+            except LookupError as e:
+                tmp.unlink(missing_ok=True)
+                if str(e) == "needs_parent":
+                    return self.send_json({"error": f"{name}: 어느 논문의 보충 동영상인지 골라 주세요",
+                                           "needs_parent": True}, 409)
+                return self.send_error_json(400, f"{name}: {e}")
+            except ValueError as e:
+                tmp.unlink(missing_ok=True)
+                return self.send_error_json(400, f"{name}: {e}")
+            log(f"[{status}] {name} → {p['file_name']}")
+            return self.send_json({"status": status, "paper": p})
         with open(tmp, "rb") as f:
             if not f.read(1024).lstrip().startswith(b"%PDF"):
                 tmp.unlink(missing_ok=True)
-                return self.send_error_json(400, f"{name}: PDF 파일이 아닙니다")
-        parent_id = self.headers.get("X-Parent-Id")
+                return self.send_error_json(400, f"{name}: PDF나 동영상 파일이 아닙니다")
         try:
             status, p = lib.import_pdf(tmp, name, online=state["online"], log=log,
                                        parent_id=int(parent_id) if parent_id and parent_id.isdigit() else None)
@@ -425,7 +473,7 @@ class Handler(BaseHTTPRequestHandler):
 
 ROUTES = [
     ("GET", r"/", Handler.index),
-    ("GET", r"/pdf/(\d+)(?:/.*)?", Handler.pdf),
+    ("GET", r"/(?:pdf|file)/(\d+)(?:/.*)?", Handler.pdf),
     ("GET", r"/api/info", Handler.info),
     ("POST", r"/api/settings", Handler.settings),
     ("GET", r"/api/papers", Handler.list_papers),
@@ -437,6 +485,7 @@ ROUTES = [
     ("POST", r"/api/papers/(\d+)/reveal", Handler.reveal_paper),
     ("PUT", r"/api/papers/(\d+)/parent", Handler.set_parent),
     ("GET", r"/api/mains", Handler.mains),
+    ("GET", r"/api/match-parent", Handler.match_parent),
     ("GET", r"/api/lookup", Handler.lookup),
     ("POST", r"/api/open-folder", Handler.open_folder),
     ("POST", r"/api/rescan", Handler.rescan),
