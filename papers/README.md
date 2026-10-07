@@ -57,9 +57,11 @@ GitHub 저장소의 **Releases** 페이지에서 내 컴퓨터에 맞는 파일�
   DMG를 열어 `논문 서재`를 Applications로 끌어 놓습니다. 처음 열 때 막히면
   **시스템 설정 → 개인정보 보호 및 보안 → 그래도 열기**.
 
-설치판은 실행하면 브라우저에 화면을 열고, 알림 영역(Windows 작업 표시줄 오른쪽)·메뉴 막대(macOS 오른쪽 위)에
-아이콘을 띄웁니다. 아이콘 메뉴로 **다시 열기 · 논문 폴더 열기 · 종료**를 합니다(화면의 설정 → 앱 종료도 됨).
-이미 켜져 있을 때 다시 실행하면 화면만 다시 엽니다. Windows 설치 때 "시작할 때 자동 실행"을 고를 수 있습니다.
+설치판은 브라우저 없이 **‘논문 서재’ 자체 창**으로 뜹니다(Windows: Edge WebView2, macOS: WebKit 엔진 사용,
+주소창·탭 없음). 창을 닫으면 프로그램이 끝납니다. PDF는 컴퓨터의 기본 PDF 프로그램으로, DOI 같은 바깥 링크는
+기본 브라우저로 열립니다. 이미 켜져 있을 때 다시 실행하면 기존 창을 앞으로 불러옵니다.
+Windows 설치 때 "시작할 때 자동 실행"을 고르면 최소화한 채로 시작합니다.
+WebView2가 없는 오래된 Windows에서는 브라우저 + 알림 영역 아이콘 방식으로 동작하며, `--browser` 옵션으로 이 방식을 고를 수도 있습니다.
 
 설치 파일은 `papers/` 아래 코드가 바뀌어 GitHub에 올라갈 때마다 GitHub Actions
 (`.github/workflows/papershelf.yml`)가 새로 만들어 Releases에 올립니다.
@@ -105,5 +107,6 @@ python app.py --library "D:\논문"     # 폴더 지정 (다음부터는 기억�
 - `library.py` — 파일 이름 정하기·이동, SQLite 색인, 검색
 - `metadata.py` — PDF 읽기, DOI/arXiv/제목 추출, Crossref·arXiv 조회, 인용 형식
 - `static/index.html` — 화면
-- `tray.py` — 설치판의 알림 영역·메뉴 막대 아이콘
+- `desktop.py` — 자체 창(pywebview)
+- `tray.py` — 브라우저 모드의 알림 영역·메뉴 막대 아이콘
 - `packaging/` — 설치 파일 빌드 설정(PyInstaller, Inno Setup)

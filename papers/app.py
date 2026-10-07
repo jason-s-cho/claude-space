@@ -28,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import metadata as md  # noqa: E402
 from library import Library  # noqa: E402
 
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.4.0"
 HERE = Path(__file__).resolve().parent
 # 설치판(PyInstaller)으로 묶였을 때는 화면 파일이 압축 해제 폴더에 있다
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", HERE))
@@ -38,7 +38,7 @@ CONFIG_PATH = Path.home() / ".papershelf.json"
 DEFAULT_LIBRARY = Path.home() / "Papers"
 MAX_UPLOAD = 300 * 1024 * 1024
 
-state = {"lib": None, "online": True, "server": None, "on_quit": None}
+state = {"lib": None, "online": True, "server": None, "on_quit": None, "standalone": False}
 cite_job = {"running": False, "done": 0, "total": 0, "found": 0, "finished_at": None}
 cite_lock = threading.Lock()
 CITATION_MAX_AGE_DAYS = 30
@@ -101,6 +101,17 @@ def save_config(cfg):
         CONFIG_PATH.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
     except Exception as e:
         log("설정 저장 실패:", e)
+
+
+def open_file(path):
+    """기본 프로그램(PDF 보기)으로 연다."""
+    system = platform.system()
+    if system == "Windows":
+        os.startfile(str(path))  # noqa: S606
+    elif system == "Darwin":
+        subprocess.Popen(["open", str(path)])
+    else:
+        subprocess.Popen(["xdg-open", str(path)])
 
 
 def reveal(path):
@@ -210,6 +221,7 @@ class Handler(BaseHTTPRequestHandler):
     def info(self, qs):
         lib = state["lib"]
         self.send_json({"app": "papershelf", "version": APP_VERSION, "library": str(lib.root),
+                        "standalone": state["standalone"],
                         "online": state["online"], **lib.stats()})
 
     def settings(self, qs):
@@ -347,6 +359,35 @@ class Handler(BaseHTTPRequestHandler):
         reveal(lib.path_of(p))
         self.send_json({"ok": True})
 
+    def open_paper(self, qs, pid):
+        lib = state["lib"]
+        p = lib.get(int(pid))
+        if not p or p["missing"]:
+            return self.send_error_json(404, "파일이 없습니다")
+        open_file(lib.path_of(p))
+        self.send_json({"ok": True})
+
+    def open_url(self, qs):
+        url = str(self.read_json().get("url", ""))
+        if not re.match(r"^https?://", url):
+            return self.send_error_json(400, "열 수 없는 주소입니다")
+        webbrowser.open(url)
+        self.send_json({"ok": True})
+
+    def show_window(self, qs):
+        import desktop
+        self.send_json({"ok": state["standalone"] and desktop.show()})
+
+    def export_bib_dialog(self, qs):
+        """독립 창에서는 내려받기가 없으니 저장 위치를 물어 직접 쓴다."""
+        import desktop
+        path = desktop.save_dialog("library.bib", "BibTeX", "*.bib")
+        if not path:
+            return self.send_json({"saved": None})
+        body = "\n\n".join(md.bibtex(p) for p in state["lib"].all_papers())
+        Path(path).write_text(body, encoding="utf-8")
+        self.send_json({"saved": str(path)})
+
     def open_folder(self, qs):
         root = state["lib"].root
         system = platform.system()
@@ -401,6 +442,10 @@ ROUTES = [
     ("POST", r"/api/rescan", Handler.rescan),
     ("GET", r"/api/export\.bib", Handler.export_bib),
     ("POST", r"/api/quit", Handler.quit),
+    ("POST", r"/api/papers/(\d+)/open", Handler.open_paper),
+    ("POST", r"/api/open-url", Handler.open_url),
+    ("POST", r"/api/show", Handler.show_window),
+    ("POST", r"/api/export-bib-dialog", Handler.export_bib_dialog),
     ("POST", r"/api/citations/refresh", Handler.citations_refresh),
     ("GET", r"/api/citations/status", Handler.citations_status),
 ]
@@ -435,17 +480,35 @@ def main():
     ap.add_argument("--library", help="논문을 보관할 폴더 (기본: 지난번 폴더 또는 ~/Papers)")
     ap.add_argument("--port", type=int, default=8765)
     ap.add_argument("--offline", action="store_true", help="Crossref·arXiv 조회를 하지 않음")
-    ap.add_argument("--no-browser", action="store_true", help="브라우저를 자동으로 열지 않음")
-    ap.add_argument("--no-tray", action="store_true", help="알림 영역(메뉴 막대) 아이콘을 띄우지 않음")
+    ap.add_argument("--browser", action="store_true", help="자체 창 대신 웹 브라우저로 연다")
+    ap.add_argument("--no-browser", action="store_true", help="(브라우저 모드) 브라우저를 자동으로 열지 않음")
+    ap.add_argument("--no-tray", action="store_true", help="(브라우저 모드) 알림 영역 아이콘을 띄우지 않음")
+    ap.add_argument("--minimized", action="store_true", help="(창 모드) 최소화한 채로 시작")
+    ap.add_argument("--selftest", action="store_true", help="창 엔진을 불러올 수 있는지 점검하고 끝냄")
     args, _ = ap.parse_known_args()  # macOS 가 붙이는 -psn_… 인자 무시
+
+    if args.selftest:
+        import desktop
+        desktop.selftest()
+        log("selftest ok")
+        return
+
+    import desktop
+    use_window = not args.browser and desktop.available()
 
     url = f"http://127.0.0.1:{args.port}/"
     try:
         server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     except OSError:
         if already_running(args.port):
-            # 이미 켜져 있으면 화면만 다시 연다
-            if not args.no_browser:
+            # 이미 켜져 있으면 그 창을 앞으로 부르고(안 되면 브라우저로) 끝낸다
+            try:
+                req = urllib.request.Request(url + "api/show", data=b"{}", method="POST")
+                with urllib.request.urlopen(req, timeout=3) as r:
+                    shown = json.loads(r.read()).get("ok")
+            except Exception:
+                shown = False
+            if not shown and not args.no_browser and not args.minimized:
                 webbrowser.open(url)
             return
         raise
@@ -460,10 +523,29 @@ def main():
 
     log(f"논문 서재 {APP_VERSION}: {url}")
     log(f"논문 폴더: {state['lib'].root}")
-    if not args.no_browser:
-        threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     # 한 달 넘게 지난 인용 수는 켤 때마다 뒤에서 조용히 갱신
     threading.Timer(3, start_citation_job).start()
+
+    if use_window:
+        # 자체 창: 서버는 뒤에서, 창은 메인 스레드에서. 창을 닫으면 프로그램도 끝난다.
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        state["standalone"] = True
+        state["on_quit"] = desktop.close
+        try:
+            desktop.run(url, "논문 서재", minimized=args.minimized)
+            server.shutdown()
+            return
+        except Exception as e:
+            # WebView2 가 없는 오래된 Windows 등: 브라우저 모드로 이어서 동작
+            log("자체 창을 띄우지 못해 브라우저로 엽니다:", e)
+            state["standalone"] = False
+            state["on_quit"] = None
+            server.shutdown()
+            server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
+            state["server"] = server
+
+    if not args.no_browser and not args.minimized:
+        threading.Timer(0.6, lambda: webbrowser.open(url)).start()
 
     use_tray = FROZEN and not args.no_tray
     if use_tray:

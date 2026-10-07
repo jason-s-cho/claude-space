@@ -287,7 +287,7 @@ dialog::backdrop { background: rgb(10 14 22 / 0.45); }
     <section>
       <h3>내보내기</h3>
       <div class="opt-list">
-        <a class="opt" href="/api/export.bib" download>BibTeX 전체 (.bib)</a>
+        <a class="opt" href="/api/export.bib" download id="exportBib">BibTeX 전체 (.bib)</a>
         <button class="opt" type="button" id="openFolderBtn">논문 폴더 열기</button>
         <button class="opt" type="button" id="citeRefreshBtn" title="OpenAlex·Semantic Scholar·Crossref에서 인용 수를 다시 받아옵니다">인용 수 새로 고침</button>
         <div class="sub" id="citeStatus" aria-live="polite"></div>
@@ -422,6 +422,7 @@ view.perPage = clampPer(store("papershelf.perPage"));
 view.abs = ["off", "short", "full"].includes(store("papershelf.abs")) ? store("papershelf.abs") : "short";
 const expanded = new Set();  // '짧게'에서 펼친 초록
 let lastRes = null, lastInfo = null;
+let standalone = false;  // 브라우저가 아닌 자체 창(pywebview)으로 떠 있는지
 const BOOK_TYPES = ["book", "monograph", "edited-book", "reference-book", "book-set", "book-series"];
 const isBook = (p) => BOOK_TYPES.includes(p.type);
 let lastTerms = [];
@@ -510,6 +511,7 @@ async function refresh(keepPage = false) {
     const [res, info] = await Promise.all([api("/api/papers?" + params), api("/api/info")]);
     lastTerms = res.terms;
     lastRes = res; lastInfo = info;
+    standalone = !!info.standalone;
     renderResults(res, info);
   } catch (err) {
     $("#count").textContent = "불러오지 못했습니다: " + err.message;
@@ -833,10 +835,31 @@ $("#citeRefreshBtn").addEventListener("click", async () => {
 });
 setTimeout(watchCitations, 3500);  // 켤 때 자동 갱신이 돌면 진행 상황 표시
 
+/* 자체 창에서는 새 탭이 없으니: PDF 는 기본 PDF 프로그램으로, 바깥 주소는 기본 브라우저로 연다 */
+document.addEventListener("click", async (e) => {
+  if (!standalone || e.defaultPrevented) return;
+  const a = e.target.closest("a[href]"); if (!a) return;
+  const href = a.getAttribute("href");
+  const pdf = href.match(/^\/pdf\/(\d+)/);
+  if (pdf) {
+    e.preventDefault();
+    api(`/api/papers/${pdf[1]}/open`, { method: "POST" }).catch((err) => toast(err.message));
+  } else if (a.id === "exportBib") {
+    e.preventDefault();
+    try {
+      const r = await api("/api/export-bib-dialog", { method: "POST" });
+      if (r.saved) toast("저장했습니다 → " + r.saved);
+    } catch (err) { toast(err.message); }
+  } else if (/^https?:\/\//.test(href)) {
+    e.preventDefault();
+    api("/api/open-url", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: href }) }).catch((err) => toast(err.message));
+  }
+});
+
 $("#quitBtn").addEventListener("click", async () => {
   if (!confirm("논문 서재를 끌까요? 다시 쓰려면 프로그램을 다시 실행하세요.")) return;
   await api("/api/quit", { method: "POST" }).catch(() => {});
-  document.body.innerHTML = '<div class="empty" style="min-height:100vh;align-content:center"><h2>논문 서재를 껐습니다</h2><div>이 탭은 닫아도 됩니다.</div></div>';
+  if (!standalone) document.body.innerHTML = '<div class="empty" style="min-height:100vh;align-content:center"><h2>논문 서재를 껐습니다</h2><div>이 탭은 닫아도 됩니다.</div></div>';
 });
 $("#openFolderBtn").addEventListener("click", () => api("/api/open-folder", { method: "POST" }).catch((err) => toast(err.message)));
 $("#rescanBtn").addEventListener("click", async () => {

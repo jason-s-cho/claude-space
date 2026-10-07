@@ -14,8 +14,11 @@ a = Analysis(
     [str(ROOT / "app.py")],
     pathex=[str(ROOT)],
     datas=[(str(ROOT / "static"), "static")],
-    hiddenimports=["tray", "pystray._win32" if sys.platform == "win32" else
-                   "pystray._darwin" if sys.platform == "darwin" else "pystray._xorg"],
+    hiddenimports=["tray", "desktop",
+                   "pystray._win32" if sys.platform == "win32" else
+                   "pystray._darwin" if sys.platform == "darwin" else "pystray._xorg",
+                   "webview.platforms.winforms" if sys.platform == "win32" else
+                   "webview.platforms.cocoa" if sys.platform == "darwin" else "webview.platforms.gtk"],
     excludes=["tkinter", "unittest", "pydoc"],
 )
 pyz = PYZ(a.pure)
@@ -38,7 +41,7 @@ if sys.platform == "darwin":
         info_plist={
             "CFBundleDisplayName": "논문 서재",
             "CFBundleShortVersionString": VERSION,
-            "LSUIElement": True,  # Dock 대신 메뉴 막대 아이콘으로 동작
+            "LSUIElement": False,  # 자체 창이 있는 일반 앱 (Dock 에 보임)
             "NSHighResolutionCapable": True,
         },
     )

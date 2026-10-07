@@ -32,7 +32,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
-Name: "autostart"; Description: "Windows 시작할 때 자동 실행 (알림 영역에 대기)"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+Name: "autostart"; Description: "Windows 시작할 때 자동 실행 (최소화한 채로)"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
 Source: "..\dist\PaperShelf\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
@@ -41,7 +41,7 @@ Source: "..\dist\PaperShelf\*"; DestDir: "{app}"; Flags: ignoreversion recursesu
 Name: "{group}\논문 서재"; Filename: "{app}\PaperShelf.exe"
 Name: "{group}\논문 서재 제거"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\논문 서재"; Filename: "{app}\PaperShelf.exe"; Tasks: desktopicon
-Name: "{userstartup}\논문 서재"; Filename: "{app}\PaperShelf.exe"; Parameters: "--no-browser"; Tasks: autostart
+Name: "{userstartup}\논문 서재"; Filename: "{app}\PaperShelf.exe"; Parameters: "--minimized"; Tasks: autostart
 
 [Run]
 Filename: "{app}\PaperShelf.exe"; Description: "{cm:LaunchProgram,논문 서재}"; Flags: nowait postinstall skipifsilent
