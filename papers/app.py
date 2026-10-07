@@ -14,6 +14,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 import traceback
 import urllib.parse
 import urllib.request
@@ -27,7 +28,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import metadata as md  # noqa: E402
 from library import Library  # noqa: E402
 
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 HERE = Path(__file__).resolve().parent
 # 설치판(PyInstaller)으로 묶였을 때는 화면 파일이 압축 해제 폴더에 있다
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", HERE))
@@ -38,6 +39,37 @@ DEFAULT_LIBRARY = Path.home() / "Papers"
 MAX_UPLOAD = 300 * 1024 * 1024
 
 state = {"lib": None, "online": True, "server": None, "on_quit": None}
+cite_job = {"running": False, "done": 0, "total": 0, "found": 0, "finished_at": None}
+cite_lock = threading.Lock()
+CITATION_MAX_AGE_DAYS = 30
+
+
+def start_citation_job(only_stale=True):
+    """인용 수를 뒤에서 차례로 받아 온다. 이미 돌고 있으면 False."""
+    if not state["online"]:
+        return False
+    with cite_lock:
+        if cite_job["running"]:
+            return False
+        lib = state["lib"]
+        ids = lib.stale_citation_ids(CITATION_MAX_AGE_DAYS) if only_stale else None
+        if ids is not None and not ids:
+            return False
+        cite_job.update(running=True, done=0, total=len(ids) if ids is not None else 0, found=0)
+
+    def progress(done, total):
+        cite_job.update(done=done, total=total)
+
+    def run():
+        try:
+            cite_job["found"] = lib.refresh_citations(ids, log=log, progress=progress,
+                                                      stop=lambda: state["lib"] is not lib)
+        except Exception as e:
+            log("인용 수 새로 고침 실패:", e)
+        finally:
+            cite_job.update(running=False, finished_at=time.time())
+    threading.Thread(target=run, daemon=True).start()
+    return True
 
 
 def log(*a):
@@ -330,6 +362,16 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json({"ok": True})
         threading.Thread(target=shutdown, daemon=True).start()
 
+    def citations_refresh(self, qs):
+        data = self.read_json()
+        if not state["online"]:
+            return self.send_error_json(400, "오프라인 모드에서는 인용 수를 받아올 수 없습니다")
+        started = start_citation_job(only_stale=not data.get("all"))
+        self.send_json({"started": started, **cite_job})
+
+    def citations_status(self, qs):
+        self.send_json(cite_job)
+
     def export_bib(self, qs):
         body = "\n\n".join(md.bibtex(p) for p in state["lib"].all_papers()).encode("utf-8")
         self.send_response(200)
@@ -359,6 +401,8 @@ ROUTES = [
     ("POST", r"/api/rescan", Handler.rescan),
     ("GET", r"/api/export\.bib", Handler.export_bib),
     ("POST", r"/api/quit", Handler.quit),
+    ("POST", r"/api/citations/refresh", Handler.citations_refresh),
+    ("GET", r"/api/citations/status", Handler.citations_status),
 ]
 
 
@@ -418,6 +462,8 @@ def main():
     log(f"논문 폴더: {state['lib'].root}")
     if not args.no_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
+    # 한 달 넘게 지난 인용 수는 켤 때마다 뒤에서 조용히 갱신
+    threading.Timer(3, start_citation_job).start()
 
     use_tray = FROZEN and not args.no_tray
     if use_tray:

@@ -38,7 +38,11 @@ CREATE TABLE IF NOT EXISTS papers (
     parent_id INTEGER,
     isbn TEXT DEFAULT '',
     edition TEXT DEFAULT '',
-    page_count INTEGER
+    page_count INTEGER,
+    cited_by INTEGER,
+    cited_by_source TEXT DEFAULT '',
+    cited_by_url TEXT DEFAULT '',
+    cited_by_at REAL
 );
 CREATE INDEX IF NOT EXISTS papers_doi ON papers(doi);
 CREATE INDEX IF NOT EXISTS papers_year ON papers(year);
@@ -49,6 +53,10 @@ MIGRATIONS = [
     ("isbn", "ALTER TABLE papers ADD COLUMN isbn TEXT DEFAULT ''"),
     ("edition", "ALTER TABLE papers ADD COLUMN edition TEXT DEFAULT ''"),
     ("page_count", "ALTER TABLE papers ADD COLUMN page_count INTEGER"),
+    ("cited_by", "ALTER TABLE papers ADD COLUMN cited_by INTEGER"),
+    ("cited_by_source", "ALTER TABLE papers ADD COLUMN cited_by_source TEXT DEFAULT ''"),
+    ("cited_by_url", "ALTER TABLE papers ADD COLUMN cited_by_url TEXT DEFAULT ''"),
+    ("cited_by_at", "ALTER TABLE papers ADD COLUMN cited_by_at REAL"),
 ]
 SUPP_SUFFIX = " - Supplementary"
 
@@ -221,6 +229,9 @@ class Library:
         rec = md.extract(src, original_name, online=online and not parent, log=log,
                          supplement=True if parent else None)
         is_supp = rec["is_supplement"]
+        cited = None
+        if online and not is_supp and not parent:
+            cited = md.citation_count(rec, log)
 
         with self.lock, self.connect() as c:
             if parent is not None:
@@ -250,8 +261,8 @@ class Library:
                 """INSERT INTO papers (file_name, original_name, sha256, title, authors, authors_text,
                    journal, year, volume, issue, pages, publisher, doi, arxiv_id, url, abstract, type,
                    tags, notes, source, needs_review, fulltext, added_at, updated_at, kind, parent_id,
-                   isbn, edition, page_count)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   isbn, edition, page_count, cited_by, cited_by_source, cited_by_url, cited_by_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (target.name, original_name, sha, rec["title"], json.dumps(rec["authors"], ensure_ascii=False),
                  self.authors_text(rec["authors"]), rec["journal"], rec["year"], rec["volume"], rec["issue"],
                  rec["pages"], rec["publisher"], rec["doi"], rec.get("arxiv_id", ""), rec["url"],
@@ -259,7 +270,9 @@ class Library:
                  int(rec["needs_review"]), rec["fulltext"], now, now,
                  "supp" if (is_supp or parent is not None) else "main",
                  parent["id"] if parent is not None else None,
-                 rec.get("isbn", ""), rec.get("edition", ""), rec.get("page_count")))
+                 rec.get("isbn", ""), rec.get("edition", ""), rec.get("page_count"),
+                 cited["count"] if cited else None, cited["source"] if cited else "",
+                 cited["url"] if cited else "", now if online and not is_supp and not parent else None))
             pid = cur.lastrowid
             if not is_supp and parent is None:
                 self._adopt_orphans(c, pid)
@@ -475,7 +488,9 @@ class Library:
         else:
             raise ValueError("DOI, arXiv ID 또는 ISBN이 필요합니다")
         rec["needs_review"] = False
-        return self.update(pid, rec)
+        p = self.update(pid, rec)
+        self.refresh_citations([pid])
+        return self.get(pid)
 
     def delete(self, pid):
         """서재에서 뺀다(PDF는 trash 로). 본문 논문이면 딸린 보충자료도 함께."""
@@ -493,6 +508,38 @@ class Library:
                     shutil.move(str(src), str(dest))
                 c.execute("DELETE FROM papers WHERE id=?", (x["id"],))
         return True
+
+    # ------------------------------------------------------------ 인용 수
+
+    def stale_citation_ids(self, max_age_days=30):
+        cutoff = time.time() - max_age_days * 86400
+        with self.connect() as c:
+            return [r[0] for r in c.execute(
+                "SELECT id FROM papers WHERE kind='main' AND (cited_by_at IS NULL OR cited_by_at < ?) "
+                "ORDER BY cited_by_at IS NOT NULL, cited_by_at", (cutoff,))]
+
+    def refresh_citations(self, ids=None, log=None, progress=None, stop=None):
+        """인용 수를 다시 받아 온다. 돌려주는 값은 숫자를 얻은 항목 수."""
+        with self.connect() as c:
+            if ids is None:
+                ids = [r[0] for r in c.execute("SELECT id FROM papers WHERE kind='main'")]
+        found = 0
+        for i, pid in enumerate(ids):
+            if stop and stop():
+                break
+            p = self.get(pid)
+            if p and p["kind"] == "main":
+                res = md.citation_count(p, log)
+                with self.lock, self.connect() as c:
+                    if res:
+                        found += 1
+                        c.execute("UPDATE papers SET cited_by=?, cited_by_source=?, cited_by_url=?, cited_by_at=? "
+                                  "WHERE id=?", (res["count"], res["source"], res["url"], time.time(), pid))
+                    else:
+                        c.execute("UPDATE papers SET cited_by_at=? WHERE id=?", (time.time(), pid))
+            if progress:
+                progress(i + 1, len(ids))
+        return found
 
     # ------------------------------------------------------------ 폴더 다시 읽기
 
@@ -620,7 +667,10 @@ class Library:
 
         results = self._group_supplements(results)
 
-        if sort == "year":
+        if sort == "cited":
+            results.sort(key=lambda p: (p.get("cited_by") is not None, p.get("cited_by") or 0, p.get("year") or 0),
+                         reverse=True)
+        elif sort == "year":
             results.sort(key=lambda p: (p.get("year") or 0, p.get("added_at") or 0), reverse=True)
         elif sort == "title":
             results.sort(key=lambda p: md.norm_key(p.get("title")))

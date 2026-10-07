@@ -139,6 +139,8 @@ aside.side > section { min-width: 0; }
 .pager button.on { color: var(--ink); font-weight: 700; border-color: var(--rule); background: var(--sheet); cursor: default; }
 .pager button:disabled { color: var(--ink-soft); opacity: 0.45; cursor: default; }
 .pager .gap { color: var(--ink-soft); padding: 0 4px; }
+.result .actions .cited { color: var(--byline); font-weight: 500; font-variant-numeric: tabular-nums; }
+.result .actions a.cited:hover { color: var(--accent); text-decoration: underline; }
 mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1px; }
 
 .empty { padding: 60px 20px; text-align: center; color: var(--ink-soft); display: grid; gap: 10px; justify-items: center; }
@@ -287,6 +289,8 @@ dialog::backdrop { background: rgb(10 14 22 / 0.45); }
       <div class="opt-list">
         <a class="opt" href="/api/export.bib" download>BibTeX 전체 (.bib)</a>
         <button class="opt" type="button" id="openFolderBtn">논문 폴더 열기</button>
+        <button class="opt" type="button" id="citeRefreshBtn" title="OpenAlex·Semantic Scholar·Crossref에서 인용 수를 다시 받아옵니다">인용 수 새로 고침</button>
+        <div class="sub" id="citeStatus" aria-live="polite"></div>
       </div>
     </section>
   </aside>
@@ -450,7 +454,7 @@ function renderSide() {
   const docs = [["all", "전체"], ["paper", "논문"], ["book", "책"]];
   $("#docOpts").innerHTML = docs.map(([k, label]) =>
     `<button type="button" class="opt ${view.doc === k ? "on" : ""}" data-doc="${k}">${label}</button>`).join("");
-  const sorts = [["relevance", "관련도순"], ["added", "추가한 순"], ["year", "연도순"], ["title", "제목순"]];
+  const sorts = [["relevance", "관련도순"], ["cited", "인용순"], ["added", "추가한 순"], ["year", "연도순"], ["title", "제목순"]];
   $("#sortOpts").innerHTML = sorts.map(([k, label]) =>
     `<button type="button" class="opt ${view.sort === k ? "on" : ""}" data-sort="${k}">${label}</button>`).join("");
   $("#yFrom").value = view.from; $("#yTo").value = view.to;
@@ -579,6 +583,16 @@ function shortSupp(name, mainName) {
   return rest.replace(/\.pdf$/i, "") || name;
 }
 
+function citedHTML(p) {
+  if (p.cited_by == null) return "";
+  const when = p.cited_by_at ? new Date(p.cited_by_at * 1000).toLocaleDateString("ko-KR") : "";
+  const tip = `${p.cited_by_source || ""} 기준${when ? " · " + when + " 확인" : ""}`;
+  const label = `인용 ${Number(p.cited_by).toLocaleString("ko-KR")}회`;
+  return p.cited_by_url && p.cited_by > 0
+    ? `<a class="cited" href="${esc(p.cited_by_url)}" target="_blank" rel="noopener" title="${esc(tip)} — 인용한 문헌 보기">${label}</a>`
+    : `<span class="cited" title="${esc(tip)}">${label}</span>`;
+}
+
 function snippetHTML(p) {
   // 본문·보충자료에서 검색어가 걸린 대목은 초록 설정과 상관없이 보여 준다
   if (p.in_supplement || p.in_fulltext) {
@@ -613,6 +627,7 @@ function resultHTML(p) {
     ${(p.supplements || []).length ? `<div class="supps"><span class="lbl">📎 보충자료</span>${p.supplements.map((sp, i) =>
       `<a class="${sp.matched && lastTerms.length ? "hit" : ""} ${sp.missing ? "miss" : ""}" href="/pdf/${sp.id}/${encodeURIComponent(sp.file_name)}" target="_blank" rel="noopener" title="${esc(sp.file_name)}${sp.original_name ? "\n원래 이름: " + esc(sp.original_name) : ""}">S${i + 1} · ${esc(shortSupp(sp.file_name, p.file_name))}</a>`).join("")}</div>` : ""}
     <div class="actions">
+      ${citedHTML(p)}
       <button type="button" data-act="cite">❝ 인용</button>
       <button type="button" data-act="edit">✎ 수정</button>
       <button type="button" data-act="reveal">폴더에서 보기</button>
@@ -794,6 +809,30 @@ $("#settingsForm").addEventListener("submit", async (e) => {
     $("#settingsDlg").close(); refresh();
   } catch (err) { $("#settingsMsg").textContent = err.message; }
 });
+let citePoll = null;
+async function watchCitations() {
+  clearTimeout(citePoll);
+  const st = await api("/api/citations/status").catch(() => null);
+  const el = $("#citeStatus"), btn = $("#citeRefreshBtn");
+  if (!st) return;
+  btn.disabled = st.running;
+  if (st.running) {
+    el.textContent = st.total ? `인용 수 받는 중 ${st.done}/${st.total}` : "인용 수 받는 중…";
+    citePoll = setTimeout(watchCitations, 2000);
+    watchCitations.wasRunning = true;
+  } else {
+    el.textContent = "";
+    if (watchCitations.wasRunning) { watchCitations.wasRunning = false; toast(`인용 수를 새로 받았습니다 (${st.found}편)`); refresh(true); }
+  }
+}
+$("#citeRefreshBtn").addEventListener("click", async () => {
+  try {
+    await api("/api/citations/refresh", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ all: true }) });
+    watchCitations();
+  } catch (err) { toast(err.message); }
+});
+setTimeout(watchCitations, 3500);  // 켤 때 자동 갱신이 돌면 진행 상황 표시
+
 $("#quitBtn").addEventListener("click", async () => {
   if (!confirm("논문 서재를 끌까요? 다시 쓰려면 프로그램을 다시 실행하세요.")) return;
   await api("/api/quit", { method: "POST" }).catch(() => {});

@@ -9,6 +9,7 @@ import json
 import math
 import re
 import unicodedata
+import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -235,6 +236,7 @@ def from_crossref(m):
         "type": "edited-book" if kind == "book" and not m.get("author") and m.get("editor") else kind,
         "isbn": format_isbn((m.get("ISBN") or [""])[0]) if kind in BOOK_TYPES else "",
         "edition": str(m.get("edition-number") or ""),
+        "cr_citations": m.get("is-referenced-by-count"),
         "source": "crossref",
     }
 
@@ -401,6 +403,93 @@ def book_by_isbn(isbn, log=None):
                 except Exception:
                     pass
             return rec
+    return None
+
+
+# ---------------------------------------------------------------- 인용 수
+
+def openalex_get(path):
+    return json.loads(http_get("https://api.openalex.org/" + path))
+
+
+def _openalex_result(w):
+    wid = (w.get("id") or "").rsplit("/", 1)[-1]
+    return {"count": int(w.get("cited_by_count") or 0), "source": "OpenAlex",
+            "url": f"https://openalex.org/works?filter=cites:{wid}" if wid else ""}
+
+
+def _title_ok(found, rec):
+    if similarity(found.get("title") or found.get("display_name") or "", rec.get("title", "")) < 0.92:
+        return False
+    y1, y2 = found.get("year") or found.get("publication_year"), rec.get("year")
+    return not (y1 and y2 and abs(int(y1) - int(y2)) > 1)
+
+
+def citations_openalex(rec):
+    doi = rec.get("doi") or (f"10.48550/arxiv.{rec['arxiv_id']}" if rec.get("arxiv_id") else "")
+    if doi:
+        try:
+            return _openalex_result(openalex_get("works/https://doi.org/" + urllib.parse.quote(doi, safe="/:;()")))
+        except urllib.error.HTTPError as e:
+            if e.code != 404:
+                raise
+    if not rec.get("title"):
+        return None
+    params = {"search": rec["title"][:250], "per-page": 5}
+    if rec.get("type") in BOOK_TYPES:
+        params["filter"] = "type:book"
+    data = openalex_get("works?" + urllib.parse.urlencode(params))
+    for w in data.get("results") or []:
+        if _title_ok(w, rec):
+            return _openalex_result(w)
+    return None
+
+
+def citations_semantic_scholar(rec):
+    base = "https://api.semanticscholar.org/graph/v1/paper/"
+    key = f"DOI:{rec['doi']}" if rec.get("doi") else (f"ARXIV:{rec['arxiv_id']}" if rec.get("arxiv_id") else "")
+    if key:
+        try:
+            p = json.loads(http_get(base + urllib.parse.quote(key, safe=":/") + "?fields=citationCount,url"))
+            return {"count": int(p.get("citationCount") or 0), "source": "Semantic Scholar", "url": p.get("url", "")}
+        except urllib.error.HTTPError as e:
+            if e.code != 404:
+                raise
+    if not rec.get("title"):
+        return None
+    q = urllib.parse.urlencode({"query": rec["title"][:250], "fields": "title,year,citationCount,url"})
+    data = json.loads(http_get(base + "search/match?" + q))
+    for p in data.get("data") or []:
+        if _title_ok(p, rec):
+            return {"count": int(p.get("citationCount") or 0), "source": "Semantic Scholar", "url": p.get("url", "")}
+    return None
+
+
+def citations_crossref(rec):
+    if not rec.get("doi"):
+        return None
+    n = rec.get("cr_citations")
+    if n is None:
+        data = json.loads(http_get("https://api.crossref.org/works/" + urllib.parse.quote(rec["doi"], safe="/:;()")))
+        n = data["message"].get("is-referenced-by-count")
+    return None if n is None else {"count": int(n), "source": "Crossref", "url": ""}
+
+
+def citation_count(rec, log=None):
+    """이 논문·책이 인용된 횟수. OpenAlex → Semantic Scholar → Crossref 순서로 처음 답을 쓴다.
+
+    반환: {"count", "source", "url"} 또는 None(어디서도 못 찾음).
+    """
+    log = log or (lambda *a: None)
+    for name, fn in (("OpenAlex", citations_openalex), ("Semantic Scholar", citations_semantic_scholar),
+                     ("Crossref", citations_crossref)):
+        try:
+            res = fn(rec)
+        except Exception as e:
+            log(f"{name} 인용 수 조회 실패: {e}")
+            continue
+        if res is not None:
+            return res
     return None
 
 
