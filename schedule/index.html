@@ -141,6 +141,10 @@ form.editor h3 { margin: 0; font-size: 1.05rem; }
 .gbadge { width: 18px; height: 18px; margin-top: 3px; border-radius: 4px; display: grid; place-items: center; font-size: 0.7rem; font-weight: 700; color: var(--sheet); background: var(--c-gcal); }
 a.body { color: inherit; text-decoration: none; }
 a.body:hover .title { text-decoration: underline; }
+.ghint { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 0.82rem; color: var(--ink-soft); background: color-mix(in srgb, var(--c-gcal) 10%, transparent); border-radius: 8px; padding: 8px 10px; }
+.ghint .gbadge { margin-top: 0; }
+.ghint a { color: var(--c-gcal); font-weight: 600; }
+.field input:disabled { opacity: 0.6; }
 .opt { display: flex; align-items: flex-start; gap: 8px; font-size: 0.88rem; }
 .opt input { margin-top: 4px; accent-color: var(--c-gcal); }
 .opt small { display: block; color: var(--ink-soft); font-size: 0.78rem; }
@@ -201,6 +205,7 @@ a.body:hover .title { text-decoration: underline; }
 <dialog id="dlg">
   <form class="editor" id="form" novalidate>
     <h3 id="formTitle">새 일정</h3>
+    <div class="ghint" id="fHint" hidden><span class="gbadge">G</span><span id="fHintText"></span><a id="fLink" target="_blank" rel="noopener" hidden>Google 캘린더에서 열기</a></div>
     <div class="field">
       <label for="fTitle">제목</label>
       <input id="fTitle" name="title" maxlength="120" placeholder="예: 팀 주간 회의" required>
@@ -210,7 +215,7 @@ a.body:hover .title { text-decoration: underline; }
       <div class="field"><label for="fStart">시작</label><input id="fStart" type="time"></div>
       <div class="field"><label for="fEnd">종료</label><input id="fEnd" type="time"></div>
     </div>
-    <div class="field">
+    <div class="field" id="fCatField">
       <span style="font-size:.8rem;color:var(--ink-soft)">분류</span>
       <div class="cats" id="fCats"></div>
     </div>
@@ -220,7 +225,7 @@ a.body:hover .title { text-decoration: underline; }
     </div>
     <label class="opt" id="fGcalWrap" hidden>
       <input type="checkbox" id="fGcal">
-      <span>Google 캘린더에도 추가<small>나중에 이 수첩에서 고치거나 지워도 Google 캘린더에는 반영되지 않습니다.</small></span>
+      <span>Google 캘린더에도 추가<small>이후 이 수첩에서 고치거나 지우면 Google 캘린더에도 반영됩니다.</small></span>
     </label>
     <div class="err" id="fErr" role="alert"></div>
     <div class="actions">
@@ -326,8 +331,17 @@ const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls)
 
 function allEvents() {
   if (!state.g.show || !state.g.events.length) return state.events;
-  const linked = new Set(state.events.map(e => e.gcalId).filter(Boolean));
-  return state.events.concat(state.g.events.filter(e => !linked.has(e.gid)));
+  // 수첩과 연결된 Google 일정은 한 번만 보여 주고, Google에서 바뀐 제목·시간을 반영한다
+  const byGid = new Map();
+  for (const g of state.g.events) if (!byGid.has(g.gid)) byGid.set(g.gid, g);
+  const linked = new Set();
+  const mine = state.events.map(e => {
+    const g = e.gcalId && byGid.get(e.gcalId);
+    if (!g) return e;
+    linked.add(e.gcalId);
+    return { ...e, title: g.title, date: g.date, start: g.start, end: g.end, location: g.location, link: g.link };
+  });
+  return mine.concat(state.g.events.filter(e => !linked.has(e.gid)));
 }
 function visible() {
   const q = state.query.trim().toLowerCase();
@@ -451,6 +465,7 @@ function itemRow(e, showDate) {
   const meta = el("span", "meta");
   const dot = el("span", "dot"); dot.style.background = catOf(e.cat).color;
   meta.append(dot, catOf(e.cat).name);
+  if (e.gcalId) meta.append(el("span", "", "· Google 연동"));
   if (showDate) meta.append(el("span", "up-date", "· " + longDate(e.date)));
   body.append(title, meta);
   if (e.note) body.append(el("span", "note", e.note));
@@ -463,8 +478,9 @@ function gcalRow(e, showDate) {
   const li = el("li", "item");
   const badge = el("span", "gbadge", "G"); badge.title = "Google 캘린더 일정";
   const time = el("div", "time mono", timeLabel(e));
-  const body = el(e.link ? "a" : "div", "body");
-  if (e.link) { body.href = e.link; body.target = "_blank"; body.rel = "noopener"; body.setAttribute("aria-label", `${e.title}, Google 캘린더에서 열기`); }
+  const body = el("button", "body"); body.type = "button";
+  body.setAttribute("aria-label", `${e.title} 편집 (Google 캘린더)`);
+  body.addEventListener("click", () => openEditor(e));
   const meta = el("span", "meta");
   const dot = el("span", "dot"); dot.style.background = GCAL_CAT.color;
   meta.append(dot, "Google 캘린더");
@@ -489,25 +505,33 @@ function gridRange() {
   return { from: start, to: addDays(start, weeks * 7) };
 }
 
+function plainText(html) {
+  if (!html) return "";
+  const t = String(html).replace(/<br\s*\/?>/gi, "\n").replace(/<\/p>/gi, "\n").replace(/<[^>]+>/g, "");
+  const ta = document.createElement("textarea"); ta.innerHTML = t; // HTML 엔티티 풀기
+  return ta.value.trim();
+}
+
 // Google 일정 하나를 수첩 형식으로. 종일 일정은 걸친 날마다 하나씩.
 function fromGoogle(ev) {
   if (!ev || ev.status === "cancelled" || !ev.start) return [];
   const base = {
     source: "gcal", gid: ev.id, title: ev.summary || "(제목 없음)", cat: "gcal",
-    location: ev.location || "", note: (ev.description || "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 160),
+    location: ev.location || "", desc: plainText(ev.description), note: plainText(ev.description).replace(/\s+/g, " ").slice(0, 160),
     link: typeof ev.htmlLink === "string" && ev.htmlLink.startsWith("https://") ? ev.htmlLink : "",
   };
   if (ev.start.date) {
     const out = [];
     const last = ev.end?.date ? addDays(ev.end.date, -1) : ev.start.date;
+    const multi = last > ev.start.date;
     for (let d = ev.start.date, i = 0; d <= last && i < 62; d = addDays(d, 1), i++)
-      out.push({ ...base, id: `g_${ev.id}_${d}`, date: d, start: "", end: "" });
+      out.push({ ...base, id: `g_${ev.id}_${d}`, date: d, start: "", end: "", multi, first: ev.start.date });
     return out;
   }
   const s = new Date(ev.start.dateTime), en = ev.end?.dateTime ? new Date(ev.end.dateTime) : null;
   if (isNaN(s)) return [];
   const sameDay = en && ymd(en) === ymd(s);
-  return [{ ...base, id: "g_" + ev.id, date: ymd(s), start: hm(s), end: sameDay ? hm(en) : "" }];
+  return [{ ...base, id: "g_" + ev.id, date: ymd(s), start: hm(s), end: sameDay ? hm(en) : "", multi: !!en && !sameDay }];
 }
 
 const G_FIX = {
@@ -590,7 +614,6 @@ function renderGbar() {
     const t = new Date(g.at || Date.now());
     msg.textContent = `이 화면 기간에 ${n}개 · ${hm(t)} 기준` + (g.partial ? " · 일정이 많아 일부만 표시" : "");
   } else msg.textContent = g.msg;
-  if (!dlg.open) $("fGcalWrap").hidden = !(mcp && (g.status === "ok" || g.status === "loading"));
 }
 
 $("gConnect").addEventListener("click", () => { state.g.status = "loading"; watchGoogle(true); render(); });
@@ -604,25 +627,50 @@ $("gShow").addEventListener("change", e => {
   render();
 });
 
+// 수첩의 날짜·시간을 Google 형식으로. 종료가 없으면 1시간짜리.
+function googleTimes(ev) {
+  const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Seoul";
+  if (!ev.start) return { allDay: true, timeZone, startTime: `${ev.date}T00:00:00`, endTime: `${addDays(ev.date, 1)}T00:00:00` };
+  let end = ev.end;
+  if (!end) { const [h, mi] = ev.start.split(":").map(Number); end = h >= 23 ? "23:59" : `${pad(h + 1)}:${pad(mi)}`; }
+  return { allDay: false, timeZone, startTime: `${ev.date}T${ev.start}:00`, endTime: `${ev.date}T${end}:00` };
+}
+const refreshGoogle = () => mcp?.invalidate(GSERVER, "list_events").catch(() => {});
+
 async function addToGoogle(ev) {
-  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Seoul";
-  const input = { summary: ev.title, timeZone: tz };
+  const t = googleTimes(ev);
+  const input = { summary: ev.title, ...t };
+  if (!t.allDay) delete input.allDay;
   if (ev.note) input.description = ev.note;
-  if (!ev.start) {
-    input.allDay = true;
-    input.startTime = `${ev.date}T00:00:00`;
-    input.endTime = `${addDays(ev.date, 1)}T00:00:00`;
-  } else {
-    input.startTime = `${ev.date}T${ev.start}:00`;
-    let end = ev.end;
-    if (!end) { const [h, mi] = ev.start.split(":").map(Number); end = h >= 23 ? "23:59" : `${pad(h + 1)}:${pad(mi)}`; }
-    input.endTime = `${ev.date}T${end}:00`;
-  }
   const res = await mcp.callTool(GSERVER, "create_event", input);
-  mcp.invalidate(GSERVER, "list_events").catch(() => {});
+  refreshGoogle();
   const p = res?.payload;
   return typeof p?.id === "string" ? p.id : "";
 }
+// 바뀐 필드만 보낸다. 바뀐 게 없으면 호출하지 않는다.
+async function updateGoogle(gid, before, after, opts = {}) {
+  const input = { eventId: gid };
+  if (after.title !== before.title) input.summary = after.title;
+  if (!opts.keepTimes && (after.date !== before.date || after.start !== before.start || after.end !== before.end)) Object.assign(input, googleTimes(after));
+  if ((after.note || "") !== (before.note || "")) input.description = after.note || "";
+  if (Object.keys(input).length === 1) return false;
+  await mcp.callTool(GSERVER, "update_event", input);
+  refreshGoogle();
+  return true;
+}
+async function deleteGoogle(gid) {
+  await mcp.callTool(GSERVER, "delete_event", { eventId: gid });
+  refreshGoogle();
+}
+// Google 쓰기 실패를 사람이 읽는 말로. 응답이 없었던 경우는 실제로 반영됐을 수도 있다.
+function gWriteMsg(err, what) {
+  const c = err?.code;
+  if (G_FIX[c]) return `Google 캘린더 ${what} 실패: ${G_FIX[c]}`;
+  if (c === "server_unavailable" || c === "upstream_error" || c === "cancelled") return `Google 캘린더가 응답하지 않았습니다. ${what}됐는지 Google 캘린더에서 확인하세요.`;
+  if (c === "tool_error") return `Google 캘린더가 요청을 거절했습니다` + (err.message ? `: ${err.message}` : ". 내가 만든 일정이 아니면 바꿀 수 없을 수 있습니다.");
+  return `Google 캘린더 ${what}에 실패했습니다.`;
+}
+const gReady = () => !!mcp && (state.g.status === "ok" || state.g.status === "loading");
 
 // ---------- 편집 ----------
 const dlg = $("dlg");
@@ -635,27 +683,58 @@ CATS.forEach(c => {
   $("fCats").append(lab);
 });
 
+let editingG = null;   // 편집 중인 Google 전용 일정
+let editingView = null; // 편집 창을 열 때 화면에 보이던 값(Google 반영본)
+
 function openEditor(ev, date) {
+  const isG = ev?.source === "gcal";
+  editingG = isG ? ev : null;
+  editingView = ev || null;
   state.editing = ev ? ev.id : null;
+  const linked = !isG && !!ev?.gcalId;
   $("formTitle").textContent = ev ? "일정 편집" : "새 일정";
   $("fTitle").value = ev?.title || "";
   $("fDate").value = ev?.date || date || state.selected;
   $("fStart").value = ev?.start || "";
   $("fEnd").value = ev?.end || "";
-  $("fNote").value = ev?.note || "";
-  (document.getElementById("cat-" + (ev?.cat || "work"))).checked = true;
+  $("fNote").value = isG ? ev.desc : (ev?.note || "");
+  (document.getElementById("cat-" + (isG ? "work" : (ev?.cat || "work")))).checked = true;
+  $("fCatField").hidden = isG;
+  const lockTimes = isG && ev.multi;
+  for (const id of ["fDate", "fStart", "fEnd"]) $(id).disabled = lockTimes;
+  if (isG || linked) {
+    $("fHint").hidden = false;
+    $("fHintText").textContent = !gReady() ? "Google 캘린더에 연결되지 않아 이 수첩에만 반영됩니다."
+      : lockTimes ? "여러 날에 걸친 일정입니다. 제목과 메모만 고칠 수 있고, 날짜·시간은 Google 캘린더에서 바꾸세요."
+      : isG ? "Google 캘린더 일정입니다. 저장하거나 삭제하면 Google 캘린더가 바로 바뀝니다."
+      : "Google 캘린더와 연결된 일정입니다. 저장·삭제가 Google 캘린더에도 반영됩니다.";
+    const link = ev.link || "";
+    $("fLink").hidden = !link; if (link) $("fLink").href = link;
+  } else $("fHint").hidden = true;
   $("fErr").textContent = "";
-  $("fDelete").hidden = !ev;
+  $("fDelete").hidden = !ev || (isG && !gReady());
   $("fGcal").checked = false;
-  $("fGcalWrap").hidden = !(mcp && !ev && (state.g.status === "ok" || state.g.status === "loading"));
+  $("fGcalWrap").hidden = !(gReady() && !isG && !linked);
+  for (const b of $("form").querySelectorAll("button")) b.disabled = false;
   disarm();
   dlg.showModal();
   $("fTitle").focus();
 }
-function disarm() { deleteArmed = false; $("fDelete").classList.remove("armed"); $("fDelete").textContent = "삭제"; }
+function disarm() {
+  deleteArmed = false; $("fDelete").classList.remove("armed");
+  $("fDelete").textContent = "삭제";
+}
+function busy(on) { for (const b of $("form").querySelectorAll("button")) b.disabled = on; }
 const errMsg = err => err?.code === "quota_exceeded" ? "저장 공간이 가득 찼습니다. 지난 일정을 지운 뒤 다시 시도하세요."
   : err?.code === "invalid_argument" ? "이 일정을 저장할 권한이 없습니다."
   : (err?.message || "저장하지 못했습니다. 잠시 후 다시 시도하세요.");
+
+function afterSave(date) {
+  dlg.close();
+  state.selected = date;
+  const d = parse(date); state.view = { y: d.getFullYear(), m: d.getMonth() };
+  render(); watchGoogle();
+}
 
 $("form").addEventListener("submit", async ev => {
   ev.preventDefault();
@@ -666,42 +745,75 @@ $("form").addEventListener("submit", async ev => {
   if (!date) { $("fErr").textContent = "날짜를 고르세요."; return; }
   if (start && end && end < start) { $("fErr").textContent = "종료 시간이 시작 시간보다 빠릅니다."; return; }
   if (!start && end) { $("fErr").textContent = "종료 시간을 쓰려면 시작 시간도 넣으세요."; return; }
+  const note = $("fNote").value.trim();
+
+  // Google 전용 일정: Google 캘린더만 고친다. 실패하면 창을 열어 둔다.
+  if (editingG) {
+    const g = editingG;
+    const before = { title: g.title, date: g.date, start: g.start, end: g.end, note: g.desc };
+    busy(true);
+    try {
+      const changed = await updateGoogle(g.gid, before, { title, date, start, end, note }, { keepTimes: g.multi });
+      afterSave(g.multi ? g.date : date);
+      toast(changed ? "Google 캘린더 일정을 고쳤습니다" : "바뀐 내용이 없습니다");
+    } catch (err) { busy(false); $("fErr").textContent = gWriteMsg(err, "수정"); }
+    return;
+  }
+
   const prev = state.events.find(e => e.id === state.editing);
   const data = {
     id: state.editing || newId(), title, date, start, end,
     cat: document.querySelector('input[name="cat"]:checked')?.value || "etc",
-    note: $("fNote").value.trim(), done: prev?.done || false,
+    note, done: prev?.done || false,
     created: prev?.created || new Date().toISOString(),
   };
   if (prev?.gcalId) data.gcalId = prev.gcalId;
-  const toGoogle = !prev && mcp && !$("fGcalWrap").hidden && $("fGcal").checked;
-  const submit = ev.submitter || $("form").querySelector('[type="submit"]');
-  submit.disabled = true;
+  const toGoogle = gReady() && !prev?.gcalId && !$("fGcalWrap").hidden && $("fGcal").checked;
+  busy(true);
   try {
     await saveEvent(data);
-  } catch (err) { $("fErr").textContent = errMsg(err); submit.disabled = false; return; }
-  submit.disabled = false;
-  dlg.close();
-  state.selected = date;
-  const d = parse(date); state.view = { y: d.getFullYear(), m: d.getMonth() };
-  render(); watchGoogle();
+  } catch (err) { $("fErr").textContent = errMsg(err); busy(false); return; }
+  afterSave(date);
+
+  if (prev?.gcalId && gReady()) {
+    // 비교 기준은 편집 창을 열 때 보이던 값(Google에서 바뀐 내용이 반영된 값)
+    const v = editingView || prev;
+    try {
+      const changed = await updateGoogle(prev.gcalId, { title: v.title, date: v.date, start: v.start, end: v.end, note: prev.note }, data);
+      toast(changed ? "일정을 고쳤습니다 · Google 캘린더에도 반영" : "일정을 고쳤습니다");
+    } catch (err) { toast("수첩에는 저장했습니다. " + gWriteMsg(err, "수정")); }
+    return;
+  }
   if (!toGoogle) { toast(prev ? "일정을 고쳤습니다" : "일정을 추가했습니다"); return; }
-  toast("일정을 추가했습니다 · Google 캘린더에 올리는 중…");
+  toast("일정을 저장했습니다 · Google 캘린더에 올리는 중…");
   try {
     const gid = await addToGoogle(data);
     if (gid) await saveEvent({ ...data, gcalId: gid }).catch(() => {});
     toast("Google 캘린더에도 추가했습니다");
-  } catch (err) {
-    const c = err?.code;
-    toast(G_FIX[c] ? "Google 캘린더 추가 실패: " + G_FIX[c]
-      : (c === "server_unavailable" || c === "upstream_error") ? "Google 캘린더 응답이 없었습니다. 추가됐는지 Google 캘린더에서 확인하세요."
-      : "Google 캘린더에 추가하지 못했습니다. 수첩에는 저장됐습니다.");
-  }
+  } catch (err) { toast("수첩에는 저장했습니다. " + gWriteMsg(err, "추가")); }
 });
+
 $("fDelete").addEventListener("click", async () => {
-  if (!deleteArmed) { deleteArmed = true; $("fDelete").classList.add("armed"); $("fDelete").textContent = "한 번 더 누르면 삭제"; return; }
-  try { await removeEvent(state.editing); dlg.close(); toast("일정을 삭제했습니다"); }
-  catch (err) { $("fErr").textContent = errMsg(err); disarm(); }
+  const prev = editingG ? null : state.events.find(e => e.id === state.editing);
+  const inGoogle = !!editingG || (!!prev?.gcalId && gReady());
+  if (!deleteArmed) {
+    deleteArmed = true; $("fDelete").classList.add("armed");
+    $("fDelete").textContent = inGoogle ? "한 번 더 누르면 Google 캘린더에서도 삭제" : "한 번 더 누르면 삭제";
+    return;
+  }
+  if (editingG) {
+    busy(true);
+    try { await deleteGoogle(editingG.gid); dlg.close(); toast("Google 캘린더에서 삭제했습니다"); }
+    catch (err) { busy(false); disarm(); $("fErr").textContent = gWriteMsg(err, "삭제"); }
+    return;
+  }
+  busy(true);
+  try { await removeEvent(state.editing); }
+  catch (err) { busy(false); $("fErr").textContent = errMsg(err); disarm(); return; }
+  dlg.close();
+  if (!inGoogle) { toast("일정을 삭제했습니다"); return; }
+  try { await deleteGoogle(prev.gcalId); toast("일정을 삭제했습니다 · Google 캘린더에서도 삭제"); }
+  catch (err) { toast("수첩에서는 지웠습니다. " + gWriteMsg(err, "삭제")); }
 });
 $("fCancel").addEventListener("click", () => dlg.close());
 
