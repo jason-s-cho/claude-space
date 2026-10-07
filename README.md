@@ -41,4 +41,5 @@ npm start
 - Google 캘린더 연동은 claude.ai Artifact에서만 동작하며, 데스크톱 앱에서는 꺼진 상태로 일정 수첩 기능만 사용됩니다.
 - 일정은 설치한 PC의 앱 데이터에 저장됩니다. PC마다 따로 저장되며 서로 동기화되지 않으니, PC를 옮길 때는 **내보내기 → 가져오기**를 쓰세요.
 - 코드 서명이 없어서 처음 실행할 때 Windows SmartScreen / macOS Gatekeeper 경고가 뜰 수 있습니다.
+- 앱 아이콘 원본은 `desktop/assets/icon.svg`, 앱이 쓰는 이미지는 같은 폴더의 `icon.png`(1024×1024)입니다. 아이콘을 바꾸려면 이 PNG를 교체하세요. (Windows·Mac용 아이콘은 빌드할 때 자동 변환됩니다.)
 - 달력 글꼴은 온라인일 때 Google Fonts를 쓰고, 오프라인이면 시스템 글꼴로 대체됩니다.

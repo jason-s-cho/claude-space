@@ -19,6 +19,7 @@ function createWindow() {
     minWidth: 420,
     minHeight: 600,
     title: "나의 일정 수첩",
+    icon: path.join(__dirname, "assets", "icon.png"),
     autoHideMenuBar: true,
     webPreferences: {
       contextIsolation: true,
@@ -54,6 +55,8 @@ app.on("second-instance", () => {
 });
 
 app.whenReady().then(() => {
+  // 윈도우 작업 표시줄에서 아이콘과 알림이 이 앱으로 묶이도록 한다. (package.json의 appId와 같아야 함)
+  if (process.platform === "win32") app.setAppUserModelId("com.jasonscho.schedule");
   // 윈도우·리눅스는 메뉴 막대를 없앤다. 맥은 복사/붙여넣기 때문에 기본 메뉴를 유지한다.
   if (process.platform !== "darwin") Menu.setApplicationMenu(null);
   createWindow();

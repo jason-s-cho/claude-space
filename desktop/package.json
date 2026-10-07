@@ -1,6 +1,6 @@
 {
   "name": "schedule-desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "나의 일정 수첩 — 데스크톱 앱 (Electron)",
   "main": "main.js",
   "homepage": "https://github.com/jason-s-cho/claude-space",
@@ -25,11 +25,13 @@
     "productName": "나의 일정 수첩",
     "artifactName": "schedule-${version}-${os}-${arch}.${ext}",
     "directories": {
-      "output": "dist"
+      "output": "dist",
+      "buildResources": "assets"
     },
     "files": [
       "main.js",
-      "app/**/*"
+      "app/**/*",
+      "assets/icon.png"
     ],
     "win": {
       "target": [
