@@ -125,8 +125,9 @@ def read_pdf(path):
 
     first = pages[0] if pages else ""
     head = "\n".join(pages[:2])
+    front = "\n".join(pages[:12])  # 책의 표제지·판권 면(ISBN)이 있는 앞부분
     full = clean_text("\n".join(pages))[:MAX_FULLTEXT_CHARS]
-    return {"first": first, "head": head, "full": full, "info": info,
+    return {"first": first, "head": head, "front": front, "full": full, "info": info,
             "title_guess": title_guess, "chunks": first_chunks, "page_count": len(reader.pages)}
 
 
@@ -195,7 +196,8 @@ def from_crossref(m):
         return v[0] if isinstance(v, list) and v else (v if isinstance(v, str) else "")
 
     authors = []
-    for a in m.get("author", []) or []:
+    people = m.get("author") or m.get("editor") or []  # 편저는 저자 대신 편집자
+    for a in people:
         if a.get("family") or a.get("given"):
             authors.append({"given": a.get("given", ""), "family": a.get("family", "")})
         elif a.get("name"):
@@ -230,9 +232,176 @@ def from_crossref(m):
         "doi": (m.get("DOI") or "").lower(),
         "url": m.get("URL", ""),
         "abstract": strip_tags(m.get("abstract", "")),
-        "type": kind,
+        "type": "edited-book" if kind == "book" and not m.get("author") and m.get("editor") else kind,
+        "isbn": format_isbn((m.get("ISBN") or [""])[0]) if kind in BOOK_TYPES else "",
+        "edition": str(m.get("edition-number") or ""),
         "source": "crossref",
     }
+
+
+# ---------------------------------------------------------------- 책 (ISBN)
+
+BOOK_TYPES = {"book", "monograph", "edited-book", "reference-book", "book-set", "book-series"}
+ISBN_LABEL_RE = re.compile(r"ISBN(?:-?1[03])?[\s:：]*((?:97[89][\s\-‐–]?)?[0-9][0-9\s\-‐–]{7,16}[0-9Xx])", re.I)
+ISBN_BARE_RE = re.compile(r"\b(97[89][\-‐–\s]?\d{1,5}[\-‐–\s]?\d{1,7}[\-‐–\s]?\d{1,7}[\-‐–\s]?\d)\b")
+
+
+def isbn_valid(d):
+    if len(d) == 10:
+        if not re.fullmatch(r"\d{9}[\dX]", d):
+            return False
+        total = sum((10 - i) * (10 if c == "X" else int(c)) for i, c in enumerate(d))
+        return total % 11 == 0
+    if len(d) == 13 and d.isdigit() and d[:3] in ("978", "979"):
+        total = sum(int(c) * (1 if i % 2 == 0 else 3) for i, c in enumerate(d[:12]))
+        return (10 - total % 10) % 10 == int(d[12])
+    return False
+
+
+def normalize_isbn(s):
+    d = re.sub(r"[^0-9Xx]", "", s or "").upper()
+    return d if isbn_valid(d) else ""
+
+
+def isbn10_to_13(d):
+    if len(d) != 10:
+        return d
+    core = "978" + d[:9]
+    total = sum(int(c) * (1 if i % 2 == 0 else 3) for i, c in enumerate(core))
+    return core + str((10 - total % 10) % 10)
+
+
+def format_isbn(s):
+    return isbn10_to_13(normalize_isbn(s)) or ""
+
+
+def find_isbns(text):
+    """앞부분에서 ISBN을 찾는다. 'ISBN' 표시가 붙은 것을 먼저."""
+    seen, out = set(), []
+    for regex in (ISBN_LABEL_RE, ISBN_BARE_RE):
+        for m in regex.finditer(text or ""):
+            d = normalize_isbn(m.group(1))
+            if d:
+                d = isbn10_to_13(d)
+                if d not in seen:
+                    seen.add(d)
+                    out.append(d)
+    return out[:4]
+
+
+def split_name(name):
+    name = clean_text(name)
+    if is_hangul(name) or " " not in name:
+        return {"given": "", "family": name}
+    if "," in name:
+        family, _, given = name.partition(",")
+        return {"given": given.strip(), "family": family.strip()}
+    given, _, family = name.rpartition(" ")
+    return {"given": given, "family": family}
+
+
+def book_record(**kw):
+    rec = {"title": "", "authors": [], "journal": "", "year": None, "volume": "", "issue": "", "pages": "",
+           "publisher": "", "doi": "", "url": "", "abstract": "", "type": "book", "isbn": "", "edition": "",
+           "arxiv_id": ""}
+    rec.update(kw)
+    return rec
+
+
+def crossref_by_isbn(isbn):
+    q = urllib.parse.urlencode({"filter": f"isbn:{isbn}", "rows": 20})
+    data = json.loads(http_get("https://api.crossref.org/works?" + q))
+    items = [from_crossref(it) for it in data["message"].get("items", [])]
+    books = [it for it in items if it["type"] in BOOK_TYPES]
+    if books:
+        rec = books[0]
+        rec["isbn"] = rec["isbn"] or isbn
+        return rec
+    return None
+
+
+def _year(s):
+    m = re.search(r"\b(1[5-9]\d\d|20\d\d)\b", str(s or ""))
+    return int(m.group(1)) if m else None
+
+
+def from_google_books(item):
+    v = item.get("volumeInfo", {})
+    title = clean_text(v.get("title", ""))
+    if v.get("subtitle"):
+        title = f"{title}: {clean_text(v['subtitle'])}"
+    isbn = ""
+    for ident in v.get("industryIdentifiers", []) or []:
+        if ident.get("type") in ("ISBN_13", "ISBN_10"):
+            isbn = format_isbn(ident.get("identifier"))
+            if ident.get("type") == "ISBN_13":
+                break
+    return book_record(
+        title=title,
+        authors=[split_name(a) for a in v.get("authors", []) or []],
+        year=_year(v.get("publishedDate")),
+        publisher=clean_text(v.get("publisher", "")),
+        url=v.get("infoLink") or v.get("canonicalVolumeLink") or "",
+        abstract=strip_tags(v.get("description", ""))[:2000],
+        isbn=isbn,
+        source="googlebooks",
+    )
+
+
+def google_books_by_isbn(isbn):
+    data = json.loads(http_get("https://www.googleapis.com/books/v1/volumes?q=isbn:" + isbn))
+    items = data.get("items") or []
+    return from_google_books(items[0]) if items else None
+
+
+def google_books_search(query, rows=5):
+    q = urllib.parse.urlencode({"q": query[:300], "maxResults": rows, "printType": "books"})
+    data = json.loads(http_get("https://www.googleapis.com/books/v1/volumes?" + q))
+    return [from_google_books(it) for it in data.get("items") or []]
+
+
+def openlibrary_by_isbn(isbn):
+    q = urllib.parse.urlencode({"bibkeys": f"ISBN:{isbn}", "format": "json", "jscmd": "data"})
+    data = json.loads(http_get("https://openlibrary.org/api/books?" + q))
+    b = data.get(f"ISBN:{isbn}")
+    if not b:
+        return None
+    title = clean_text(b.get("title", ""))
+    if b.get("subtitle"):
+        title = f"{title}: {clean_text(b['subtitle'])}"
+    return book_record(
+        title=title,
+        authors=[split_name(a.get("name", "")) for a in b.get("authors", []) or []],
+        year=_year(b.get("publish_date")),
+        publisher=", ".join(p.get("name", "") for p in b.get("publishers", []) or []),
+        url=b.get("url", ""),
+        isbn=isbn,
+        source="openlibrary",
+    )
+
+
+def book_by_isbn(isbn, log=None):
+    """Crossref(학술서, DOI 있음) → Google Books → Open Library 순서."""
+    log = log or (lambda *a: None)
+    for name, fn in (("Crossref", crossref_by_isbn), ("Google Books", google_books_by_isbn),
+                     ("Open Library", openlibrary_by_isbn)):
+        try:
+            rec = fn(isbn)
+        except Exception as e:
+            log(f"{name} ISBN 조회 실패 {isbn}: {e}")
+            continue
+        if rec and rec.get("title"):
+            rec["isbn"] = rec.get("isbn") or isbn
+            if not rec.get("abstract") and name == "Crossref":
+                # 학술서는 Crossref 에 소개글이 없으니 Google Books 에서 채운다
+                try:
+                    g = google_books_by_isbn(isbn)
+                    if g:
+                        rec["abstract"] = g["abstract"]
+                except Exception:
+                    pass
+            return rec
+    return None
 
 
 ATOM = "{http://www.w3.org/2005/Atom}"
@@ -341,7 +510,7 @@ def find_arxiv_id(pdf, filename):
 def empty_record():
     return {"title": "", "authors": [], "journal": "", "year": None, "volume": "", "issue": "",
             "pages": "", "publisher": "", "doi": "", "url": "", "abstract": "", "type": "",
-            "arxiv_id": "", "source": "pdf"}
+            "arxiv_id": "", "isbn": "", "edition": "", "source": "pdf"}
 
 
 def parse_author_string(s):
@@ -395,7 +564,25 @@ def extract(path, filename="", online=True, log=None, supplement=None):
                 break
             log(f"DOI {doi} 의 제목이 본문과 맞지 않아 건너뜀")
 
-        # 2) arXiv
+        # 2) 책: 판권 면의 ISBN
+        isbns = find_isbns(pdf["front"])
+        if record is None and isbns:
+            front_key = norm_key(pdf["front"])
+            for isbn in isbns:
+                rec = book_by_isbn(isbn, log)
+                if rec is None:
+                    continue
+                # 논문에 찍힌 학술대회 논문집 ISBN 등을 책으로 오인하지 않도록:
+                # 두꺼운 PDF이거나 책 제목이 앞부분에 실제로 있어야 한다
+                if pdf["page_count"] >= 40 or title_in_text(rec["title"], front_key) \
+                        or title_in_text(rec["title"].split(":")[0], front_key):
+                    record = rec
+                    break
+                log(f"ISBN {isbn} 의 책({rec['title']})이 이 PDF와 맞지 않아 건너뜀")
+        if record is not None and record.get("type") in BOOK_TYPES and not record.get("isbn") and isbns:
+            record["isbn"] = isbns[0]
+
+        # 3) arXiv
         if record is None:
             arxiv_id = find_arxiv_id(pdf, filename)
             if arxiv_id:
@@ -404,7 +591,7 @@ def extract(path, filename="", online=True, log=None, supplement=None):
                 except Exception as e:
                     log(f"arXiv 조회 실패 {arxiv_id}: {e}")
 
-        # 3) 제목으로 Crossref 검색
+        # 4) 제목으로 Crossref 검색
         if record is None:
             queries = []
             for cand in (pdf["title_guess"], pdf["info"].get("title", "")):
@@ -450,12 +637,20 @@ def extract(path, filename="", online=True, log=None, supplement=None):
             record["arxiv_id"] = arxiv_id
             record["url"] = f"https://arxiv.org/abs/{arxiv_id}"
         record["keywords"] = info.get("keywords", "")
+        isbns = find_isbns(pdf["front"])
+        if isbns:
+            record["isbn"] = isbns[0]
+        if isbns or pdf["page_count"] >= 120:
+            record["type"] = "book"
 
     record.setdefault("arxiv_id", "")
+    record.setdefault("isbn", "")
+    record.setdefault("edition", "")
+    record["page_count"] = pdf["page_count"]
     record["fulltext"] = pdf["full"]
     record["needs_review"] = needs_review
     record["is_supplement"] = bool(supplement)
-    if not record.get("abstract"):
+    if not record.get("abstract") and record.get("type") not in BOOK_TYPES:
         record["abstract"] = abstract_from_text(pdf["first"])
     return record
 
@@ -517,7 +712,32 @@ def citations(p):
         apa_authors = ", ".join(names[:-1]) + ", & " + names[-1]
     else:
         apa_authors = names[0] if names else ""
+    t = (p.get("type") or "").lower()
+    is_book = t in BOOK_TYPES
+    is_chapter = t == "book-chapter"
+    edition = str(p.get("edition") or "").strip()
+    ed_txt = ""
+    if edition:
+        ed_txt = edition if not edition.isdigit() else {"1": "1st", "2": "2nd", "3": "3rd"}.get(edition, f"{edition}th")
+        ed_txt = ed_txt if "ed" in ed_txt.lower() or not edition.isdigit() else f"{ed_txt} ed."
+    if t == "edited-book" and apa_authors:
+        apa_authors += " (Eds.)." if len(names) > 1 else " (Ed.)."
+    publisher = p.get("publisher", "")
+
     apa = f"{apa_authors} ({year}). {title}."
+    if is_book:
+        apa = f"{apa_authors} ({year}). {title}" + (f" ({ed_txt})" if ed_txt else "") + "."
+        if publisher:
+            apa += f" {publisher}."
+        if doi_url and doi:
+            apa += f" {doi_url}"
+        journal = vol = ""  # 아래 학술지 형식은 건너뛴다
+        doi_url = ""
+    elif is_chapter:
+        apa = f"{apa_authors} ({year}). {title}. In {journal}" + (f" (pp. {pages})" if pages else "") + "."
+        if publisher:
+            apa += f" {publisher}."
+        journal = ""
     if journal:
         apa += f" {journal}"
         if vol:
@@ -544,16 +764,26 @@ def citations(p):
             mla_auth = first
     else:
         mla_auth = ""
-    mla = (f"{mla_auth}. " if mla_auth else "") + f"“{title}.”"
-    parts = [journal] if journal else []
-    if vol:
-        parts.append(f"vol. {vol}")
-    if issue:
-        parts.append(f"no. {issue}")
-    parts.append(str(year))
-    if pages:
-        parts.append(f"pp. {pages}")
-    mla += " " + ", ".join(parts) + "."
+    if t == "edited-book" and mla_auth:
+        mla_auth += ", editors" if len(authors) > 1 else ", editor"
+    if is_book:
+        mla = (f"{mla_auth}. " if mla_auth else "") + f"{title}."
+        if ed_txt:
+            mla += f" {ed_txt[0].upper() + ed_txt[1:]},"
+        mla += " " + ", ".join(x for x in (publisher, str(year)) if x) + "."
+    else:
+        mla = (f"{mla_auth}. " if mla_auth else "") + f"\u201c{title}.\u201d"
+        parts = [p.get("journal")] if p.get("journal") else []
+        if is_chapter and publisher:
+            parts.append(publisher)
+        if vol:
+            parts.append(f"vol. {vol}")
+        if issue:
+            parts.append(f"no. {issue}")
+        parts.append(str(year))
+        if pages:
+            parts.append(f"pp. {pages}")
+        mla += " " + ", ".join(parts) + "."
 
     return {"APA": apa, "MLA": mla, "BibTeX": bibtex(p)}
 
@@ -572,7 +802,7 @@ def bibtex(p):
     t = (p.get("type") or "").lower()
     if "proceedings" in t:
         kind = "inproceedings"
-    elif t in ("book", "monograph"):
+    elif t in BOOK_TYPES:
         kind = "book"
     elif t in ("book-chapter",):
         kind = "incollection"
@@ -582,11 +812,12 @@ def bibtex(p):
     authors = " and ".join(
         ", ".join(x for x in (a.get("family"), a.get("given")) if x) for a in (p.get("authors") or []))
     if authors:
-        fields.append(("author", esc(authors)))
+        fields.append(("editor" if t == "edited-book" else "author", esc(authors)))
     venue_key = "booktitle" if kind in ("inproceedings", "incollection") else "journal"
     for key, val in ((venue_key, p.get("journal")), ("year", p.get("year")), ("volume", p.get("volume")),
                      ("number", p.get("issue")), ("pages", (p.get("pages") or "").replace("-", "--")),
-                     ("publisher", p.get("publisher")), ("doi", p.get("doi")),
+                     ("publisher", p.get("publisher")), ("edition", p.get("edition")),
+                     ("isbn", p.get("isbn")), ("doi", p.get("doi")),
                      ("eprint", p.get("arxiv_id")), ("url", p.get("url"))):
         if val:
             fields.append((key, esc(val)))

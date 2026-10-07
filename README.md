@@ -18,9 +18,10 @@ Google 캘린더 연동은 claude.ai Artifact에서 Google Calendar 커넥터가
 
 ## papers/ — 논문 서재
 
-내 컴퓨터의 논문 폴더를 Google Scholar처럼 정리·검색하는 로컬 앱입니다.
+내 컴퓨터의 논문·책 폴더를 Google Scholar처럼 정리·검색하는 로컬 앱입니다.
 
 - PDF를 끌어다 놓으면 DOI·arXiv·제목으로 Crossref/arXiv에서 서지 정보를 찾아 `저자 et al. - 연도 - 제목.pdf`로 저장
+- 책 PDF는 ISBN으로 Crossref·Google Books·Open Library에서 서지 정보를 찾음
 - 보충자료(Supplementary) PDF는 본문 논문에 묶어 `본문 이름 - Supplementary.pdf`로 저장
 - 제목 / 저자 - 저널, 연도 - 출판사 형식 목록, APA·MLA·BibTeX 인용
 - 제목·저자·저널·본문 검색, 기간·정렬

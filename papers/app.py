@@ -27,7 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import metadata as md  # noqa: E402
 from library import Library  # noqa: E402
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 HERE = Path(__file__).resolve().parent
 # 설치판(PyInstaller)으로 묶였을 때는 화면 파일이 압축 해제 폴더에 있다
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", HERE))
@@ -197,7 +197,7 @@ class Handler(BaseHTTPRequestHandler):
         res = state["lib"].search(
             q=qs.get("q", ""), field=qs.get("field", "all"),
             year_from=qs.get("from") or None, year_to=qs.get("to") or None,
-            sort=qs.get("sort", "relevance"), review_only=qs.get("review") == "1")
+            sort=qs.get("sort", "relevance"), review_only=qs.get("review") == "1", doc=qs.get("doc", "all"))
         self.send_json(res)
 
     def get_paper(self, qs, pid):
@@ -277,20 +277,28 @@ class Handler(BaseHTTPRequestHandler):
     def refetch(self, qs, pid):
         data = self.read_json()
         try:
-            p = state["lib"].refetch(int(pid), doi=data.get("doi"), arxiv_id=data.get("arxiv_id"))
+            p = state["lib"].refetch(int(pid), doi=data.get("doi"), arxiv_id=data.get("arxiv_id"),
+                                     isbn=data.get("isbn"))
         except Exception as e:
             return self.send_error_json(400, f"정보를 가져오지 못했습니다: {e}")
         self.send_json(self.with_extras(p))
 
     def lookup(self, qs):
-        """수정 창의 '제목으로 찾기': Crossref 후보 목록."""
+        """수정 창의 '제목으로 찾기': Crossref 와 Google Books(책) 후보 목록."""
         q = qs.get("q", "").strip()
         if not q:
             return self.send_json({"items": []})
-        try:
-            items = md.crossref_search(q, rows=8)
-        except Exception as e:
-            return self.send_error_json(502, f"Crossref 검색 실패: {e}")
+        items, errors = [], []
+        sources = [("Crossref", lambda: md.crossref_search(q, rows=6))]
+        books = [("Google Books", lambda: md.google_books_search(q, rows=4))]
+        # 책으로 찾을 때는 Google Books 를 앞에
+        for name, fn in (books + sources if qs.get("doc") == "book" else sources + books):
+            try:
+                items += fn()
+            except Exception as e:
+                errors.append(f"{name}: {e}")
+        if not items and errors:
+            return self.send_error_json(502, "검색 실패 — " + "; ".join(errors))
         for it in items:
             it["scholar_authors"] = md.scholar_authors(it["authors"])
         self.send_json({"items": items})

@@ -18,7 +18,8 @@ import metadata as md
 
 META_DIR = ".papershelf"
 EDITABLE = ("title", "authors", "journal", "year", "volume", "issue", "pages", "publisher",
-            "doi", "arxiv_id", "url", "abstract", "tags", "notes", "type")
+            "doi", "arxiv_id", "url", "abstract", "tags", "notes", "type", "isbn", "edition")
+BOOK_TYPES = tuple(sorted(md.BOOK_TYPES))
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS papers (
@@ -34,7 +35,10 @@ CREATE TABLE IF NOT EXISTS papers (
     fulltext TEXT,
     added_at REAL, updated_at REAL,
     kind TEXT DEFAULT 'main',
-    parent_id INTEGER
+    parent_id INTEGER,
+    isbn TEXT DEFAULT '',
+    edition TEXT DEFAULT '',
+    page_count INTEGER
 );
 CREATE INDEX IF NOT EXISTS papers_doi ON papers(doi);
 CREATE INDEX IF NOT EXISTS papers_year ON papers(year);
@@ -42,14 +46,17 @@ CREATE INDEX IF NOT EXISTS papers_year ON papers(year);
 MIGRATIONS = [
     ("kind", "ALTER TABLE papers ADD COLUMN kind TEXT DEFAULT 'main'"),
     ("parent_id", "ALTER TABLE papers ADD COLUMN parent_id INTEGER"),
+    ("isbn", "ALTER TABLE papers ADD COLUMN isbn TEXT DEFAULT ''"),
+    ("edition", "ALTER TABLE papers ADD COLUMN edition TEXT DEFAULT ''"),
+    ("page_count", "ALTER TABLE papers ADD COLUMN page_count INTEGER"),
 ]
 SUPP_SUFFIX = " - Supplementary"
 
 # 검색 범위별 대상 칸과 관련도 가중치
 SEARCH_FIELDS = {
-    "all": [("title", 10), ("authors_text", 8), ("journal", 4), ("tags", 5), ("doi", 6),
+    "all": [("title", 10), ("authors_text", 8), ("journal", 4), ("tags", 5), ("doi", 6), ("isbn", 6),
             ("abstract", 2), ("notes", 3), ("publisher", 1), ("fulltext", 1)],
-    "meta": [("title", 10), ("authors_text", 8), ("journal", 4), ("tags", 5), ("doi", 6),
+    "meta": [("title", 10), ("authors_text", 8), ("journal", 4), ("tags", 5), ("doi", 6), ("isbn", 6),
              ("abstract", 2), ("notes", 3), ("publisher", 1)],
     "title": [("title", 10)],
     "author": [("authors_text", 10)],
@@ -242,15 +249,17 @@ class Library:
             cur = c.execute(
                 """INSERT INTO papers (file_name, original_name, sha256, title, authors, authors_text,
                    journal, year, volume, issue, pages, publisher, doi, arxiv_id, url, abstract, type,
-                   tags, notes, source, needs_review, fulltext, added_at, updated_at, kind, parent_id)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   tags, notes, source, needs_review, fulltext, added_at, updated_at, kind, parent_id,
+                   isbn, edition, page_count)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (target.name, original_name, sha, rec["title"], json.dumps(rec["authors"], ensure_ascii=False),
                  self.authors_text(rec["authors"]), rec["journal"], rec["year"], rec["volume"], rec["issue"],
                  rec["pages"], rec["publisher"], rec["doi"], rec.get("arxiv_id", ""), rec["url"],
                  rec["abstract"], rec["type"], rec.get("keywords", ""), "", rec["source"],
                  int(rec["needs_review"]), rec["fulltext"], now, now,
                  "supp" if (is_supp or parent is not None) else "main",
-                 parent["id"] if parent is not None else None))
+                 parent["id"] if parent is not None else None,
+                 rec.get("isbn", ""), rec.get("edition", ""), rec.get("page_count")))
             pid = cur.lastrowid
             if not is_supp and parent is None:
                 self._adopt_orphans(c, pid)
@@ -272,7 +281,7 @@ class Library:
         """보충자료는 본문 논문의 서지 정보를 따른다(본문 검색용 글은 자기 것)."""
         rec = dict(rec)
         for k in ("title", "journal", "volume", "issue", "pages", "publisher", "doi",
-                  "arxiv_id", "url", "type", "source"):
+                  "arxiv_id", "url", "type", "source", "isbn", "edition"):
             rec[k] = parent[k] or ""
         rec["year"] = parent["year"]
         rec["authors"] = json.loads(parent["authors"] or "[]")
@@ -288,12 +297,18 @@ class Library:
             if row:
                 return row
         text_key = md.norm_key((rec.get("fulltext") or "")[:6000])
-        best = None
+        best, best_score = None, None
         for row in c.execute("SELECT * FROM papers WHERE kind='main'"):
             t = md.norm_key(row["title"])
             # 긴 제목은 앞부분 어디든, 짧은 제목은 첫머리(머리말 바로 아래)에 있어야 인정
-            if (len(t) >= 15 and t in text_key or len(t) >= 6 and t in text_key[:120]) and (best is None or len(t) > len(md.norm_key(best["title"]))):
-                best = row
+            if not (len(t) >= 15 and t in text_key or len(t) >= 6 and t in text_key[:120]):
+                continue
+            # 같은 제목이 여럿이면(예: 논문 'Deep learning'과 책 'Deep Learning') 저자 이름이 맞는 쪽
+            authors = json.loads(row["authors"] or "[]")
+            fam = md.norm_key(authors[0].get("family", "")) if authors else ""
+            score = (bool(fam) and fam in text_key[:3000], len(t), row["type"] not in BOOK_TYPES)
+            if best_score is None or score > best_score:
+                best, best_score = row, score
         return best
 
     def _adopt_orphans(self, c, pid):
@@ -383,6 +398,8 @@ class Library:
             fields["year"] = int(y) if y.isdigit() else None
         if "doi" in fields:
             fields["doi"] = md.clean_doi(fields["doi"] or "").lower()
+        if "isbn" in fields:
+            fields["isbn"] = md.format_isbn(fields["isbn"]) or str(fields["isbn"] or "").strip()
         if "source" in data:
             fields["source"] = data["source"]
         fields["needs_review"] = int(bool(data.get("needs_review", False)))
@@ -440,16 +457,23 @@ class Library:
             sets = ", ".join(f"{k}=?" for k in rec)
             c.execute(f"UPDATE papers SET {sets} WHERE id=?", (*rec.values(), row["id"]))
 
-    def refetch(self, pid, doi=None, arxiv_id=None):
-        """DOI·arXiv ID 로 정보를 다시 받아 덮어쓴다(태그·메모는 유지)."""
-        if doi:
+    def refetch(self, pid, doi=None, arxiv_id=None, isbn=None):
+        """DOI·arXiv ID·ISBN 으로 정보를 다시 받아 덮어쓴다(태그·메모는 유지)."""
+        if isbn:
+            code = md.format_isbn(isbn)
+            if not code:
+                raise ValueError("올바른 ISBN이 아닙니다")
+            rec = md.book_by_isbn(code)
+            if rec is None:
+                raise LookupError("이 ISBN의 책을 찾지 못했습니다")
+        elif doi:
             rec = md.crossref_by_doi(md.clean_doi(doi))
         elif arxiv_id:
             rec = md.arxiv_by_id(arxiv_id.strip())
             if rec is None:
                 raise LookupError("arXiv에서 찾지 못했습니다")
         else:
-            raise ValueError("DOI 또는 arXiv ID가 필요합니다")
+            raise ValueError("DOI, arXiv ID 또는 ISBN이 필요합니다")
         rec["needs_review"] = False
         return self.update(pid, rec)
 
@@ -540,7 +564,7 @@ class Library:
     # ------------------------------------------------------------ 검색
 
     def search(self, q="", field="all", year_from=None, year_to=None, sort="relevance",
-               review_only=False, limit=1000):
+               review_only=False, doc="all", limit=1000):
         terms = parse_terms(q)
         cols = SEARCH_FIELDS.get(field, SEARCH_FIELDS["all"])
         where, args = [], []
@@ -556,6 +580,11 @@ class Library:
             args.append(int(year_to))
         if review_only:
             where.append("needs_review = 1")
+        book_like = BOOK_TYPES + ("book-chapter",)
+        if doc in ("book", "paper"):
+            marks = ",".join("?" * len(book_like))
+            where.append(f"coalesce(type,'') {'IN' if doc == 'book' else 'NOT IN'} ({marks})")
+            args += list(book_like)
         sql = "SELECT * FROM papers" + (" WHERE " + " AND ".join(where) if where else "")
 
         with self.connect() as c:
@@ -645,7 +674,9 @@ class Library:
             review = c.execute("SELECT count(*) FROM papers WHERE needs_review=1").fetchone()[0]
             years = [r[0] for r in c.execute("SELECT DISTINCT year FROM papers WHERE year IS NOT NULL ORDER BY year")]
             supps = c.execute("SELECT count(*) FROM papers WHERE kind='supp'").fetchone()[0]
-        return {"total": total, "needs_review": review, "years": years, "supplements": supps}
+            books = c.execute(f"SELECT count(*) FROM papers WHERE kind='main' AND type IN ({','.join('?' * len(BOOK_TYPES))})",
+                              BOOK_TYPES).fetchone()[0]
+        return {"total": total, "needs_review": review, "years": years, "supplements": supps, "books": books}
 
     def all_papers(self):
         with self.connect() as c:
