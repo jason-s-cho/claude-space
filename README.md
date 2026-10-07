@@ -15,3 +15,29 @@ claude.ai Artifact로 열면 일정이 서버에 저장되어 어느 기기에�
 `schedule/index.html`을 브라우저로 직접 열면 그 브라우저의 localStorage에 저장됩니다.
 
 Google 캘린더 연동은 claude.ai Artifact에서 Google Calendar 커넥터가 연결되어 있을 때만 동작합니다.
+
+## desktop/ — 데스크톱 앱 (Electron)
+
+`schedule/index.html`을 그대로 감싸서 Windows / macOS / Linux 설치형 앱으로 만듭니다.
+빌드할 때 `schedule/index.html`이 `desktop/app/`으로 복사되므로, 웹 버전을 고치면 데스크톱 버전에도 반영됩니다.
+
+**내 PC에서 실행해 보기**
+
+```bash
+cd desktop
+npm install
+npm start
+```
+
+**설치 파일 만들기**
+
+- 내 PC에서: `npm run dist` → `desktop/dist/`에 설치 파일 생성 (자기 OS용만 만들어짐)
+- GitHub에서 3개 OS 한꺼번에: Actions 탭 → *Desktop build* → Run workflow.
+  `git tag desktop-v0.1.0 && git push origin desktop-v0.1.0` 하면 Releases에 설치 파일이 올라갑니다.
+
+**참고**
+
+- Google 캘린더 연동은 claude.ai Artifact에서만 동작하며, 데스크톱 앱에서는 꺼진 상태로 일정 수첩 기능만 사용됩니다.
+- 일정은 설치한 PC의 앱 데이터에 저장됩니다. PC마다 따로 저장되며 서로 동기화되지 않습니다.
+- 코드 서명이 없어서 처음 실행할 때 Windows SmartScreen / macOS Gatekeeper 경고가 뜰 수 있습니다.
+- 달력 글꼴은 온라인일 때 Google Fonts를 쓰고, 오프라인이면 시스템 글꼴로 대체됩니다.

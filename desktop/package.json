@@ -1,0 +1,79 @@
+{
+  "name": "schedule-desktop",
+  "version": "0.1.0",
+  "description": "나의 일정 수첩 — 데스크톱 앱 (Electron)",
+  "main": "main.js",
+  "homepage": "https://github.com/jason-s-cho/claude-space",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jason-s-cho/claude-space.git"
+  },
+  "license": "UNLICENSED",
+  "private": true,
+  "scripts": {
+    "prepare-app": "node scripts/copy-app.js",
+    "start": "npm run prepare-app && electron .",
+    "dist": "npm run prepare-app && electron-builder --publish never",
+    "dist:dir": "npm run prepare-app && electron-builder --dir"
+  },
+  "devDependencies": {
+    "electron": "^39.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.jasonscho.schedule",
+    "productName": "나의 일정 수첩",
+    "artifactName": "schedule-${version}-${os}-${arch}.${ext}",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "app/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "linux": {
+      "category": "Office",
+      "maintainer": "jason-s-cho <noreply@users.noreply.github.com>",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    }
+  }
+}
