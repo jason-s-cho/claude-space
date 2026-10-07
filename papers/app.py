@@ -184,8 +184,35 @@ class Handler(BaseHTTPRequestHandler):
         p = state["lib"].get(int(pid))
         if not p:
             return self.send_error_json(404, "없는 논문입니다")
+        self.send_json(self.with_extras(p))
+
+    @staticmethod
+    def with_extras(p):
+        lib = state["lib"]
         p["citations"] = md.citations(p)
-        self.send_json(p)
+        with lib.connect() as c:
+            p["supplements"] = [dict(r) for r in c.execute(
+                "SELECT id, file_name, original_name FROM papers WHERE parent_id=? ORDER BY added_at, id", (p["id"],))]
+            if p.get("parent_id"):
+                r = c.execute("SELECT id, title, file_name FROM papers WHERE id=?", (p["parent_id"],)).fetchone()
+                p["parent"] = dict(r) if r else None
+        return p
+
+    def mains(self, qs):
+        with state["lib"].connect() as c:
+            rows = c.execute("SELECT id, title, year, authors FROM papers WHERE kind='main' ORDER BY title").fetchall()
+        self.send_json({"items": [{"id": r["id"], "title": r["title"], "year": r["year"],
+                                   "who": md.first_author_key(json.loads(r["authors"] or "[]"))} for r in rows]})
+
+    def set_parent(self, qs, pid):
+        data = self.read_json()
+        try:
+            p = state["lib"].set_parent(int(pid), data.get("parent_id"))
+        except Exception as e:
+            return self.send_error_json(400, str(e))
+        if not p:
+            return self.send_error_json(404, "없는 논문입니다")
+        self.send_json(self.with_extras(p))
 
     def upload(self, qs):
         lib = state["lib"]
@@ -207,8 +234,13 @@ class Handler(BaseHTTPRequestHandler):
             if not f.read(1024).lstrip().startswith(b"%PDF"):
                 tmp.unlink(missing_ok=True)
                 return self.send_error_json(400, f"{name}: PDF 파일이 아닙니다")
+        parent_id = self.headers.get("X-Parent-Id")
         try:
-            status, p = lib.import_pdf(tmp, name, online=state["online"], log=log)
+            status, p = lib.import_pdf(tmp, name, online=state["online"], log=log,
+                                       parent_id=int(parent_id) if parent_id and parent_id.isdigit() else None)
+        except (LookupError, ValueError) as e:
+            tmp.unlink(missing_ok=True)
+            return self.send_error_json(400, f"{name}: {e}")
         except Exception as e:
             tmp.unlink(missing_ok=True)
             traceback.print_exc()
@@ -220,8 +252,7 @@ class Handler(BaseHTTPRequestHandler):
         p = state["lib"].update(int(pid), self.read_json())
         if not p:
             return self.send_error_json(404, "없는 논문입니다")
-        p["citations"] = md.citations(p)
-        self.send_json(p)
+        self.send_json(self.with_extras(p))
 
     def refetch(self, qs, pid):
         data = self.read_json()
@@ -229,8 +260,7 @@ class Handler(BaseHTTPRequestHandler):
             p = state["lib"].refetch(int(pid), doi=data.get("doi"), arxiv_id=data.get("arxiv_id"))
         except Exception as e:
             return self.send_error_json(400, f"정보를 가져오지 못했습니다: {e}")
-        p["citations"] = md.citations(p)
-        self.send_json(p)
+        self.send_json(self.with_extras(p))
 
     def lookup(self, qs):
         """수정 창의 '제목으로 찾기': Crossref 후보 목록."""
@@ -290,6 +320,8 @@ ROUTES = [
     ("DELETE", r"/api/papers/(\d+)", Handler.delete_paper),
     ("POST", r"/api/papers/(\d+)/refetch", Handler.refetch),
     ("POST", r"/api/papers/(\d+)/reveal", Handler.reveal_paper),
+    ("PUT", r"/api/papers/(\d+)/parent", Handler.set_parent),
+    ("GET", r"/api/mains", Handler.mains),
     ("GET", r"/api/lookup", Handler.lookup),
     ("POST", r"/api/open-folder", Handler.open_folder),
     ("POST", r"/api/rescan", Handler.rescan),

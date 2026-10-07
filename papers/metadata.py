@@ -100,6 +100,7 @@ def read_pdf(path):
 
     pages = []
     title_guess = ""
+    first_chunks = []
     for i, page in enumerate(reader.pages):
         if i >= MAX_FULLTEXT_PAGES:
             break
@@ -120,12 +121,13 @@ def read_pdf(path):
         pages.append(text)
         if i == 0:
             title_guess = guess_title_from_chunks(chunks)
+            first_chunks = chunks
 
     first = pages[0] if pages else ""
     head = "\n".join(pages[:2])
     full = clean_text("\n".join(pages))[:MAX_FULLTEXT_CHARS]
     return {"first": first, "head": head, "full": full, "info": info,
-            "title_guess": title_guess, "page_count": len(reader.pages)}
+            "title_guess": title_guess, "chunks": first_chunks, "page_count": len(reader.pages)}
 
 
 BAD_TITLE_WORDS = {"article", "research article", "original article", "review", "letter",
@@ -133,12 +135,12 @@ BAD_TITLE_WORDS = {"article", "research article", "original article", "review", 
                    "research paper", "original research", "journal of", "proceedings"}
 
 
-def guess_title_from_chunks(chunks):
+def guess_title_from_chunks(chunks, skip=None):
     """첫 페이지에서 가장 큰 글씨로 쓰인 문장을 제목으로 본다."""
     sizes = {}
     order = {}
     for idx, (size, text) in enumerate(chunks):
-        if size <= 0:
+        if size <= 0 or (skip and skip(text)):
             continue
         sizes.setdefault(size, []).append(text)
         order.setdefault(size, idx)
@@ -271,6 +273,35 @@ def arxiv_by_id(arxiv_id):
     }
 
 
+# ---------------------------------------------------------------- 보충자료
+
+SUPP_PHRASE = (r"(?:supplementary|supplemental|supporting|electronic supplementary|online supplementary)\s+"
+               r"(?:information|materials?|data|notes?|text|methods|figures?|tables?|appendix|appendices|files?)"
+               r"|extended\s+data|online\s+(?:appendix|methods|supplement)|\bappendix\b|보충\s*자료|부록")
+SUPP_TEXT_RE = re.compile(SUPP_PHRASE, re.I)
+SUPP_FILE_RE = re.compile(r"(?<![a-z])(?:supp|suppl|supplement\w*|si|esi|moesm\d*|mmc\d+|appendix|"
+                          r"supporting|sup)(?![a-z])|보충|부록", re.I)
+SUPP_STRIP_RE = re.compile(r"^\s*(?:" + SUPP_PHRASE + r")\s*(?:\d+|[A-Z](?![a-z]))?(?:\s*(?:for|to|of|:|-|—|–))*\s*", re.I)
+SUPP_LINE_RE = re.compile(r"^\W*(?:" + SUPP_PHRASE + r")(?!\s+(?:is|are|for this|accompan|can|may|available|linked))", re.I)
+
+
+def is_supplement(first_text, filename=""):
+    """첫 페이지 머리말이나 파일 이름으로 보충자료인지 판단."""
+    stem = re.sub(r"\.pdf$", "", (filename or "").rsplit("/", 1)[-1], flags=re.I)
+    if SUPP_FILE_RE.search(stem.replace("_", " ").replace("-", " ")):
+        return True
+    # 첫 페이지 맨 앞 몇 줄 중 하나가 'Supplementary Information …' 으로 시작하면 보충자료.
+    # 본문 논문에 흔한 'Supplementary information is available …' 같은 안내 문장은 제외.
+    lines = [ln.strip() for ln in (first_text or "").splitlines() if ln.strip()][:6]
+    return any(len(ln) < 200 and SUPP_LINE_RE.match(ln) for ln in lines)
+
+
+def strip_supp_heading(title):
+    """'Supplementary Information for: 제목' → '제목'."""
+    out = SUPP_STRIP_RE.sub("", title or "", count=1).strip(" :.-—–")
+    return out if len(out) >= 8 else ""
+
+
 # ---------------------------------------------------------------- 판별
 
 def title_in_text(title, text_key):
@@ -332,10 +363,21 @@ def year_from_text(text):
     return max(years) if years else None
 
 
-def extract(path, filename="", online=True, log=None):
-    """경로의 PDF를 읽어 서지 정보 dict 를 돌려준다. 'fulltext', 'needs_review' 포함."""
+def extract(path, filename="", online=True, log=None, supplement=None):
+    """경로의 PDF를 읽어 서지 정보 dict 를 돌려준다. 'fulltext', 'needs_review', 'is_supplement' 포함.
+
+    보충자료면 그 보충자료가 딸린 본문 논문의 서지 정보를 찾는다.
+    """
     log = log or (lambda *a: None)
     pdf = read_pdf(path)
+    if supplement is None:
+        supplement = is_supplement(pdf["first"], filename)
+    if supplement:
+        # 'Supplementary Information' 같은 머리말 글씨는 빼고 본문 논문 제목을 찾는다
+        pdf["title_guess"] = (strip_supp_heading(pdf["title_guess"])
+                              or guess_title_from_chunks(pdf["chunks"], skip=lambda t: bool(SUPP_TEXT_RE.search(t))
+                                                         and not strip_supp_heading(clean_text(t)))
+                              or pdf["title_guess"])
     text_key = norm_key(pdf["head"])
     record = None
 
@@ -366,10 +408,13 @@ def extract(path, filename="", online=True, log=None):
         if record is None:
             queries = []
             for cand in (pdf["title_guess"], pdf["info"].get("title", "")):
+                if supplement:
+                    cand = strip_supp_heading(cand) if SUPP_TEXT_RE.match(cand or "") else cand
                 if plausible_title(cand) and cand not in queries:
                     queries.append(cand)
-            if not queries and pdf["first"]:
-                queries.append(clean_text(pdf["first"])[:300])
+            if (not queries or supplement) and pdf["first"]:
+                queries.append(SUPP_TEXT_RE.sub(" ", clean_text(pdf["first"])[:300]) if supplement
+                               else clean_text(pdf["first"])[:300])
             for q in queries:
                 try:
                     results = crossref_search(q)
@@ -390,6 +435,8 @@ def extract(path, filename="", online=True, log=None):
         title = pdf["title_guess"] if plausible_title(pdf["title_guess"]) else ""
         if not title and plausible_title(info.get("title")):
             title = clean_text(info["title"])
+        if supplement:
+            title = strip_supp_heading(title)
         if not title:
             title = re.sub(r"\.pdf$", "", filename or "", flags=re.I) or "제목 없음"
         record["title"] = title
@@ -407,6 +454,7 @@ def extract(path, filename="", online=True, log=None):
     record.setdefault("arxiv_id", "")
     record["fulltext"] = pdf["full"]
     record["needs_review"] = needs_review
+    record["is_supplement"] = bool(supplement)
     if not record.get("abstract"):
         record["abstract"] = abstract_from_text(pdf["first"])
     return record

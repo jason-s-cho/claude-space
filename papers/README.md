@@ -13,6 +13,16 @@
   3. 둘 다 없으면 첫 페이지에서 가장 큰 글씨(제목)를 찾아 Crossref에서 검색하고,
      결과의 제목이 PDF 첫 페이지에 실제로 있을 때만 채택
   4. 그래도 못 찾으면 PDF에서 추정한 값으로 저장하고 **확인 필요** 표시
+- **보충자료(Supplementary) 묶기**: 보충자료 PDF는 본문 논문에 묶어
+  `본문 파일 이름 - Supplementary.pdf`, `… - Supplementary 2.pdf`로 저장합니다. 탐색기에서도 본문 바로 옆에 놓입니다.
+  - 파일 이름(`_SI`, `supp`, `MOESM1_ESM`, `mmc1` 등)이나 첫 페이지 머리말(`Supplementary Information`,
+    `Supporting Information`, `Extended Data`, `Appendix`, `보충자료`, `부록` 등)로 알아봅니다.
+  - 같은 DOI이거나, 본문 논문 제목이 보충자료 첫머리에 있으면 그 논문에 묶습니다.
+  - 보충자료가 본문보다 먼저 들어와도 괜찮습니다. 나중에 본문이 들어오면 자동으로 묶입니다.
+  - 목록의 **논문 위에 PDF를 놓으면** 무조건 그 논문의 보충자료로 묶습니다.
+  - 잘못 분류됐으면 수정 창의 **분류**에서 본문/보충자료와 본문 논문을 바꿀 수 있습니다.
+  - 본문 논문의 정보·파일 이름이 바뀌면 보충자료도 따라 바뀌고, 본문을 삭제하면 보충자료도 함께 trash로 갑니다.
+  - 보충자료 내용도 검색되며, 걸리면 본문 논문 결과에 `보충자료` 표시와 함께 나옵니다.
 - **Scholar 형식 목록**: 제목 / `저자 - 저널, 연도 - 출판사` / 초록, 그리고 인용(APA·MLA·BibTeX)·수정·폴더에서 보기·DOI
 - **검색**: 전체·제목·저자·저널·**본문** 범위, `"따옴표 구절"`, 기간(○○년부터 / 직접 지정), 관련도·추가한 순·연도순·제목순 정렬
 - **수정**: DOI·arXiv ID를 넣거나 제목 일부로 Crossref 후보를 골라 다시 받아오기. 저장하면 파일 이름도 맞춰 바뀝니다.
@@ -44,6 +54,7 @@ python app.py --library "D:\논문"     # 폴더 지정 (다음부터는 기억�
 ```
 논문폴더/
 ├── LeCun et al. - 2015 - Deep learning.pdf
+├── LeCun et al. - 2015 - Deep learning - Supplementary.pdf
 ├── Vaswani et al. - 2017 - Attention Is All You Need.pdf
 └── .papershelf/
     ├── library.db    ← 서지 정보·본문 색인 (SQLite)
