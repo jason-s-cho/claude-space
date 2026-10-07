@@ -292,6 +292,7 @@ const state = {
 try { state.g.show = localStorage.getItem("schedule.gcal.show") !== "0"; } catch {}
 
 // ---------- 저장소 ----------
+const IS_DESKTOP_APP = /\bElectron\//.test(navigator.userAgent); // 데스크톱 앱(Electron)으로 열렸는지
 let col = null;
 const LS_KEY = "schedule.events.v1";
 function lsLoad() { try { return JSON.parse(localStorage.getItem(LS_KEY) || "[]"); } catch { return []; } }
@@ -454,7 +455,7 @@ function render() {
   $("status").textContent = {
     loading: "불러오는 중…",
     db: `저장됨 · 어느 기기에서 열어도 같은 일정이 보입니다 · 전체 ${state.events.length}개`,
-    local: `이 브라우저에만 저장됩니다 · 전체 ${state.events.length}개`,
+    local: `${IS_DESKTOP_APP ? "이 컴퓨터에만 저장됩니다" : "이 브라우저에만 저장됩니다"} · 전체 ${state.events.length}개`,
   }[state.mode];
 }
 
