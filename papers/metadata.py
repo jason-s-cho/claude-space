@@ -7,6 +7,7 @@
 import html
 import json
 import math
+import os
 import re
 import unicodedata
 import urllib.error
@@ -760,6 +761,50 @@ def abstract_from_text(text):
                   r"(?:\n\s*(?:keywords?|key words|index terms|1\.?\s+introduction|introduction|주제어|핵심어)\b|$)",
                   text or "")
     return clean_text(m.group(1))[:1200] if m else ""
+
+
+# ---------------------------------------------------------------- 내 정리 자료의 글
+
+OFFICE_PARTS = {
+    ".docx": [r"word/document\.xml", r"word/(footnotes|endnotes|comments)\.xml"],
+    ".pptx": [r"ppt/slides/slide\d+\.xml", r"ppt/notesSlides/notesSlide\d+\.xml"],
+    ".xlsx": [r"xl/sharedStrings\.xml"],
+    ".hwpx": [r"Contents/section\d+\.xml"],
+    ".odt": [r"content\.xml"], ".odp": [r"content\.xml"], ".ods": [r"content\.xml"],
+}
+PLAIN_EXTS = {".txt", ".md", ".markdown", ".csv", ".tex", ".bib", ".rtf", ".json"}
+
+
+def extract_any_text(path, limit=MAX_FULLTEXT_CHARS):
+    """정리 파일(Word·PowerPoint·Excel·한글 hwpx·텍스트·PDF)에서 검색용 글을 뽑는다. 못 읽으면 빈 글."""
+    import zipfile
+    p = str(path)
+    ext = os.path.splitext(p)[1].lower()
+    try:
+        if ext == ".pdf":
+            return read_pdf(p)["full"][:limit]
+        if ext in PLAIN_EXTS:
+            raw = open(p, "rb").read(limit * 4)
+            for enc in ("utf-8", "cp949", "latin-1"):
+                try:
+                    return clean_text(raw.decode(enc))[:limit]
+                except UnicodeDecodeError:
+                    continue
+        if ext in OFFICE_PARTS:
+            out = []
+            with zipfile.ZipFile(p) as z:
+                names = sorted(z.namelist(), key=lambda n: [int(x) if x.isdigit() else x for x in re.split(r"(\d+)", n)])
+                for name in names:
+                    if any(re.fullmatch(pat, name) for pat in OFFICE_PARTS[ext]):
+                        xml = z.read(name).decode("utf-8", "ignore")
+                        xml = re.sub(r"</(a:p|w:p|hp:p|text:p|si)>", "\n", xml)  # 문단 끝은 줄바꿈
+                        out.append(html.unescape(re.sub(r"<[^>]+>", " ", xml)))
+                        if sum(map(len, out)) > limit:
+                            break
+            return clean_text("\n".join(out))[:limit]
+    except Exception:
+        return ""
+    return ""
 
 
 # ---------------------------------------------------------------- 표기 형식

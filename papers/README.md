@@ -27,6 +27,10 @@
     이미 있으면 그 논문에 묶고, 모르면 어느 논문인지 묻습니다. 목록에는 🎬로 보입니다.
   - 수정 창 아래 보충자료 목록에서 잘못 묶인 보충자료를 뺄 수 있습니다.
   - 보충자료 내용도 검색되며, 걸리면 본문 논문 결과에 `보충자료` 표시와 함께 나옵니다.
+- **내 정리 자료**: 논문을 보며 만든 PowerPoint·Word·Excel·한글·메모·그림 등을 논문 위에 끌어다 놓거나
+  수정 창의 ‘내 정리 자료 → 파일 추가’로 붙입니다. `논문 이름 - 정리 - 원래 파일 이름.pptx`로 논문 옆에 저장되고,
+  카드의 ‘내 정리’에서 누르면 기본 프로그램으로 열립니다. Word·PowerPoint·Excel·hwpx·텍스트 안의 글도 검색됩니다.
+  논문 이름이 바뀌면 따라 바뀌고, 논문을 빼면 함께 trash로 갑니다.
 - **책**: 책 PDF는 앞 12쪽(표제지·판권 면)에서 ISBN을 찾아 Crossref(학술서, DOI 포함) → Google Books →
   Open Library 순서로 제목·저자(편저는 편집자)·출판사·연도·판·책 소개를 채웁니다.
   `Goodfellow et al. - 2016 - Deep Learning.pdf` 처럼 논문과 같은 규칙으로 저장하고,
@@ -99,6 +103,7 @@ python app.py --library "D:\논문"     # 폴더 지정 (다음부터는 기억�
 논문폴더/
 ├── LeCun et al. - 2015 - Deep learning.pdf
 ├── LeCun et al. - 2015 - Deep learning - Supplementary.pdf
+├── LeCun et al. - 2015 - Deep learning - 정리 - 발표 자료.pptx
 ├── Vaswani et al. - 2017 - Attention Is All You Need.pdf
 └── .papershelf/
     ├── library.db    ← 서지 정보·본문 색인 (SQLite)

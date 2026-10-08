@@ -27,9 +27,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import metadata as md  # noqa: E402
-from library import Library, is_video, parse_my_names  # noqa: E402
+from library import BLOCKED_EXTS, Library, is_video, parse_my_names  # noqa: E402
 
-APP_VERSION = "1.4.12"
+APP_VERSION = "1.4.13"
 HERE = Path(__file__).resolve().parent
 # 설치판(PyInstaller)으로 묶였을 때는 화면 파일이 압축 해제 폴더에 있다
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", HERE))
@@ -246,7 +246,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("Content-Length", str(end - start + 1))
         quoted = urllib.parse.quote(path.name)
-        self.send_header("Content-Disposition", f"inline; filename*=UTF-8''{quoted}")
+        # 내 정리 자료 중 HTML·SVG 같은 파일이 이 앱 주소에서 스크립트로 돌지 않도록 PDF·그림·동영상만 바로 보여 준다
+        inline = ctype == "application/pdf" or ctype.split("/")[0] in ("video", "audio") or (
+            ctype.startswith("image/") and "svg" not in ctype)
+        self.send_header("Content-Disposition", f"{'inline' if inline else 'attachment'}; filename*=UTF-8''{quoted}")
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
         remaining = end - start + 1
         try:
@@ -304,8 +308,10 @@ class Handler(BaseHTTPRequestHandler):
         lib = state["lib"]
         p["citations"] = md.citations(p)
         with lib.connect() as c:
-            p["supplements"] = [dict(r) for r in c.execute(
-                "SELECT id, file_name, original_name FROM papers WHERE parent_id=? ORDER BY added_at, id", (p["id"],))]
+            kids = [dict(r) for r in c.execute(
+                "SELECT id, kind, file_name, original_name FROM papers WHERE parent_id=? ORDER BY added_at, id", (p["id"],))]
+            p["supplements"] = [k for k in kids if k["kind"] != "note"]
+            p["attachments"] = [k for k in kids if k["kind"] == "note"]
             if p.get("parent_id"):
                 r = c.execute("SELECT id, title, file_name FROM papers WHERE id=?", (p["parent_id"],)).fetchone()
                 p["parent"] = dict(r) if r else None
@@ -337,11 +343,16 @@ class Handler(BaseHTTPRequestHandler):
         lib = state["lib"]
         name = urllib.parse.unquote(self.headers.get("X-Filename") or "paper.pdf")
         name = os.path.basename(name.replace("\\", "/")) or "paper.pdf"
-        video = is_video(name)
+        ext = Path(name).suffix.lower()
+        # 내 정리 자료: 명시했거나(X-Kind: note), PDF·동영상이 아닌 파일
+        note = self.headers.get("X-Kind") == "note" or (ext != ".pdf" and not is_video(name))
+        video = is_video(name) and not note
         length = int(self.headers.get("Content-Length") or 0)
-        if length <= 0 or length > (MAX_VIDEO_UPLOAD if video else MAX_UPLOAD):
+        if length <= 0 or length > (MAX_VIDEO_UPLOAD if video or note else MAX_UPLOAD):
             return self.send_error_json(400, "파일 크기가 올바르지 않습니다")
-        tmp = lib.tmp_dir / f"{uuid.uuid4().hex}{Path(name).suffix.lower() if video else '.pdf'}"
+        if note and ext in BLOCKED_EXTS:
+            return self.send_error_json(400, f"{name}: 실행 파일은 정리 자료로 넣을 수 없습니다")
+        tmp = lib.tmp_dir / f"{uuid.uuid4().hex}{ext if video or note else '.pdf'}"
         remaining = length
         with open(tmp, "wb") as f:
             while remaining > 0:
@@ -351,6 +362,20 @@ class Handler(BaseHTTPRequestHandler):
                 f.write(chunk)
                 remaining -= len(chunk)
         parent_id = self.headers.get("X-Parent-Id")
+        if note:
+            try:
+                status, p = lib.import_note(tmp, name, int(parent_id) if parent_id and parent_id.isdigit() else None)
+            except LookupError as e:
+                tmp.unlink(missing_ok=True)
+                if str(e) == "needs_parent":
+                    return self.send_json({"error": f"{name}: 어느 논문의 정리 자료인지 골라 주세요",
+                                           "needs_parent": True}, 409)
+                return self.send_error_json(400, f"{name}: {e}")
+            except ValueError as e:
+                tmp.unlink(missing_ok=True)
+                return self.send_error_json(400, f"{name}: {e}")
+            log(f"[{status}] {name} → {p['file_name']}")
+            return self.send_json({"status": status, "paper": p})
         if video:
             try:
                 status, p = lib.import_video(tmp, name, parent_id=int(parent_id) if parent_id and parent_id.isdigit() else None)

@@ -114,6 +114,18 @@ VIDEO_SUFFIX = " - Supplementary Video"
 VIDEO_EXTS = {".mp4", ".m4v", ".mov", ".avi", ".mkv", ".webm", ".wmv", ".mpg", ".mpeg", ".ogv", ".3gp", ".flv"}
 
 
+NOTE_MARK = " - 정리 - "
+# 내 정리 자료로 받지 않는 파일(실행 파일·스크립트)
+BLOCKED_EXTS = {".exe", ".bat", ".cmd", ".com", ".msi", ".scr", ".ps1", ".vbs", ".vbe", ".js", ".jse", ".wsf",
+                ".lnk", ".reg", ".dll", ".sh", ".app", ".pkg", ".dmg", ".jar", ".command"}
+CHILD_KINDS = ("supp", "note")
+
+
+def is_child(p):
+    """본문 논문에 딸린 보충자료·내 정리 자료."""
+    return (p["kind"] or "main") in CHILD_KINDS and bool(p["parent_id"])
+
+
 def is_video(name):
     return Path(name).suffix.lower() in VIDEO_EXTS
 
@@ -416,11 +428,58 @@ class Library:
             pid = cur.lastrowid
         return "added", self.get(pid)
 
+    def import_note(self, src, original_name, parent_id, in_place=False):
+        """내가 만든 정리 자료(PPT·Word 등)를 논문에 붙여 '논문 이름 - 정리 - 원래 이름.pptx' 로 저장한다."""
+        src = Path(src)
+        ext = (Path(original_name).suffix or src.suffix).lower()
+        if ext in BLOCKED_EXTS:
+            raise ValueError("실행 파일은 정리 자료로 넣을 수 없습니다")
+        if not parent_id:
+            raise LookupError("needs_parent")
+        with self.lock, self.connect() as c:
+            parent = c.execute("SELECT * FROM papers WHERE id=?", (parent_id,)).fetchone()
+            if parent is None:
+                raise LookupError("붙일 논문이 없습니다")
+            parent = self._main_of(c, parent)
+            # 같은 파일을 여러 논문에 붙일 수 있도록 해시에 논문 번호를 붙여 둔다(sha256 은 UNIQUE)
+            sha = f"{sha256_file(src)}#note{parent['id']}"
+            dup = c.execute("SELECT * FROM papers WHERE sha256=?", (sha,)).fetchone()
+            if dup:
+                if not in_place:
+                    src.unlink(missing_ok=True)
+                return "duplicate", self.to_dict(dup)
+            rec = self._inherit({}, parent)
+            want = self._note_name(parent["file_name"], original_name, ext)
+            if in_place and src.name.startswith(Path(parent["file_name"]).stem + NOTE_MARK.rstrip()):
+                target = src  # 폴더에 이미 규칙대로 놓인 파일
+            else:
+                target = self._unique_target(want, current=src if in_place else None)
+                shutil.move(str(src), str(target))
+            text = md.extract_any_text(target)
+            now = time.time()
+            cur = c.execute(
+                """INSERT INTO papers (file_name, original_name, sha256, title, authors, authors_text,
+                   journal, year, volume, issue, pages, publisher, doi, arxiv_id, url, abstract, type,
+                   tags, notes, source, needs_review, fulltext, added_at, updated_at, kind, parent_id,
+                   isbn, edition)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (target.name, original_name, sha, rec["title"], json.dumps(rec["authors"], ensure_ascii=False),
+                 parent["authors_text"], rec["journal"], rec["year"], rec["volume"], rec["issue"], rec["pages"],
+                 rec["publisher"], rec["doi"], rec["arxiv_id"], rec["url"], "", rec["type"], "", "",
+                 rec["source"], 0, text, now, now, "note", parent["id"], rec["isbn"], rec["edition"]))
+            pid = cur.lastrowid
+        return "added", self.get(pid)
+
+    @staticmethod
+    def _note_name(main_file, original_name, ext):
+        stem = safe_component(Path(original_name).stem, 60) or "자료"
+        return Path(main_file).stem + NOTE_MARK + stem + ext
+
     # ------------------------------------------------------------ 보충자료 묶기
 
     def _main_of(self, c, row):
         """보충자료 위에 놓아도 그 본문 논문에 묶이도록."""
-        if (row["kind"] or "main") == "supp":
+        if (row["kind"] or "main") in CHILD_KINDS:
             main = c.execute("SELECT * FROM papers WHERE id=?", (row["parent_id"],)).fetchone() if row["parent_id"] else None
             if main is None:
                 raise ValueError("본문이 없는 보충자료에는 묶을 수 없습니다. 본문 논문을 골라 주세요.")
@@ -477,7 +536,10 @@ class Library:
         rec = self._inherit({}, main)
         rec["authors"] = json.dumps(rec["authors"], ensure_ascii=False)
         rec["authors_text"] = main["authors_text"]
-        rec["kind"] = "supp"
+        row = c.execute("SELECT kind, sha256 FROM papers WHERE id=?", (sid,)).fetchone()
+        rec["kind"] = "note" if row and row["kind"] == "note" else "supp"
+        if rec["kind"] == "note":
+            rec["sha256"] = (row["sha256"] or "").split("#")[0] + f"#note{main['id']}"
         rec["parent_id"] = main["id"]
         rec["updated_at"] = time.time()
         sets = ", ".join(f"{k}=?" for k in rec)
@@ -517,6 +579,14 @@ class Library:
             if p["missing"]:
                 continue
             current = self.path_of(p)
+            if p["kind"] == "note":
+                if current.name.startswith(base + NOTE_MARK):
+                    continue
+                want = self._note_name(main["file_name"], p.get("original_name") or current.name, current.suffix.lower())
+                target = self._unique_target(want, current=current)
+                if target.name != current.name:
+                    self._move_locked(c, row["id"], current, target)
+                continue
             label = supp_label(current.name)
             # 이미 'base - Supplementary[ Video][ 2].ext' 꼴이면 그대로 둔다
             if current.name.startswith(base + label) and re.fullmatch(r"( \d+)?\.\w+", current.name[len(base + label):]):
@@ -540,6 +610,8 @@ class Library:
                     raise ValueError("자기 자신에 묶을 수 없습니다")
                 self._attach_locked(c, pid, main)
             else:
+                if row["kind"] == "note":
+                    raise ValueError("정리 자료는 본문이 될 수 없습니다. 다른 논문에 붙이거나 빼 주세요.")
                 if is_video(row["file_name"]):
                     raise ValueError("동영상은 본문이 될 수 없습니다. 다른 논문에 묶거나 삭제해 주세요.")
                 c.execute("UPDATE papers SET kind='main', parent_id=NULL, needs_review=1, updated_at=? WHERE id=?",
@@ -563,7 +635,7 @@ class Library:
         if not p:
             return None
         fields = {k: data[k] for k in EDITABLE if k in data}
-        if p["kind"] == "supp" and p.get("parent_id"):
+        if is_child(p):
             fields = {k: v for k, v in fields.items() if k in ("tags", "notes")}
         if "authors" in fields:
             if isinstance(fields["authors"], str):
@@ -596,7 +668,7 @@ class Library:
 
     def _rename_locked(self, c, pid):
         p = self.to_dict(c.execute("SELECT * FROM papers WHERE id=?", (pid,)).fetchone())
-        if p["kind"] == "supp" and p["parent_id"]:
+        if is_child(p):
             return self._rename_supps_locked(c, p["parent_id"])
         if p["missing"]:
             return
@@ -717,6 +789,23 @@ class Library:
             known = {r["file_name"]: r["id"] for r in c.execute("SELECT id, file_name FROM papers")}
         mains = None
         for path in sorted(self.root.iterdir()):
+            if (path.is_file() and not path.name.startswith(".") and path.name not in known
+                    and " - 정리" in path.name and path.suffix.lower() not in BLOCKED_EXTS):
+                # '본문 이름 - 정리 …' 파일은 그 논문의 내 정리 자료
+                if mains is None:
+                    with self.connect() as c:
+                        mains = [(Path(r["file_name"]).stem, r["id"]) for r in
+                                 c.execute("SELECT id, file_name FROM papers WHERE kind='main'")]
+                hit = max((m for m in mains if path.name.startswith(m[0] + " - 정리")), key=lambda m: len(m[0]),
+                          default=None)
+                if hit:
+                    try:
+                        status, p = self.import_note(path, path.name.split(NOTE_MARK, 1)[-1], hit[1], in_place=True)
+                        (added.append(p) if status == "added" else None)
+                        dups += status != "added"
+                    except Exception as e:
+                        failed.append({"file": path.name, "error": str(e)})
+                    continue
             if path.is_file() and is_video(path.name) and not path.name.startswith(".") and path.name not in known:
                 # '본문 이름 …' 으로 시작하는 동영상만 그 논문에 묶는다
                 if mains is None:
@@ -901,11 +990,11 @@ class Library:
     def _group_supplements(self, results):
         """본문에 묶인 보충자료는 본문 논문 결과 아래로 모은다."""
         by_id = {p["id"]: p for p in results}
-        out = [p for p in results if not (p["kind"] == "supp" and p.get("parent_id"))]
+        out = [p for p in results if not is_child(p)]
         tops = {p["id"]: p for p in out}
         with self.connect() as c:
             for p in results:
-                if not (p["kind"] == "supp" and p.get("parent_id")):
+                if not is_child(p):
                     continue
                 parent = tops.get(p["parent_id"])
                 if parent is None:
@@ -919,7 +1008,8 @@ class Library:
                     out.append(parent)
                     tops[parent["id"]] = parent
                     if p.get("in_fulltext"):
-                        parent["snippet"], parent["in_supplement"] = p["snippet"], True
+                        parent["snippet"] = p["snippet"]
+                        parent["in_note" if p["kind"] == "note" else "in_supplement"] = True
                     else:
                         parent["snippet"] = (parent.get("abstract") or "")[:240]
                 parent["score"] = max(parent.get("score", 0), p.get("score", 0))
@@ -927,22 +1017,24 @@ class Library:
             supps = {}
             for i in range(0, len(ids), 500):
                 chunk = ids[i:i + 500]
-                q = f"SELECT id, file_name, original_name, parent_id FROM papers WHERE parent_id IN ({','.join('?' * len(chunk))}) ORDER BY added_at, id"
+                q = f"SELECT id, kind, file_name, original_name, parent_id FROM papers WHERE parent_id IN ({','.join('?' * len(chunk))}) ORDER BY added_at, id"
                 for r in c.execute(q, chunk):
-                    supps.setdefault(r["parent_id"], []).append(
+                    supps.setdefault((r["parent_id"], r["kind"] == "note"), []).append(
                         {"id": r["id"], "file_name": r["file_name"], "original_name": r["original_name"],
                          "video": is_video(r["file_name"]),
                          "missing": not (self.root / r["file_name"]).exists(), "matched": r["id"] in by_id})
         for p in out:
-            p["supplements"] = supps.get(p["id"], [])
+            p["supplements"] = supps.get((p["id"], False), [])
+            p["attachments"] = supps.get((p["id"], True), [])
         return out
 
     def stats(self):
         with self.connect() as c:
-            total = c.execute("SELECT count(*) FROM papers WHERE NOT (kind='supp' AND parent_id IS NOT NULL)").fetchone()[0]
+            total = c.execute("SELECT count(*) FROM papers WHERE NOT (kind IN ('supp','note') AND parent_id IS NOT NULL)").fetchone()[0]
             review = c.execute("SELECT count(*) FROM papers WHERE needs_review=1").fetchone()[0]
             years = [r[0] for r in c.execute("SELECT DISTINCT year FROM papers WHERE year IS NOT NULL ORDER BY year")]
             supps = c.execute("SELECT count(*) FROM papers WHERE kind='supp'").fetchone()[0]
+            notes = c.execute("SELECT count(*) FROM papers WHERE kind='note'").fetchone()[0]
             mains = c.execute("SELECT type, authors, mine FROM papers WHERE kind='main'").fetchall()
         groups = {name: 0 for name in (*DOC_GROUPS, "other")}
         mine_groups = dict(groups)  # '내 논문·책'을 볼 때 쓰는 종류별 개수
@@ -953,7 +1045,7 @@ class Library:
             if self.is_mine({"authors": r["authors"], "mine": r["mine"]}):
                 mine += 1
                 mine_groups[g] += 1
-        return {"total": total, "needs_review": review, "years": years, "supplements": supps,
+        return {"total": total, "needs_review": review, "years": years, "supplements": supps, "attachments": notes,
                 "books": groups["book"], "groups": groups, "mine": mine, "mine_groups": mine_groups}
 
     def all_papers(self):
