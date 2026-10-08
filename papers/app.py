@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import metadata as md  # noqa: E402
 from library import Library, is_video, parse_my_names  # noqa: E402
 
-APP_VERSION = "1.4.11"
+APP_VERSION = "1.4.12"
 HERE = Path(__file__).resolve().parent
 # 설치판(PyInstaller)으로 묶였을 때는 화면 파일이 압축 해제 폴더에 있다
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", HERE))
@@ -418,7 +418,10 @@ class Handler(BaseHTTPRequestHandler):
         self.send_json({"items": items})
 
     def delete_paper(self, qs, pid):
-        ok = state["lib"].delete(int(pid))
+        try:
+            ok = state["lib"].delete(int(pid))
+        except ValueError as e:
+            return self.send_error_json(409, str(e))
         self.send_json({"ok": ok})
 
     def reveal_paper(self, qs, pid):
@@ -598,6 +601,17 @@ def main():
     log(f"논문 폴더: {state['lib'].root}")
     # 한 달 넘게 지난 인용 수는 켤 때마다 뒤에서 조용히 갱신
     threading.Timer(3, start_citation_job).start()
+    # 열려 있어서 이름을 못 바꾼 PDF는 1분마다 다시 시도
+    def retry_loop():
+        while True:
+            try:
+                n = state["lib"].retry_renames()
+                if n:
+                    log(f"미뤄 둔 파일 이름 {n}개를 바꿨습니다")
+            except Exception as e:
+                log("파일 이름 다시 바꾸기 실패:", e)
+            time.sleep(60)
+    threading.Thread(target=retry_loop, daemon=True).start()
 
     if use_window:
         # 자체 창: 서버는 뒤에서, 창은 메인 스레드에서. 창을 닫으면 프로그램도 끝난다.

@@ -623,7 +623,7 @@ function toast(msg) {
   t.textContent = msg;
   t.classList.add("on");
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => t.classList.remove("on"), 2200);
+  toast.timer = setTimeout(() => t.classList.remove("on"), Math.max(2200, msg.length * 70));  // 긴 안내는 더 오래
 }
 
 /* ---------- 사이드바 ---------- */
@@ -881,7 +881,7 @@ function resultHTML(p) {
       ${doi}
       ${bookMeta ? `<span class="meta-txt mono">${esc(bookMeta)}</span>` : ""}
     </div>
-    <div class="file mono">${esc(p.file_name)}</div>
+    <div class="file mono">${esc(p.file_name)}${p.rename_pending ? ` <span class="tag warn" title="PDF가 다른 프로그램에서 열려 있어 이름을 아직 못 바꿨습니다. 닫으면 자동으로 바뀝니다.">${ic("alert")}이름 바꾸기 대기</span>` : ""}</div>
   </article>`;
 }
 
@@ -1036,7 +1036,7 @@ $("#editForm").addEventListener("submit", async (e) => {
   try {
     const p = await api(`/api/papers/${editing.id}`, { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
     $("#editDlg").close();
-    toast("저장했습니다 → " + p.file_name);
+    toast(p.rename_pending ? "정보는 저장했습니다. " + "PDF가 다른 프로그램에서 열려 있어 파일 이름은 그 창을 닫은 뒤 자동으로 바꿉니다." : "저장했습니다 → " + p.file_name);
     refresh(true);
   } catch (err) { $("#fetchMsg").style.color = ""; $("#fetchMsg").textContent = err.message; }
 });
@@ -1052,7 +1052,8 @@ $("#fetchBtn").addEventListener("click", async () => {
       const body = doiMatch ? { doi: doiMatch[0] } : isbnMatch ? { isbn: isbnDigits } : { arxiv_id: arxivMatch[1] };
       editing = await api(`/api/papers/${editing.id}/refetch`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       fillEdit(editing);
-      msg.style.color = "var(--byline)"; msg.textContent = "가져와서 저장했습니다. 파일 이름도 바꿨습니다.";
+      msg.style.color = editing.rename_pending ? "var(--warn)" : "var(--good)";
+      msg.textContent = editing.rename_pending ? "정보를 가져와서 저장했습니다. " + "PDF가 다른 프로그램에서 열려 있어 파일 이름은 그 창을 닫은 뒤 자동으로 바꿉니다." : "가져와서 저장했습니다. 파일 이름도 바꿨습니다.";
       refresh(true);
     } else {
       const asBook = BOOK_TYPES.includes($("#f-type").value);

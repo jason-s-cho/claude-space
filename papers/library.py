@@ -90,7 +90,8 @@ CREATE TABLE IF NOT EXISTS papers (
     cited_by_source TEXT DEFAULT '',
     cited_by_url TEXT DEFAULT '',
     cited_by_at REAL,
-    mine INTEGER
+    mine INTEGER,
+    rename_pending INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS papers_doi ON papers(doi);
 CREATE INDEX IF NOT EXISTS papers_year ON papers(year);
@@ -105,7 +106,8 @@ MIGRATIONS = [
     ("cited_by_source", "ALTER TABLE papers ADD COLUMN cited_by_source TEXT DEFAULT ''"),
     ("cited_by_url", "ALTER TABLE papers ADD COLUMN cited_by_url TEXT DEFAULT ''"),
     ("cited_by_at", "ALTER TABLE papers ADD COLUMN cited_by_at REAL"),
-    ("mine", "ALTER TABLE papers ADD COLUMN mine INTEGER"),  # 1 내 저작, 0 아님, NULL 이름으로 자동 판단
+    ("mine", "ALTER TABLE papers ADD COLUMN mine INTEGER"),
+    ("rename_pending", "ALTER TABLE papers ADD COLUMN rename_pending INTEGER DEFAULT 0"),  # 파일이 열려 있어 이름을 못 바꿈  # 1 내 저작, 0 아님, NULL 이름으로 자동 판단
 ]
 SUPP_SUFFIX = " - Supplementary"
 VIDEO_SUFFIX = " - Supplementary Video"
@@ -484,6 +486,29 @@ class Library:
         c.execute("UPDATE papers SET parent_id=? WHERE parent_id=?", (main["id"], sid))
         self._rename_supps_locked(c, main["id"])
 
+    def _move_locked(self, c, pid, src, dst):
+        """파일 이름 바꾸기. 다른 프로그램이 파일을 열고 있으면(Windows) 실패를 기록하고 나중에 다시 한다."""
+        try:
+            os.replace(src, dst)
+        except OSError as e:
+            c.execute("UPDATE papers SET rename_pending=1 WHERE id=?", (pid,))
+            self.last_rename_error = str(e)
+            return False
+        c.execute("UPDATE papers SET file_name=?, rename_pending=0 WHERE id=?", (Path(dst).name, pid))
+        return True
+
+    def retry_renames(self):
+        """이름 바꾸기를 미뤄 둔 파일들을 다시 시도한다. 바꾼 개수를 돌려준다."""
+        with self.connect() as c:
+            ids = [r[0] for r in c.execute("SELECT id FROM papers WHERE rename_pending=1")]
+        done = 0
+        for pid in ids:
+            with self.lock, self.connect() as c:
+                c.execute("UPDATE papers SET rename_pending=0 WHERE id=?", (pid,))
+                self._rename_locked(c, pid)
+                done += not c.execute("SELECT rename_pending FROM papers WHERE id=?", (pid,)).fetchone()[0]
+        return done
+
     def _rename_supps_locked(self, c, main_id):
         main = c.execute("SELECT * FROM papers WHERE id=?", (main_id,)).fetchone()
         base = main["file_name"][:-4]
@@ -498,8 +523,7 @@ class Library:
                 continue
             target = self._unique_target(base + label + current.suffix.lower(), current=current)
             if target.name != current.name:
-                os.replace(current, target)
-                c.execute("UPDATE papers SET file_name=? WHERE id=?", (target.name, row["id"]))
+                self._move_locked(c, row["id"], current, target)
 
     def set_parent(self, pid, parent_id):
         """보충자료로 지정(parent_id) 하거나, None 이면 본문 논문으로 되돌린다."""
@@ -582,25 +606,13 @@ class Library:
             want = want[:-4] + SUPP_SUFFIX + ".pdf"
             if current.name.startswith(want[:-4]):
                 return
-        if current.name == want:
-            return
-        target = self._unique_target(want, current=current)
-        if target.name != current.name:
-            os.replace(current, target)
-            c.execute("UPDATE papers SET file_name=? WHERE id=?", (target.name, pid))
+        if current.name != want:
+            target = self._unique_target(want, current=current)
+            if target.name != current.name and not self._move_locked(c, pid, current, target):
+                return  # 본문 이름을 못 바꿨으면 보충자료도 그대로 두었다가 함께 다시 한다
         if p["kind"] == "main":
             # 본문 이름이 바뀌면 보충자료도 새 이름을 따라간다
-            new_base = target.name[:-4]
-            for row in c.execute("SELECT * FROM papers WHERE parent_id=? ORDER BY added_at, id", (pid,)).fetchall():
-                sp = self.to_dict(row)
-                if sp["missing"]:
-                    continue
-                cur = self.path_of(sp)
-                suffix = cur.name[len(current.stem):] if cur.name.startswith(current.stem) else SUPP_SUFFIX + ".pdf"
-                t = self._unique_target(new_base + suffix, current=cur)
-                if t.name != cur.name:
-                    os.replace(cur, t)
-                    c.execute("UPDATE papers SET file_name=? WHERE id=?", (t.name, row["id"]))
+            self._rename_supps_locked(c, pid)
 
     def _sync_supps_locked(self, c, pid):
         """본문 논문의 서지 정보를 딸린 보충자료에도 반영."""
@@ -642,13 +654,25 @@ class Library:
             return False
         with self.lock, self.connect() as c:
             rows = [p] + [self.to_dict(r) for r in c.execute("SELECT * FROM papers WHERE parent_id=?", (pid,))]
+            moved = []
+            try:
+                for x in rows:
+                    if not x["missing"]:
+                        src = self.path_of(x)
+                        dest = self.trash_dir / src.name
+                        if dest.exists():
+                            dest = self.trash_dir / f"{int(time.time())} {src.name}"
+                        os.replace(src, dest)
+                        moved.append((src, dest))
+            except OSError:
+                # 하나라도 못 옮기면(다른 프로그램이 열고 있음) 옮긴 것을 되돌리고 아무것도 지우지 않는다
+                for src, dest in reversed(moved):
+                    try:
+                        os.replace(dest, src)
+                    except OSError:
+                        pass
+                raise ValueError("PDF가 다른 프로그램에서 열려 있어 지울 수 없습니다. 그 창을 닫은 뒤 다시 해 주세요.")
             for x in rows:
-                if not x["missing"]:
-                    src = self.path_of(x)
-                    dest = self.trash_dir / src.name
-                    if dest.exists():
-                        dest = self.trash_dir / f"{int(time.time())} {src.name}"
-                    shutil.move(str(src), str(dest))
                 c.execute("DELETE FROM papers WHERE id=?", (x["id"],))
         return True
 
