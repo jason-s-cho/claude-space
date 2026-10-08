@@ -96,6 +96,7 @@ a { color: var(--accent); }
 .nav h3 { margin: 18px 8px 6px; font-size: 0.72rem; letter-spacing: 0.06em; color: var(--ink-faint); font-weight: 650; text-transform: uppercase; }
 .nav-list { display: grid; gap: 2px; }
 .nav-item, .opt { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; background: none; text-align: left; padding: 7px 10px; border-radius: 8px; cursor: pointer; color: var(--ink-soft); font-size: 0.92rem; font-weight: 500; text-decoration: none; transition: background 0.12s, color 0.12s; }
+.nav-item[hidden] { display: none; }
 .nav-item:hover, .opt:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink); }
 .nav-item.on, .opt.on { background: var(--accent-soft); color: var(--accent); font-weight: 650; }
 .nav-item .n, .opt .n { margin-left: auto; font-size: 0.75rem; color: var(--ink-faint); font-variant-numeric: tabular-nums; font-weight: 500; }
@@ -248,6 +249,20 @@ details.pop[open] > summary, details.pop > summary:hover { border-color: var(--r
 .floating .menu-btn { text-align: left; border: 0; background: none; padding: 7px 8px; border-radius: 7px; cursor: pointer; font-size: 0.88rem; color: var(--ink); display: flex; gap: 9px; align-items: center; font-family: inherit; }
 .floating .menu-btn.danger { color: var(--danger); }
 #nameDlg { width: min(420px, calc(100vw - 32px)); }
+.supps.versions .lbl { color: var(--t-other); }
+#dupDlg { width: min(820px, calc(100vw - 32px)); }
+.dup-group { border: 1px solid var(--rule); border-radius: 12px; padding: 10px; display: grid; gap: 4px; }
+.dup-item { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border-radius: 9px; cursor: pointer; border: 1px solid transparent; }
+.dup-item:hover { background: color-mix(in srgb, var(--ink) 4%, transparent); }
+.dup-item:has(input:checked) { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+.dup-item input { margin-top: 3px; accent-color: var(--accent); }
+.dup-item .t { font-weight: 650; }
+.dup-item .s { font-size: 0.8rem; color: var(--ink-soft); margin-top: 2px; }
+.dup-item .f { font-size: 0.72rem; color: var(--ink-faint); overflow-wrap: anywhere; margin-top: 2px; }
+.dup-item .keep { margin-left: auto; font-size: 0.72rem; font-weight: 700; color: var(--accent); white-space: nowrap; visibility: hidden; }
+.dup-item:has(input:checked) .keep { visibility: visible; }
+.dup-actions { display: flex; gap: 8px; justify-content: flex-end; align-items: center; padding: 4px 4px 2px; }
+.dup-actions .hint { margin-right: auto; }
 .result .sel { width: 16px; height: 16px; margin: 0 2px 0 0; accent-color: var(--accent); cursor: pointer; opacity: 0.4; transition: opacity 0.12s; }
 .result:hover .sel, body.selecting .result .sel, .result .sel:focus-visible { opacity: 1; }
 .result.picked { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), var(--shadow-sm); }
@@ -439,6 +454,7 @@ dialog::backdrop { background: rgb(10 12 20 / 0.42); backdrop-filter: blur(3px);
         <h3>서재</h3>
         <div class="nav-list">
           <button type="button" class="nav-item mine-toggle" id="mineToggle" aria-pressed="false"><svg class="ic"><use href="#i-star"/></svg>내 논문·책<span class="n" id="mineCount"></span></button>
+          <button type="button" class="nav-item" id="dupBtn" hidden title="같은 논문으로 보이는 항목을 모아 하나로 합칩니다"><svg class="ic"><use href="#i-dup"/></svg>중복 의심<span class="n" id="dupCount"></span></button>
         </div>
         <div class="nav-list" id="docOpts"></div>
       </section>
@@ -688,6 +704,18 @@ dialog::backdrop { background: rgb(10 12 20 / 0.42); backdrop-filter: blur(3px);
   </form>
 </dialog>
 
+<dialog id="dupDlg">
+  <div class="dlg">
+    <header><h3>중복 의심</h3><button type="button" data-close aria-label="닫기"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button></header>
+    <div class="body">
+      <div class="hint">제목과 첫 저자가 같은 항목입니다. 남길 항목을 고르고 ‘합치기’를 누르면 나머지의 컬렉션·태그·메모·읽음 상태·별점·보충자료·정리 자료가 남길 항목으로 모이고,
+        나머지 PDF는 지우지 않고 ‘다른 판’(<span class="mono">… - Preprint.pdf</span> 등)으로 붙여 둡니다. 다른 논문이면 ‘중복 아님’을 누르세요.</div>
+      <div id="dupList" style="display:grid;gap:12px"></div>
+    </div>
+    <footer><span></span><div class="right"><button class="btn" type="button" data-close>닫기</button></div></footer>
+  </div>
+</dialog>
+
 <dialog id="nameDlg">
   <form class="dlg" id="nameForm" method="dialog">
     <header><h3 id="nameTitle">새 컬렉션</h3><button type="button" data-close aria-label="닫기"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button></header>
@@ -770,6 +798,8 @@ function renderSide() {
   $("#mineToggle").classList.toggle("on", view.mine);
   $("#mineToggle").setAttribute("aria-pressed", view.mine);
   $("#mineCount").textContent = lastInfo?.mine ? lastInfo.mine : "";
+  $("#dupBtn").hidden = !lastInfo?.duplicates;
+  $("#dupCount").textContent = lastInfo?.duplicates || "";
   const rd = lastInfo?.reading || {};
   $("#readOpts").innerHTML = [["unread", READ_STATES[""]], ["reading", READ_STATES.reading], ["read", READ_STATES.read]].map(([k, st]) =>
     `<button type="button" class="nav-item ${view.read === k ? "on" : ""}" data-read="${k}">${ic(st.icon)}${st.label}<span class="n">${rd[k] || ""}</span></button>`).join("");
@@ -1137,8 +1167,8 @@ const BLOCKED_EXT = /\.(exe|bat|cmd|com|msi|scr|ps1|vbs|vbe|js|jse|wsf|lnk|reg|d
 
 function snippetHTML(p) {
   // 본문·보충자료에서 검색어가 걸린 대목은 초록 설정과 상관없이 보여 준다
-  if (p.in_supplement || p.in_note || p.in_fulltext) {
-    return p.snippet ? `<div class="snippet"><span class="where">${p.in_note ? "내 정리" : p.in_supplement ? "보충자료" : "본문"}</span>${highlight(p.snippet)}</div>` : "";
+  if (p.in_supplement || p.in_note || p.in_version || p.in_fulltext) {
+    return p.snippet ? `<div class="snippet"><span class="where">${p.in_note ? "내 정리" : p.in_version ? "다른 판" : p.in_supplement ? "보충자료" : "본문"}</span>${highlight(p.snippet)}</div>` : "";
   }
   const abs = p.abstract || "";
   if (view.abs === "off" || !abs) return "";
@@ -1185,6 +1215,8 @@ function resultHTML(p) {
       `<a class="${sp.matched && lastTerms.length ? "hit" : ""} ${sp.missing ? "miss" : ""}" href="/pdf/${sp.id}/${encodeURIComponent(sp.file_name)}" target="_blank" rel="noopener" title="${esc(sp.file_name)}${sp.original_name ? "\n원래 이름: " + esc(sp.original_name) : ""}">${ic(sp.video ? "film" : "file", "sm")}S${i + 1} · ${esc(shortSupp(sp.file_name, p.file_name))}</a>`).join("")}</div>` : ""}
     ${(p.attachments || []).length ? `<div class="supps notes"><span class="lbl">${ic("note", "sm")}내 정리</span>${p.attachments.map((n) =>
       `<a class="${n.matched && lastTerms.length ? "hit" : ""} ${n.missing ? "miss" : ""}" href="/file/${n.id}/${encodeURIComponent(n.file_name)}" data-native="${n.id}" title="${esc(n.file_name)} — 기본 프로그램으로 열기">${extBadge(n.file_name)}${esc(noteName(n))}</a>`).join("")}</div>` : ""}
+    ${(p.versions || []).length ? `<div class="supps versions"><span class="lbl">${ic("dup", "sm")}다른 판</span>${p.versions.map((v) =>
+      `<a class="${v.matched && lastTerms.length ? "hit" : ""} ${v.missing ? "miss" : ""}" href="/pdf/${v.id}/${encodeURIComponent(v.file_name)}" target="_blank" rel="noopener" title="${esc(v.file_name)}${v.original_name ? "\n원래 이름: " + esc(v.original_name) : ""}">${ic("file", "sm")}${/ - Preprint( \d+)?\.pdf$/i.test(v.file_name) ? "프리프린트" : "다른 판"}${(v.file_name.match(/ (\d+)\.pdf$/) || [, ""])[1] ? " " + v.file_name.match(/ (\d+)\.pdf$/)[1] : ""}</a>`).join("")}</div>` : ""}
     <div class="actions">
       ${citedHTML(p)}
       <button type="button" data-act="cite">${ic("quote", "sm")}인용</button>
@@ -1466,6 +1498,8 @@ function renderEditFiles() {
     : `파일: <span class="mono">${esc(editing.file_name)}</span>` + (editing.original_name ? ` · 원래 이름: <span class="mono">${esc(editing.original_name)}</span>` : ""))
     + (editing.supplements?.length ? `<div class="supp-list"><b>보충자료 ${editing.supplements.length}개</b>` + editing.supplements.map((x) =>
       `<div class="supp-row"><span class="mono">${esc(x.file_name)}</span><button type="button" class="btn danger small" data-del-supp="${x.id}">빼기</button></div>`).join("") + "</div>" : "")
+    + (editing.versions?.length ? `<div class="supp-list"><b>다른 판 ${editing.versions.length}개</b>` + editing.versions.map((x) =>
+      `<div class="supp-row"><span class="mono">${esc(x.file_name)}</span><button type="button" class="btn danger small" data-del-supp="${x.id}" data-ver="1">빼기</button></div>`).join("") + "</div>" : "")
     + (editing.kind === "main" ? `<div class="supp-list"><b>내 정리 자료${editing.attachments?.length ? ` ${editing.attachments.length}개` : ""}</b>` + (editing.attachments || []).map((x) =>
       `<div class="supp-row"><a class="mono" href="/file/${x.id}/${encodeURIComponent(x.file_name)}" data-native="${x.id}" title="기본 프로그램으로 열기">${extBadge(x.file_name)} ${esc(x.file_name)}</a><button type="button" class="btn danger small" data-del-note="${x.id}">빼기</button></div>`).join("")
       + `<div class="note-add"><button type="button" class="btn small" id="noteAddBtn">${ic("upload", "sm")}파일 추가</button> <span class="hint">이 논문을 보며 만든 PPT·Word·Excel·한글·메모·그림 등. 논문 옆에 ‘논문 이름 - 정리 - 파일 이름’으로 저장됩니다.</span></div></div>` : "");
@@ -1573,21 +1607,61 @@ $("#editFile").addEventListener("click", async (e) => {
   }
   const b = e.target.closest("[data-del-supp]"); if (!b) return;
   const id = Number(b.dataset.delSupp);
-  const sp = editing.supplements.find((x) => x.id === id);
-  if (!confirm(`보충자료 ‘${sp?.file_name}’을(를) 이 논문에서 뺄까요?\n파일은 논문 폴더의 .papershelf/trash 로 옮겨집니다.`)) return;
+  const sp = [...(editing.supplements || []), ...(editing.versions || [])].find((x) => x.id === id);
+  if (!confirm(`${b.dataset.ver ? "다른 판" : "보충자료"} ‘${sp?.file_name}’을(를) 이 논문에서 뺄까요?\n파일은 논문 폴더의 .papershelf/trash 로 옮겨집니다.`)) return;
   try {
     await api(`/api/papers/${id}`, { method: "DELETE" });
     editing.supplements = editing.supplements.filter((x) => x.id !== id);
+    editing.versions = (editing.versions || []).filter((x) => x.id !== id);
     b.closest(".supp-row").remove();
-    toast("보충자료를 뺐습니다"); refresh(true);
+    toast(b.dataset.ver ? "다른 판을 뺐습니다" : "보충자료를 뺐습니다"); refresh(true);
   } catch (err) { toast(err.message); }
 });
 $("#deleteBtn").addEventListener("click", async () => {
-  const kids = [editing.supplements?.length ? `보충자료 ${editing.supplements.length}개` : "", editing.attachments?.length ? `내 정리 자료 ${editing.attachments.length}개` : ""].filter(Boolean);
-  const extra = kids.length ? `\n딸린 ${kids.join("와 ")}도 함께 빠집니다.` : "";
+  const kids = [editing.supplements?.length ? `보충자료 ${editing.supplements.length}개` : "", editing.attachments?.length ? `내 정리 자료 ${editing.attachments.length}개` : "", editing.versions?.length ? `다른 판 ${editing.versions.length}개` : ""].filter(Boolean);
+  const extra = kids.length ? `\n딸린 ${kids.join(", ")}도 함께 빠집니다.` : "";
   if (!confirm(`‘${editing.title}’${editing.kind === "supp" ? " 보충자료" : ""}을(를) 서재에서 뺄까요?${extra}\nPDF는 논문 폴더의 .papershelf/trash 로 옮겨집니다.`)) return;
   await api(`/api/papers/${editing.id}`, { method: "DELETE" });
   $("#editDlg").close(); toast("삭제했습니다"); refresh(true);
+});
+
+/* ---------- 중복 의심 · 합치기 ---------- */
+let dupGroups = [];
+async function openDup() {
+  $("#dupList").innerHTML = `<div class="hint"><span class="spin"></span> 찾는 중…</div>`;
+  $("#dupDlg").showModal();
+  try { dupGroups = (await api("/api/duplicates")).groups; } catch (err) { $("#dupList").textContent = err.message; return; }
+  renderDup();
+}
+function renderDup() {
+  if (!dupGroups.length) { $("#dupList").innerHTML = `<div class="hint">중복으로 보이는 항목이 없습니다.</div>`; return; }
+  $("#dupList").innerHTML = dupGroups.map((g, gi) => `<div class="dup-group" data-g="${gi}">` + g.map((p, i) => {
+    const k = p.kids || {};
+    const extra = [p.collections.length ? `컬렉션 ${p.collections.length}` : "", k.supp ? `보충자료 ${k.supp}` : "", k.note ? `정리 자료 ${k.note}` : "", k.version ? `다른 판 ${k.version}` : "",
+      p.read_status ? READ_STATES[p.read_status].label : "", p.rating ? "★".repeat(p.rating) : ""].filter(Boolean).join(" · ");
+    return `<label class="dup-item"><input type="radio" name="keep${gi}" value="${p.id}" ${i === 0 ? "checked" : ""}>
+      <div><div class="t">${esc(p.title)}</div>
+      <div class="s">${esc([p.scholar_authors, [p.journal, p.year].filter(Boolean).join(", ")].filter(Boolean).join(" · "))}</div>
+      <div class="s"><span class="tag ${p.preprint ? "nofile" : "supp"}">${p.preprint ? "프리프린트" : "출판본"}</span> ${p.has_file ? "" : '<span class="tag nofile">PDF 없음</span>'} ${p.doi ? `<span class="mono">DOI ${esc(p.doi)}</span>` : p.arxiv_id ? `<span class="mono">arXiv ${esc(p.arxiv_id)}</span>` : ""} ${extra ? "· " + esc(extra) : ""}</div>
+      <div class="f mono">${esc(p.file_name || "PDF 없음")}</div></div><span class="keep">남길 항목</span></label>`;
+  }).join("") + `<div class="dup-actions"><span class="hint">나머지 PDF는 ‘다른 판’으로 붙습니다</span><button type="button" class="btn small" data-dup-ignore="${gi}">중복 아님</button><button type="button" class="btn small primary" data-dup-merge="${gi}">합치기</button></div></div>`).join("");
+}
+$("#dupBtn").addEventListener("click", openDup);
+$("#dupList").addEventListener("click", async (e) => {
+  const m = e.target.closest("[data-dup-merge]"), ig = e.target.closest("[data-dup-ignore]");
+  if (!m && !ig) return;
+  const gi = Number((m || ig).dataset[m ? "dupMerge" : "dupIgnore"]), g = dupGroups[gi];
+  try {
+    if (m) {
+      const keep = Number(document.querySelector(`#dupList [name="keep${gi}"]:checked`).value);
+      const p = await api("/api/duplicates/merge", jsonOpts("POST", { keep, others: g.map((x) => x.id).filter((x) => x !== keep) }));
+      toast(`하나로 합쳤습니다 → ${p.file_name || p.title}`);
+    } else {
+      await api("/api/duplicates/ignore", jsonOpts("POST", { ids: g.map((x) => x.id) }));
+      toast("중복이 아닌 것으로 표시했습니다");
+    }
+    dupGroups.splice(gi, 1); renderDup(); refresh(true);
+  } catch (err) { toast(err.message); }
 });
 
 /* ---------- DOI·ISBN 으로 추가 ---------- */
@@ -1830,6 +1904,8 @@ function pump() {
         const supp = pp.kind === "supp" ? (pp.parent_id ? ` <span class="tag supp">${job.video ? "보충 동영상으로 묶음" : "보충자료로 묶음"}</span>` : ' <span class="tag supp">보충자료 · 본문 없음</span>') : "";
         const noteTag = pp.kind === "note" ? ' <span class="tag supp">내 정리 자료로 붙임</span>' : "";
         if (r.status === "attached") setItem(li, "added", `<span class="mono">${esc(pp.file_name)}</span> <span class="tag supp">PDF 없던 항목에 붙임</span>`);
+        else if (r.status === "upgraded") setItem(li, "added", `<span class="mono">${esc(pp.file_name)}</span> <span class="tag supp">출판본으로 바꿈 · 이전 PDF는 프리프린트로 보관</span>`);
+        else if (r.status === "version") setItem(li, "added", `<span class="mono">${esc(pp.file_name)}</span> <span class="tag supp">이미 있는 논문의 프리프린트로 붙임</span>`);
         else if (r.status === "added") setItem(li, "added", `<span class="mono">${esc(pp.file_name)}</span>` + supp + noteTag + (pp.needs_review ? ' <span class="tag warn">확인 필요</span>' : ""));
         else setItem(li, "duplicate", job.note ? `이 논문에 이미 붙어 있습니다 — ${esc(pp.file_name)}` : `이미 서재에 있습니다 — ${esc(pp.title)}`);
       })

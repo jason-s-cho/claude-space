@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import metadata as md  # noqa: E402
 from library import BLOCKED_EXTS, Library, is_video, parse_my_names  # noqa: E402
 
-APP_VERSION = "1.5.0"
+APP_VERSION = "1.5.1"
 HERE = Path(__file__).resolve().parent
 # 설치판(PyInstaller)으로 묶였을 때는 화면 파일이 압축 해제 폴더에 있다
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", HERE))
@@ -318,8 +318,9 @@ class Handler(BaseHTTPRequestHandler):
         with lib.connect() as c:
             kids = [dict(r) for r in c.execute(
                 "SELECT id, kind, file_name, original_name FROM papers WHERE parent_id=? ORDER BY added_at, id", (p["id"],))]
-            p["supplements"] = [k for k in kids if k["kind"] != "note"]
+            p["supplements"] = [k for k in kids if k["kind"] not in ("note", "version")]
             p["attachments"] = [k for k in kids if k["kind"] == "note"]
+            p["versions"] = [k for k in kids if k["kind"] == "version"]
             if p.get("parent_id"):
                 r = c.execute("SELECT id, title, file_name FROM papers WHERE id=?", (p["parent_id"],)).fetchone()
                 p["parent"] = dict(r) if r else None
@@ -605,6 +606,23 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_error_json(400, str(e))
         self.send_json({"changed": n})
 
+    def duplicates(self, qs):
+        self.send_json({"groups": state["lib"].duplicate_details()})
+
+    def merge(self, qs):
+        data = self.read_json()
+        try:
+            p = state["lib"].merge(int(data.get("keep")), [int(x) for x in data.get("others") or []])
+        except (LookupError, ValueError, TypeError) as e:
+            return self.send_error_json(400, str(e))
+        self.send_json(self.with_extras(p))
+
+    def dup_ignore(self, qs):
+        ids = [int(x) for x in self.read_json().get("ids") or [] if str(x).isdigit()]
+        if len(ids) > 1:
+            state["lib"].ignore_duplicate(ids)
+        self.send_json({"ok": True})
+
     def kci_test(self, qs):
         key = str(self.read_json().get("key", "")).strip() or md.KCI_KEY  # 비워 두면 저장된 키를 확인
         old = md.KCI_KEY
@@ -666,6 +684,9 @@ ROUTES = [
     ("POST", r"/api/kci-test", Handler.kci_test),
     ("POST", r"/api/collections/(\d+)/papers", Handler.collection_many),
     ("POST", r"/api/papers/mark-many", Handler.mark_many),
+    ("GET", r"/api/duplicates", Handler.duplicates),
+    ("POST", r"/api/duplicates/merge", Handler.merge),
+    ("POST", r"/api/duplicates/ignore", Handler.dup_ignore),
 ]
 
 

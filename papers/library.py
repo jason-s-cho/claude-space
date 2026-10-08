@@ -101,6 +101,9 @@ CREATE TABLE IF NOT EXISTS collections (
     name TEXT NOT NULL UNIQUE,
     created_at REAL
 );
+CREATE TABLE IF NOT EXISTS dup_ignore (
+    key TEXT PRIMARY KEY
+);
 CREATE TABLE IF NOT EXISTS collection_items (
     collection_id INTEGER NOT NULL,
     paper_id INTEGER NOT NULL,
@@ -134,7 +137,17 @@ NOTE_MARK = " - 정리 - "
 # 내 정리 자료로 받지 않는 파일(실행 파일·스크립트)
 BLOCKED_EXTS = {".exe", ".bat", ".cmd", ".com", ".msi", ".scr", ".ps1", ".vbs", ".vbe", ".js", ".jse", ".wsf",
                 ".lnk", ".reg", ".dll", ".sh", ".app", ".pkg", ".dmg", ".jar", ".command"}
-CHILD_KINDS = ("supp", "note")
+CHILD_KINDS = ("supp", "note", "version")
+PREPRINT_SUFFIX = " - Preprint"      # 같은 논문의 프리프린트(arXiv 등)
+OTHER_VERSION_SUFFIX = " - Other version"
+PREPRINT_TYPES = ("preprint", "posted-content")
+
+
+def is_preprint(p):
+    """프리프린트(arXiv 판 등)인지. p 는 row 또는 dict."""
+    p = dict(p)
+    return (p.get("type") or "") in PREPRINT_TYPES or (p.get("source") or "") == "arxiv" \
+        or "arxiv" in (p.get("journal") or "").lower()
 
 
 def is_child(p):
@@ -312,7 +325,7 @@ class Library:
             if current is not None and os.path.samefile(target, current):
                 break  # 이미 그 이름(대소문자만 다른 경우 포함)
             # 보충자료는 'X - Supplementary 2.pdf', 'X - Supplementary Video 2.mp4', 그 밖에는 'X (2).pdf'
-            numbered = stem.endswith(SUPP_SUFFIX) or stem.endswith(VIDEO_SUFFIX)
+            numbered = stem.endswith((SUPP_SUFFIX, VIDEO_SUFFIX, PREPRINT_SUFFIX, OTHER_VERSION_SUFFIX))
             target = self.root / (f"{stem} {n}{ext}" if numbered else f"{stem} ({n}){ext}")
             n += 1
         return target
@@ -377,7 +390,20 @@ class Library:
                     return "attached", self.to_dict(c.execute("SELECT * FROM papers WHERE id=?",
                                                               (holder["id"],)).fetchone())
                 dup = self.find_duplicate(c, sha=sha, doi=rec.get("doi"))
+                if dup is None and rec.get("arxiv_id"):
+                    dup = c.execute("SELECT * FROM papers WHERE kind='main' AND lower(arxiv_id)=?",
+                                    (rec["arxiv_id"].lower(),)).fetchone()
                 if dup:
+                    # 같은 논문의 다른 판: 출판본이 들어오면 본 PDF로 삼고 프리프린트는 '다른 판'으로,
+                    # 출판본이 있는데 프리프린트가 들어오면 '다른 판'으로 붙인다. 같은 종류끼리면 중복.
+                    new_pre, old_pre = is_preprint(rec), is_preprint(dup)
+                    if dup["file_name"] and old_pre and not new_pre:
+                        self._promote_locked(c, dup, src, original_name, sha, rec, in_place)
+                        return "upgraded", self.to_dict(c.execute("SELECT * FROM papers WHERE id=?",
+                                                                  (dup["id"],)).fetchone())
+                    if dup["file_name"] and new_pre and not old_pre:
+                        vid = self._add_version_locked(c, dup, src, original_name, sha, rec, in_place)
+                        return "version", self.to_dict(c.execute("SELECT * FROM papers WHERE id=?", (vid,)).fetchone())
                     if not in_place:
                         src.unlink(missing_ok=True)
                     return "duplicate", self.to_dict(dup)
@@ -573,7 +599,7 @@ class Library:
         rec["authors"] = json.dumps(rec["authors"], ensure_ascii=False)
         rec["authors_text"] = main["authors_text"]
         row = c.execute("SELECT kind, sha256 FROM papers WHERE id=?", (sid,)).fetchone()
-        rec["kind"] = "note" if row and row["kind"] == "note" else "supp"
+        rec["kind"] = row["kind"] if row and row["kind"] in ("note", "version") else "supp"
         if rec["kind"] == "note":
             rec["sha256"] = (row["sha256"] or "").split("#")[0] + f"#note{main['id']}"
         rec["parent_id"] = main["id"]
@@ -623,13 +649,23 @@ class Library:
                 if target.name != current.name:
                     self._move_locked(c, row["id"], current, target)
                 continue
-            label = supp_label(current.name)
+            label = supp_label(current.name) if p["kind"] != "version" else self._version_label(row)
             # 이미 'base - Supplementary[ Video][ 2].ext' 꼴이면 그대로 둔다
             if current.name.startswith(base + label) and re.fullmatch(r"( \d+)?\.\w+", current.name[len(base + label):]):
                 continue
             target = self._unique_target(base + label + current.suffix.lower(), current=current)
             if target.name != current.name:
                 self._move_locked(c, row["id"], current, target)
+
+    @staticmethod
+    def _version_label(row):
+        """다른 판 파일 이름 꼬리: arXiv 판이면 ' - Preprint', 아니면 ' - Other version'."""
+        row = dict(row)
+        name = (row.get("original_name") or "") + " " + (row.get("file_name") or "")
+        if re.search(r"\d{4}\.\d{4,5}(v\d+)?|arxiv|preprint", name, re.I) or row.get("version_of") == "preprint":
+            return PREPRINT_SUFFIX
+        head = (row.get("fulltext") or "")[:3000].lower()
+        return PREPRINT_SUFFIX if "arxiv:" in head or "preprint" in head else OTHER_VERSION_SUFFIX
 
     def set_parent(self, pid, parent_id):
         """보충자료로 지정(parent_id) 하거나, None 이면 본문 논문으로 되돌린다."""
@@ -790,6 +826,193 @@ class Library:
                 c.execute("DELETE FROM papers WHERE id=?", (x["id"],))
                 c.execute("DELETE FROM collection_items WHERE paper_id=?", (x["id"],))
         return True
+
+    # ------------------------------------------------------------ 같은 논문의 다른 판
+
+    def _add_version_locked(self, c, main, src, original_name, sha, rec, in_place=False, preprint=True):
+        """src 를 main 의 '다른 판'으로 붙인다. 새 항목 id."""
+        base = self._base_of(main)
+        target = self._unique_target(base + (PREPRINT_SUFFIX if preprint else OTHER_VERSION_SUFFIX) + ".pdf",
+                                     current=Path(src) if in_place else None)
+        shutil.move(str(src), str(target))
+        inh = self._inherit({}, main)
+        now = time.time()
+        cur = c.execute(
+            """INSERT INTO papers (file_name, original_name, sha256, title, authors, authors_text, journal, year,
+               volume, issue, pages, publisher, doi, arxiv_id, url, abstract, type, tags, notes, source, needs_review,
+               fulltext, added_at, updated_at, kind, parent_id, isbn, edition, page_count)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (target.name, original_name, sha, inh["title"], json.dumps(inh["authors"], ensure_ascii=False),
+             main["authors_text"], inh["journal"], inh["year"], inh["volume"], inh["issue"], inh["pages"],
+             inh["publisher"], inh["doi"], inh["arxiv_id"], inh["url"], "", inh["type"], "", "", inh["source"], 0,
+             rec.get("fulltext", ""), now, now, "version", main["id"], inh["isbn"], inh["edition"], rec.get("page_count")))
+        return cur.lastrowid
+
+    def _promote_locked(self, c, main, src, original_name, sha, rec, in_place=False):
+        """출판본 PDF(src)를 main 의 본 PDF로 삼고, 지금 PDF(프리프린트)는 '다른 판'으로 남긴다.
+
+        항목 번호를 그대로 두므로 컬렉션·태그·메모·읽음 상태·딸린 자료가 유지된다.
+        """
+        mid = main["id"]
+        now = time.time()
+        # 1) 지금 PDF를 다른 판 항목으로
+        c.execute(
+            """INSERT INTO papers (file_name, original_name, sha256, title, authors, authors_text, journal, year,
+               volume, issue, pages, publisher, doi, arxiv_id, url, abstract, type, tags, notes, source, needs_review,
+               fulltext, added_at, updated_at, kind, parent_id, isbn, edition, page_count)
+               SELECT file_name, original_name, NULL, title, authors, authors_text, journal, year, volume, issue,
+               pages, publisher, doi, arxiv_id, url, '', type, '', '', source, 0, fulltext, ?, ?, 'version', id,
+               isbn, edition, page_count FROM papers WHERE id=?""", (now, now, mid))
+        # 2) 본 항목의 서지 정보를 출판본으로 (arXiv ID 는 남김)
+        fields = {k: rec.get(k) for k in ("title", "journal", "volume", "issue", "pages", "publisher", "doi", "url",
+                                          "type", "source", "isbn", "edition") if rec.get(k)}
+        if rec.get("year"):
+            fields["year"] = rec["year"]
+        if rec.get("authors"):
+            fields["authors"] = json.dumps(rec["authors"], ensure_ascii=False)
+            fields["authors_text"] = self.authors_text(rec["authors"])
+        if rec.get("abstract"):
+            fields["abstract"] = rec["abstract"]
+        fields.update(file_name="", sha256=None, needs_review=0, updated_at=now)
+        c.execute(f"UPDATE papers SET {', '.join(k + '=?' for k in fields)} WHERE id=?", (*fields.values(), mid))
+        c.execute("UPDATE papers SET sha256=? WHERE kind='version' AND parent_id=? AND added_at=?",
+                  (main["sha256"], mid, now))
+        # 3) 프리프린트 이름을 '새 이름 - Preprint.pdf' 로, 딸린 자료도 새 이름에 맞추고, 출판본 PDF를 들여놓는다
+        row = c.execute("SELECT * FROM papers WHERE id=?", (mid,)).fetchone()
+        ver = c.execute("SELECT id, file_name FROM papers WHERE kind='version' AND parent_id=? AND added_at=?",
+                        (mid, now)).fetchone()
+        if ver and main["file_name"]:
+            cur_path = self.root / ver["file_name"]
+            self._move_locked(c, ver["id"], cur_path,
+                              self._unique_target(self._base_of(row) + PREPRINT_SUFFIX + ".pdf", current=cur_path))
+        self._rename_supps_locked(c, mid)
+        target = self._unique_target(nice_file_name(self.to_dict(row)), current=Path(src) if in_place else None)
+        shutil.move(str(src), str(target))
+        c.execute("UPDATE papers SET file_name=?, original_name=?, sha256=?, fulltext=?, page_count=? WHERE id=?",
+                  (target.name, original_name, sha, rec.get("fulltext", ""), rec.get("page_count"), mid))
+        self._rename_supps_locked(c, mid)
+
+    # ------------------------------------------------------------ 중복 의심 · 합치기
+
+    def duplicate_groups(self):
+        """제목(정규화)과 첫 저자 성이 같고 연도가 2년 안쪽인 본문 항목 묶음."""
+        with self.connect() as c:
+            rows = c.execute("SELECT id, title, authors, year FROM papers WHERE kind='main'").fetchall()
+            ignored = {r[0] for r in c.execute("SELECT key FROM dup_ignore")}
+        buckets = {}
+        for r in rows:
+            key = md.norm_key(r["title"])
+            if len(key) < 8:
+                continue
+            authors = json.loads(r["authors"] or "[]")
+            fam = md.norm_key(authors[0].get("family", "")) if authors else ""
+            buckets.setdefault(key, []).append((r["id"], fam, r["year"]))
+        groups = []
+        for items in buckets.values():
+            if len(items) < 2:
+                continue
+            # 저자가 둘 다 있으면 같아야, 연도가 둘 다 있으면 2년 안쪽이어야 같은 논문으로 본다
+            used = set()
+            for i, (a, fa, ya) in enumerate(items):
+                if a in used:
+                    continue
+                grp = [a]
+                for b, fb, yb in items[i + 1:]:
+                    if b in used or (fa and fb and fa != fb) or (ya and yb and abs(ya - yb) > 2):
+                        continue
+                    grp.append(b)
+                if len(grp) > 1 and ",".join(map(str, sorted(grp))) not in ignored:
+                    used.update(grp)
+                    groups.append(sorted(grp))
+        return groups
+
+    def duplicate_details(self):
+        out = []
+        groups = self.duplicate_groups()
+        if not groups:
+            return out
+        colls = self.paper_collections([i for g in groups for i in g])
+        with self.connect() as c:
+            for g in groups:
+                items = []
+                for pid in g:
+                    p = self.get(pid)
+                    kids = c.execute("SELECT kind, count(*) FROM papers WHERE parent_id=? GROUP BY kind", (pid,)).fetchall()
+                    p["kids"] = {k: n for k, n in kids}
+                    p["collections"] = colls.get(pid, [])
+                    p["preprint"] = is_preprint(p)
+                    items.append(p)
+                # 남길 후보: PDF가 있는 출판본 → DOI 있음 → 딸린 것 많음 → 먼저 넣은 것
+                items.sort(key=lambda p: (not p["has_file"], p["preprint"], not p.get("doi"),
+                                          -sum(p["kids"].values()) - len(p["collections"]), p["added_at"] or 0))
+                out.append(items)
+        return out
+
+    def ignore_duplicate(self, ids):
+        with self.lock, self.connect() as c:
+            c.execute("INSERT OR IGNORE INTO dup_ignore (key) VALUES (?)", (",".join(map(str, sorted(map(int, ids)))),))
+
+    def merge(self, keep_id, other_ids):
+        """other_ids 를 keep_id 로 합친다. 다른 PDF는 '다른 판'으로 남고, 컬렉션·딸린 자료·태그·메모·읽음·별점이 모인다."""
+        order = {"": 0, "reading": 1, "read": 2}
+        with self.lock, self.connect() as c:
+            keep = c.execute("SELECT * FROM papers WHERE id=? AND kind='main'", (keep_id,)).fetchone()
+            if keep is None:
+                raise LookupError("남길 항목이 없습니다")
+            for oid in other_ids:
+                oid = int(oid)
+                other = c.execute("SELECT * FROM papers WHERE id=? AND kind='main'", (oid,)).fetchone()
+                if other is None or oid == keep_id:
+                    continue
+                keep = c.execute("SELECT * FROM papers WHERE id=?", (keep_id,)).fetchone()
+                # 컬렉션·딸린 자료 옮기기
+                c.execute("INSERT OR IGNORE INTO collection_items (collection_id, paper_id, added_at) "
+                          "SELECT collection_id, ?, added_at FROM collection_items WHERE paper_id=?", (keep_id, oid))
+                c.execute("DELETE FROM collection_items WHERE paper_id=?", (oid,))
+                c.execute("UPDATE papers SET parent_id=? WHERE parent_id=?", (keep_id, oid))
+                # 태그·메모·읽음·별점·내 저작 모으기
+                tags = [t.strip() for t in re.split(r"[,;]", f"{keep['tags'] or ''},{other['tags'] or ''}") if t.strip()]
+                notes = "\n\n".join(x for x in dict.fromkeys([(keep["notes"] or "").strip(), (other["notes"] or "").strip()]) if x)
+                status = max(keep["read_status"] or "", other["read_status"] or "", key=lambda x: order.get(x, 0))
+                c.execute("UPDATE papers SET tags=?, notes=?, read_status=?, rating=?, mine=coalesce(mine, ?), "
+                          "doi=CASE WHEN coalesce(doi,'')='' THEN ? ELSE doi END, "
+                          "arxiv_id=CASE WHEN coalesce(arxiv_id,'')='' THEN ? ELSE arxiv_id END, updated_at=? WHERE id=?",
+                          (", ".join(dict.fromkeys(tags)), notes, status, max(keep["rating"] or 0, other["rating"] or 0),
+                           other["mine"], other["doi"] or "", other["arxiv_id"] or "", time.time(), keep_id))
+                keep = c.execute("SELECT * FROM papers WHERE id=?", (keep_id,)).fetchone()
+                moved = False
+                if other["file_name"] and not keep["file_name"]:
+                    # 남길 항목에 PDF가 없으면 다른 항목의 PDF를 가져온다
+                    target = self._unique_target(nice_file_name(self.to_dict(keep)))
+                    try:
+                        os.replace(self.root / other["file_name"], target)
+                        moved = True
+                    except OSError:
+                        pass  # 다른 프로그램이 열고 있으면 아래에서 '다른 판'으로 남긴다
+                    if moved:
+                        c.execute("UPDATE papers SET sha256=NULL WHERE id=?", (oid,))
+                        c.execute("UPDATE papers SET file_name=?, original_name=?, sha256=?, fulltext=?, page_count=? "
+                                  "WHERE id=?", (target.name, other["original_name"], other["sha256"], other["fulltext"],
+                                                 other["page_count"], keep_id))
+                        c.execute("DELETE FROM papers WHERE id=?", (oid,))
+                if moved:
+                    pass
+                elif other["file_name"]:
+                    # 다른 PDF는 '다른 판'으로 보관 (프리프린트면 이름에 Preprint)
+                    if is_preprint(other):
+                        cur_path = self.root / other["file_name"]
+                        self._move_locked(c, oid, cur_path, self._unique_target(
+                            self._base_of(keep) + PREPRINT_SUFFIX + ".pdf", current=cur_path))
+                    inh = self._inherit({}, keep)
+                    inh["authors"] = json.dumps(inh["authors"], ensure_ascii=False)
+                    inh["authors_text"] = keep["authors_text"]
+                    inh.update(kind="version", parent_id=keep_id, tags="", notes="", read_status="", rating=0,
+                               mine=None, cited_by=None, updated_at=time.time())
+                    c.execute(f"UPDATE papers SET {', '.join(k + '=?' for k in inh)} WHERE id=?", (*inh.values(), oid))
+                else:
+                    c.execute("DELETE FROM papers WHERE id=?", (oid,))
+            self._rename_supps_locked(c, keep_id)
+        return self.get(keep_id)
 
     # ------------------------------------------------------------ PDF 없이 추가 (DOI·ISBN·arXiv)
 
@@ -1350,7 +1573,7 @@ class Library:
                     tops[parent["id"]] = parent
                     if p.get("in_fulltext"):
                         parent["snippet"] = p["snippet"]
-                        parent["in_note" if p["kind"] == "note" else "in_supplement"] = True
+                        parent[{"note": "in_note", "version": "in_version"}.get(p["kind"], "in_supplement")] = True
                     else:
                         parent["snippet"] = (parent.get("abstract") or "")[:240]
                 parent["score"] = max(parent.get("score", 0), p.get("score", 0))
@@ -1360,18 +1583,19 @@ class Library:
                 chunk = ids[i:i + 500]
                 q = f"SELECT id, kind, file_name, original_name, parent_id FROM papers WHERE parent_id IN ({','.join('?' * len(chunk))}) ORDER BY added_at, id"
                 for r in c.execute(q, chunk):
-                    supps.setdefault((r["parent_id"], r["kind"] == "note"), []).append(
+                    supps.setdefault((r["parent_id"], r["kind"] if r["kind"] in ("note", "version") else "supp"), []).append(
                         {"id": r["id"], "file_name": r["file_name"], "original_name": r["original_name"],
                          "video": is_video(r["file_name"]),
                          "missing": not (self.root / r["file_name"]).exists(), "matched": r["id"] in by_id})
         for p in out:
-            p["supplements"] = supps.get((p["id"], False), [])
-            p["attachments"] = supps.get((p["id"], True), [])
+            p["supplements"] = supps.get((p["id"], "supp"), [])
+            p["attachments"] = supps.get((p["id"], "note"), [])
+            p["versions"] = supps.get((p["id"], "version"), [])
         return out
 
     def stats(self):
         with self.connect() as c:
-            total = c.execute("SELECT count(*) FROM papers WHERE NOT (kind IN ('supp','note') AND parent_id IS NOT NULL)").fetchone()[0]
+            total = c.execute("SELECT count(*) FROM papers WHERE NOT (kind IN ('supp','note','version') AND parent_id IS NOT NULL)").fetchone()[0]
             review = c.execute("SELECT count(*) FROM papers WHERE needs_review=1").fetchone()[0]
             years = [r[0] for r in c.execute("SELECT DISTINCT year FROM papers WHERE year IS NOT NULL ORDER BY year")]
             supps = c.execute("SELECT count(*) FROM papers WHERE kind='supp'").fetchone()[0]
@@ -1392,6 +1616,7 @@ class Library:
                 mine_groups[g] += 1
         return {"total": total, "needs_review": review, "years": years, "supplements": supps, "attachments": notes,
                 "books": groups["book"], "groups": groups, "mine": mine, "mine_groups": mine_groups,
+                "duplicates": len(self.duplicate_groups()),
                 "reading": reading, "no_file": no_file, "collections": self.collections()}
 
     def all_papers(self, collection=None):
