@@ -1,5 +1,13 @@
 # 논문 서재 변경 기록
 
+## 1.5.3
+
+**무료 PDF 받기 개선 (2)**
+- nature.com처럼 처음 접속할 때 쿠키를 주고받는 확인 절차를 거치는 출판사에서 PDF를 받지 못하던 문제를 고쳤습니다
+  (내려받을 때 쿠키를 기억합니다).
+- 오픈 액세스 출판사는 DOI만으로 PDF 주소를 만들어 먼저 시도합니다: Nature 계열(Nature Communications·Scientific Reports 등),
+  Springer·BMC, Frontiers, PLOS. OpenAlex에 아직 올라오지 않은 새 논문도 받을 수 있습니다.
+
 ## 1.5.2
 
 - 설치판(자체 창)에서 논문 제목을 왼쪽 컬렉션으로 끌어다 놓아도 들어가지 않던 문제를 고쳤습니다.

@@ -5,6 +5,7 @@
 """
 
 import html
+import http.cookiejar
 import json
 import math
 import os
@@ -641,12 +642,28 @@ def open_pdf_urls(p, log=None):
         for loc in oa:
             add(loc.get("pdf_url"), (loc.get("source") or {}).get("display_name") or "OpenAlex")
         add((w.get("open_access") or {}).get("oa_url"), "OpenAlex")
+        # 오픈 액세스 출판사는 DOI만으로 PDF 주소를 안다 (OpenAlex 에 아직 없는 새 논문도)
+        for pattern, template, name in PUBLISHER_PDF:
+            m = re.match(pattern, doi)
+            if m:
+                add(template.format(m.group(1)), name)
         for loc in oa:
             add(loc.get("landing_page_url"), (loc.get("source") or {}).get("display_name") or "출판사 누리집")
         # 마지막으로 출판사 논문 페이지(DOI). 무료 공개본이면 페이지에 PDF 주소가 적혀 있다
         add("https://doi.org/" + doi, "출판사 누리집")
     return out
 
+
+PUBLISHER_PDF = [
+    (r"^10\.1038/(.+)$", "https://www.nature.com/articles/{0}.pdf", "Nature"),
+    (r"^(10\.(?:1007|1186)/.+)$", "https://link.springer.com/content/pdf/{0}.pdf", "Springer"),
+    (r"^(10\.3389/.+)$", "https://www.frontiersin.org/articles/{0}/pdf", "Frontiers"),
+    (r"^(10\.1371/journal\.p[a-z]+\.\d+)$", "https://journals.plos.org/plosone/article/file?id={0}&type=printable", "PLOS"),
+]
+
+# 출판사 누리집은 처음 접속 때 쿠키를 주고받는 확인을 거치는 곳이 있어(nature.com 등) 쿠키를 기억한다
+_COOKIES = http.cookiejar.CookieJar()
+_OPENER = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(_COOKIES))
 
 # 일부 출판사는 브라우저가 아닌 요청을 막으므로, 브라우저 형식을 앞에 둔 이름으로 묻는다
 DOWNLOAD_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -667,7 +684,7 @@ def citation_pdf_url(page, base):
 def _open_url(url, accept):
     req = urllib.request.Request(url, headers={"User-Agent": DOWNLOAD_UA, "Accept": accept,
                                                "Accept-Language": "en-US,en;q=0.8,ko;q=0.6"})
-    return urllib.request.urlopen(req, timeout=60)
+    return _OPENER.open(req, timeout=60)
 
 
 class NotPdf(Exception):
