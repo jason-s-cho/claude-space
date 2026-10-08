@@ -1018,6 +1018,48 @@ class Library:
                 c.execute("DELETE FROM collection_items WHERE collection_id=? AND paper_id=?", (cid, row["id"]))
         return self.paper_collections([row["id"]]).get(row["id"], [])
 
+    def set_many_in_collection(self, cid, ids, on=True):
+        """여러 논문을 한꺼번에 컬렉션에 넣거나 뺀다. 바뀐 논문 수를 돌려준다."""
+        with self.lock, self.connect() as c:
+            if c.execute("SELECT 1 FROM collections WHERE id=?", (cid,)).fetchone() is None:
+                raise LookupError("없는 컬렉션입니다")
+            mains = set()
+            for pid in ids:
+                row = c.execute("SELECT * FROM papers WHERE id=?", (int(pid),)).fetchone()
+                if row is None:
+                    continue
+                if is_child(row):
+                    try:
+                        row = self._main_of(c, row)
+                    except ValueError:
+                        continue
+                mains.add(row["id"])
+            now = time.time()
+            n = 0
+            for pid in mains:
+                if on:
+                    n += c.execute("INSERT OR IGNORE INTO collection_items (collection_id, paper_id, added_at) "
+                                   "VALUES (?,?,?)", (cid, pid, now)).rowcount
+                else:
+                    n += c.execute("DELETE FROM collection_items WHERE collection_id=? AND paper_id=?",
+                                   (cid, pid)).rowcount
+        return n
+
+    def mark_many(self, ids, read_status=None, rating=None):
+        if read_status is not None and read_status not in READ_STATUSES:
+            raise ValueError("읽음 상태가 올바르지 않습니다")
+        fields = {}
+        if read_status is not None:
+            fields["read_status"] = read_status
+        if rating is not None:
+            fields["rating"] = max(0, min(5, int(rating)))
+        if not fields or not ids:
+            return 0
+        with self.lock, self.connect() as c:
+            sets = ", ".join(k + "=?" for k in fields)
+            return sum(c.execute(f"UPDATE papers SET {sets} WHERE id=? AND kind='main'",
+                                 (*fields.values(), int(pid))).rowcount for pid in ids)
+
     def paper_collections(self, ids):
         out = {}
         ids = list(ids)

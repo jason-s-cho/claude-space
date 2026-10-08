@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import metadata as md  # noqa: E402
 from library import BLOCKED_EXTS, Library, is_video, parse_my_names  # noqa: E402
 
-APP_VERSION = "1.4.15"
+APP_VERSION = "1.4.16"
 HERE = Path(__file__).resolve().parent
 # 설치판(PyInstaller)으로 묶였을 때는 화면 파일이 압축 해제 폴더에 있다
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", HERE))
@@ -299,7 +299,10 @@ class Handler(BaseHTTPRequestHandler):
             collection=int(qs["coll"]) if (qs.get("coll") or "").isdigit() else None,
             rating_min=int(qs["stars"]) if (qs.get("stars") or "").isdigit() else 0,
             offset=int(qs.get("offset") or 0) if (qs.get("offset") or "0").isdigit() else 0,
-            limit=min(int(qs["limit"]), 200) if (qs.get("limit") or "").isdigit() and int(qs["limit"]) > 0 else None)
+            limit=None if qs.get("ids_only") == "1" else
+            min(int(qs["limit"]), 200) if (qs.get("limit") or "").isdigit() and int(qs["limit"]) > 0 else None)
+        if qs.get("ids_only") == "1":  # '결과 모두 선택': 여러 쪽에 걸친 결과의 번호만
+            return self.send_json({"total": res["total"], "ids": [p["id"] for p in res["papers"]]})
         self.send_json(res)
 
     def get_paper(self, qs, pid):
@@ -584,6 +587,24 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_error_json(404, str(e))
         self.send_json({"collections": ids})
 
+    def collection_many(self, qs, cid):
+        data = self.read_json()
+        ids = [int(x) for x in data.get("ids") or [] if str(x).isdigit()]
+        try:
+            n = state["lib"].set_many_in_collection(int(cid), ids, bool(data.get("on", True)))
+        except LookupError as e:
+            return self.send_error_json(404, str(e))
+        self.send_json({"changed": n})
+
+    def mark_many(self, qs):
+        data = self.read_json()
+        ids = [int(x) for x in data.get("ids") or [] if str(x).isdigit()]
+        try:
+            n = state["lib"].mark_many(ids, read_status=data.get("read_status"), rating=data.get("rating"))
+        except ValueError as e:
+            return self.send_error_json(400, str(e))
+        self.send_json({"changed": n})
+
     def kci_test(self, qs):
         key = str(self.read_json().get("key", "")).strip() or md.KCI_KEY  # 비워 두면 저장된 키를 확인
         old = md.KCI_KEY
@@ -643,6 +664,8 @@ ROUTES = [
     ("PUT", r"/api/collections/(\d+)", Handler.update_collection),
     ("DELETE", r"/api/collections/(\d+)", Handler.delete_collection),
     ("POST", r"/api/kci-test", Handler.kci_test),
+    ("POST", r"/api/collections/(\d+)/papers", Handler.collection_many),
+    ("POST", r"/api/papers/mark-many", Handler.mark_many),
 ]
 
 
