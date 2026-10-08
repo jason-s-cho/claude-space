@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import metadata as md  # noqa: E402
 from library import BLOCKED_EXTS, Library, is_video, parse_my_names  # noqa: E402
 
-APP_VERSION = "1.4.17"
+APP_VERSION = "1.5.0"
 HERE = Path(__file__).resolve().parent
 # 설치판(PyInstaller)으로 묶였을 때는 화면 파일이 압축 해제 폴더에 있다
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", HERE))
