@@ -41,6 +41,7 @@
   --t-proceedings: #7c3aed;
   --t-book: #b45309;
   --t-report: #0f766e;
+  --t-thesis: #be185d;
   --t-other: #64748b;
   --shadow-sm: 0 1px 2px rgb(16 24 40 / 0.05);
   --shadow-md: 0 6px 20px rgb(16 24 40 / 0.08);
@@ -56,7 +57,7 @@
     --rule: #252a35; --rule-strong: #333948; --accent: #8b8cf8; --accent-hover: #a5a6fb; --accent-soft: #24264a; --on-accent: #10121a;
     --byline: #aab2c2; --good: #4ade80; --warn: #f5b051; --warn-soft: #3a2a14; --danger: #f28b7c; --mark: #5c4c10;
     --star: #f2c94c; --star-soft: #3a3212;
-    --t-journal: #7aa7ff; --t-proceedings: #b794f6; --t-book: #f0b35a; --t-report: #4fd1c5; --t-other: #94a3b8;
+    --t-journal: #7aa7ff; --t-proceedings: #b794f6; --t-book: #f0b35a; --t-report: #4fd1c5; --t-thesis: #f472b6; --t-other: #94a3b8;
     --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3); --shadow-md: 0 8px 24px rgb(0 0 0 / 0.35); --shadow-lg: 0 18px 50px rgb(0 0 0 / 0.55);
     color-scheme: dark;
   }
@@ -66,7 +67,7 @@
   --rule: #252a35; --rule-strong: #333948; --accent: #8b8cf8; --accent-hover: #a5a6fb; --accent-soft: #24264a; --on-accent: #10121a;
   --byline: #aab2c2; --good: #4ade80; --warn: #f5b051; --warn-soft: #3a2a14; --danger: #f28b7c; --mark: #5c4c10;
   --star: #f2c94c; --star-soft: #3a3212;
-  --t-journal: #7aa7ff; --t-proceedings: #b794f6; --t-book: #f0b35a; --t-report: #4fd1c5; --t-other: #94a3b8;
+  --t-journal: #7aa7ff; --t-proceedings: #b794f6; --t-book: #f0b35a; --t-report: #4fd1c5; --t-thesis: #f472b6; --t-other: #94a3b8;
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3); --shadow-md: 0 8px 24px rgb(0 0 0 / 0.35); --shadow-lg: 0 18px 50px rgb(0 0 0 / 0.55);
   color-scheme: dark;
 }
@@ -337,6 +338,7 @@ dialog::backdrop { background: rgb(10 12 20 / 0.42); backdrop-filter: blur(3px);
   <symbol id="i-mic" viewBox="0 0 24 24"><rect x="2.5" y="3" width="19" height="13" rx="2"/><path d="m7 21 5-5 5 5"/><path d="M7 8h6M7 11h10"/></symbol>
   <symbol id="i-book" viewBox="0 0 24 24"><path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2Z"/><path d="M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7Z"/></symbol>
   <symbol id="i-report" viewBox="0 0 24 24"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5Z"/><path d="M14 2v6h6"/><path d="M8 18v-3M12 18v-6M16 18v-4"/></symbol>
+  <symbol id="i-cap" viewBox="0 0 24 24"><path d="M22 10 12 5 2 10l10 5 10-5Z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/><path d="M22 10v6"/></symbol>
   <symbol id="i-box" viewBox="0 0 24 24"><path d="M21 8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.7Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></symbol>
   <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 15.4-6.4L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.4 6.4L3 16"/><path d="M8 16H3v5"/></symbol>
   <symbol id="i-trend" viewBox="0 0 24 24"><path d="m22 7-8.5 8.5-5-5L2 17"/><path d="M16 7h6v6"/></symbol>
@@ -477,6 +479,7 @@ dialog::backdrop { background: rgb(10 12 20 / 0.42); backdrop-filter: blur(3px);
             <label><input type="radio" name="doctype" value="proceedings-article"><span>학술대회 논문</span></label>
             <label><input type="radio" name="doctype" value="report"><span>보고서</span></label>
             <label><input type="radio" name="doctype" value="book"><span>책</span></label>
+            <label><input type="radio" name="doctype" value="dissertation"><span>학위논문</span></label>
             <label><input type="radio" name="doctype" value="other"><span>기타</span></label>
             <label class="supp-chip"><input type="radio" name="doctype" value="supp"><span>보충자료</span></label>
           </div>
@@ -580,7 +583,7 @@ dialog::backdrop { background: rgb(10 12 20 / 0.42); backdrop-filter: blur(3px);
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const thisYear = new Date().getFullYear();
-const TYPE_LABEL = { "journal-article": "", "proceedings-article": "학술대회", "proceedings": "학술대회", "preprint": "프리프린트", "posted-content": "프리프린트", "book-chapter": "책의 장", "book": "책", "monograph": "책", "edited-book": "편저", "reference-book": "책", "dissertation": "학위논문", "report": "보고서" };
+const TYPE_LABEL = { "journal-article": "", "proceedings-article": "학술대회", "proceedings": "학술대회", "preprint": "프리프린트", "posted-content": "프리프린트", "book-chapter": "책의 장", "book": "책", "monograph": "책", "edited-book": "편저", "reference-book": "책", "dissertation": "학위논문", "thesis": "학위논문", "report": "보고서" };
 
 const view = { q: "", field: "all", from: "", to: "", sort: "relevance", review: false, doc: "all", mine: false, page: 1 };
 const clampPer = (n) => Math.min(50, Math.max(10, Math.round((Number(n) || 10) / 10) * 10));
@@ -600,6 +603,7 @@ const GROUPS = {
   proceedings: { label: "학술대회 논문", icon: "mic", color: "var(--t-proceedings)" },
   book: { label: "책", icon: "book", color: "var(--t-book)" },
   report: { label: "보고서", icon: "report", color: "var(--t-report)" },
+  thesis: { label: "학위논문", icon: "cap", color: "var(--t-thesis)" },
   other: { label: "기타", icon: "box", color: "var(--t-other)" },
 };
 
@@ -629,7 +633,7 @@ function renderSide() {
     `<button type="button" class="opt ${String(view.from) === String(y) && !view.to ? "on" : ""}" data-from="${y}">${label}</button>`).join("");
   // 내 논문·책을 보는 동안에는 종류별 개수도 내 것 기준
   const g = (view.mine ? lastInfo?.mine_groups : lastInfo?.groups) || {};
-  const docs = ["all", "journal", "proceedings", "book", "report", "other"];
+  const docs = ["all", "journal", "proceedings", "book", "report", "thesis", "other"];
   $("#docOpts").innerHTML = docs
     .filter((k) => k === "all" || k === view.doc || g[k] || !lastInfo)  // 하나도 없는 종류는 숨김
     .map((k) => k === "all"
@@ -847,7 +851,9 @@ function snippetHTML(p) {
 function resultHTML(p) {
   const venue = [p.journal, p.year].filter(Boolean).join(", ");
   const ed = p.edition ? (/^\d+$/.test(p.edition) ? `${p.edition}판` : p.edition) : "";
-  const by = (p.type || "").startsWith("report")
+  const by = (p.type === "dissertation" || p.type === "thesis")
+    ? [p.scholar_authors, p.year, p.journal || p.publisher].filter(Boolean)  // 학위논문: 저자 · 연도 · 학교
+    : (p.type || "").startsWith("report")
     ? [p.scholar_authors, p.year, p.publisher || p.journal].filter(Boolean)  // 보고서: 저자 - 연도 - 발행 기관
     : isBook(p)
     ? [p.scholar_authors + (p.type === "edited-book" && p.scholar_authors ? " (편)" : ""), [ed, p.year].filter(Boolean).join(" "), p.publisher].filter(Boolean)
@@ -935,18 +941,19 @@ function fillEdit(p) {
   f.elements.authors.value = authorsToText(p.authors);
   syncTypeFields();
 }
-const CHIP_TYPES = ["journal-article", "proceedings-article", "report", "book"];
+const CHIP_TYPES = ["journal-article", "proceedings-article", "report", "book", "dissertation"];
 function chipFor(t) {
   if (BOOK_TYPES.includes(t)) return "book";
   if ((t || "").startsWith("proceedings")) return "proceedings-article";
   if ((t || "").startsWith("report")) return "report";
+  if (t === "thesis") return "dissertation";
   return CHIP_TYPES.includes(t) ? t : "other";
 }
 function syncTypeFields() {
   const t = $("#f-type").value, book = BOOK_TYPES.includes(t), chapter = t === "book-chapter";
-  const proc = t.startsWith("proceedings"), report = t.startsWith("report");
+  const proc = t.startsWith("proceedings"), report = t.startsWith("report"), thesis = t === "dissertation" || t === "thesis";
   document.querySelectorAll("#editForm .bookonly").forEach((el) => { el.hidden = !(book || chapter); });
-  $("#journalLabel").textContent = chapter ? "책 제목" : book ? "총서(시리즈)" : proc ? "학술대회·논문집 이름" : report ? "보고서 시리즈" : "저널·학회";
+  $("#journalLabel").textContent = chapter ? "책 제목" : book ? "총서(시리즈)" : proc ? "학술대회·논문집 이름" : report ? "보고서 시리즈" : thesis ? "학교 (예: 서울대학교 대학원)" : "저널·학회";
   $("#volumeLabel").textContent = report ? "과제·문서 번호" : "권";
   $("#issueLabel").textContent = report ? "보고서 번호" : "호";
   // 위쪽 분류 칩도 맞춘다(보충자료 선택 중이면 그대로)

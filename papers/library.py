@@ -26,6 +26,7 @@ DOC_GROUPS = {
     "journal": ("journal-article",),
     "proceedings": ("proceedings-article", "proceedings", "proceedings-series"),
     "report": ("report", "report-component", "report-series"),
+    "thesis": ("dissertation", "thesis"),
     "book": BOOK_TYPES + ("book-chapter", "book-part", "book-section"),
 }
 KNOWN_TYPES = tuple(t for group in DOC_GROUPS.values() for t in group)

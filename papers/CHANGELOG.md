@@ -1,5 +1,14 @@
 # 논문 서재 변경 기록
 
+## 1.4.11
+
+**학위논문(Thesis) 종류 추가**
+- 왼쪽 서재 목록과 수정 창 분류에 ‘학위논문’이 생겼습니다(졸업모자 아이콘).
+- 목록에는 `저자 · 연도 · 학교`로 보이고, 수정 창의 저널 칸은 ‘학교’로 바뀝니다.
+- 인용: APA `[Doctoral dissertation, 학교]`, MLA `학교, PhD dissertation.`, BibTeX `@phdthesis`.
+- 온라인 정보가 없을 때 ‘dissertation’, ‘thesis submitted’, ‘in partial fulfillment’, ‘학위논문’, ‘박사/석사 학위’ 같은
+  표현이 앞부분에 있으면 학위논문으로 봅니다(쪽수가 많아도 책으로 잘못 분류하지 않음).
+
 ## 1.4.10
 
 **논문이 많아도 빠르게**
