@@ -224,8 +224,13 @@ details.pop[open] > summary, details.pop > summary:hover { border-color: var(--r
 .nav-empty { font-size: 0.8rem; color: var(--ink-faint); padding: 2px 10px 6px; line-height: 1.45; }
 .tag.coll { background: var(--accent-soft); color: var(--accent); font-weight: 600; cursor: pointer; border: 0; font-family: inherit; }
 .tag.nofile { background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink-soft); }
-.result .actions .status.reading { color: var(--accent); }
-.result .actions .status.read { color: var(--good); }
+.status-box { position: relative; display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px 3px 9px; border: 1px solid var(--rule); border-radius: 8px; color: var(--ink-soft); background: var(--panel); cursor: pointer; font-weight: 600; }
+.status-box:hover { border-color: var(--rule-strong); }
+.status-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.status-box select { border: 0; background: none; font: inherit; font-size: 0.82rem; color: inherit; cursor: pointer; padding: 0 2px 0 0; outline: none; }
+.status-box select option { color: var(--ink); background: var(--panel); }
+.status-box.reading { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); background: var(--accent-soft); }
+.status-box.read { color: var(--good); border-color: color-mix(in srgb, var(--good) 40%, transparent); background: color-mix(in srgb, var(--good) 9%, transparent); }
 .stars { display: inline-flex; align-items: center; }
 .stars button { border: 0; background: none; padding: 3px 1px; cursor: pointer; color: var(--rule-strong); line-height: 0; border-radius: 4px; }
 .stars button:hover, .stars:hover button.hov { color: var(--star); }
@@ -1189,7 +1194,7 @@ function resultHTML(p) {
       ${doi}
       ${bookMeta ? `<span class="meta-txt mono">${esc(bookMeta)}</span>` : ""}
       <span class="spacer"></span>
-      <button type="button" data-act="status" class="status ${p.read_status || ""}" title="누를 때마다 안 읽음 → 읽는 중 → 읽음">${ic(st.icon, "sm")}${st.label}</button>
+      <label class="status-box ${p.read_status || "unread"}" title="읽음 상태">${ic(st.icon, "sm")}<select data-status aria-label="읽음 상태">${Object.entries(READ_STATES).map(([k, x]) => `<option value="${k}" ${k === (p.read_status || "") ? "selected" : ""}>${x.label}</option>`).join("")}</select></label>
       <span class="stars" role="group" aria-label="별점 ${p.rating || 0}개">${[1, 2, 3, 4, 5].map((n) => `<button type="button" data-star="${n}" class="${n <= (p.rating || 0) ? "on" : ""}" aria-label="별 ${n}개" title="${n === p.rating ? "다시 누르면 별점 지움" : `별 ${n}개`}">${ic("star", n <= (p.rating || 0) ? "sm fill" : "sm")}</button>`).join("")}</span>
     </div>
     <div class="file mono">${noFile ? "PDF 없음 — PDF를 이 카드에 끌어다 놓거나 ‘무료 PDF 찾기’를 누르세요" : esc(p.file_name)}${p.rename_pending ? ` <span class="tag warn" title="PDF가 다른 프로그램에서 열려 있어 이름을 아직 못 바꿨습니다. 닫으면 자동으로 바뀝니다.">${ic("alert")}이름 바꾸기 대기</span>` : ""}</div>
@@ -1204,11 +1209,6 @@ $("#results").addEventListener("click", async (e) => {
     const card = b.closest(".result");
     card.outerHTML = resultHTML(papersById.get(id));
     return;
-  }
-  if (b.dataset.act === "status") {
-    const p = papersById.get(id);
-    const next = { "": "reading", reading: "read", read: "" }[p.read_status || ""];
-    return setMark(id, { read_status: next });
   }
   if (b.dataset.act === "coll") return openCollPop(id, b);
   if (b.dataset.act === "findpdf") {
@@ -1232,6 +1232,10 @@ $("#results").addEventListener("click", (e) => {
   }
   const g = e.target.closest("[data-goto-coll]");
   if (g) { view.coll = Number(g.dataset.gotoColl); refresh(); }
+});
+$("#results").addEventListener("change", (e) => {
+  const sel = e.target.closest("[data-status]"); if (!sel) return;
+  setMark(Number(sel.closest(".result").dataset.id), { read_status: sel.value });
 });
 $("#results").addEventListener("mouseover", (e) => {
   const s = e.target.closest("[data-star]"); const box = e.target.closest(".stars");
