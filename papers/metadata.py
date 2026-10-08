@@ -589,11 +589,55 @@ def kci_by_id(art_id):
 
 # ---------------------------------------------------------------- DOI·ISBN 으로 추가, 무료 PDF
 
+# 주소에 DOI가 그대로 들어 있지 않은 출판사: 주소 모양으로 DOI를 만든다
+URL_DOI_RULES = [
+    (r"nature\.com/articles/([a-z0-9.\-]+)", "10.1038/{0}"),
+    (r"pubs\.rsc\.org/.+/(?:articlelanding|articlehtml|articlepdf)/\d{4}/[a-z]+/([a-z0-9]+)", "10.1039/{0}"),
+    (r"(?:science\.org|sciencemag\.org)/doi/(?:abs/|full/|pdf/|epdf/)?(10\.\d{4,9}/[^?#\s]+)", "{0}"),
+    (r"(?:onlinelibrary\.wiley\.com|pubs\.acs\.org|tandfonline\.com|journals\.sagepub\.com|pnas\.org|"
+     r"ieeexplore\.ieee\.org|dl\.acm\.org)/doi/(?:abs/|full/|pdf/|epdf/|epub/)?(10\.\d{4,9}/[^?#\s]+)", "{0}"),
+]
+
+
+def identifier_from_url(text):
+    """출판사 주소에서 DOI를 알아낸다(주소 모양만으로). 못 하면 ''."""
+    for pattern, template in URL_DOI_RULES:
+        m = re.search(pattern, text or "", re.I)
+        if m:
+            return clean_doi(template.format(m.group(1))).lower()
+    return ""
+
+
+def doi_from_page(url):
+    """논문 페이지를 열어 <meta name="citation_doi"> 등에서 DOI를 찾는다."""
+    # ScienceDirect(Elsevier): 주소의 PII 로 Crossref 에서 DOI를 찾는다 (페이지는 자동 접속을 막는 일이 많음)
+    m = re.search(r"sciencedirect\.com/science/article/(?:abs/|am/)?pii/([A-Z0-9]+)", url, re.I)
+    if m:
+        q = urllib.parse.urlencode({"filter": f"alternative-id:{m.group(1)}", "rows": 1})
+        items = json.loads(http_get("https://api.crossref.org/works?" + q))["message"].get("items") or []
+        if items and items[0].get("DOI"):
+            return items[0]["DOI"].lower()
+    with _open_url(url, "text/html,application/xhtml+xml") as r:
+        page = r.read(2_000_000).decode("utf-8", "replace")
+    for name in ("citation_doi", "dc.identifier", "prism.doi", "bepress_citation_doi"):
+        m = re.search(r"<meta\b[^>]*name\s*=\s*[\"']" + re.escape(name) + r"[\"'][^>]*>", page, re.I)
+        if m:
+            c = CONTENT_RE.search(m.group(0))
+            if c and DOI_RE.search(c.group(1)):
+                return clean_doi(DOI_RE.search(c.group(1)).group(1)).lower()
+    if looks_blocked(page):
+        raise Blocked("출판사가 자동 접속을 막아 주소에서 DOI를 읽지 못했습니다. DOI를 붙여 넣어 주세요.")
+    return ""
+
+
 def parse_identifier(text):
-    """('doi'|'arxiv'|'isbn'|'kci', 값) 또는 None."""
+    """('doi'|'arxiv'|'isbn'|'kci'|'url', 값) 또는 None. 'url' 은 페이지를 열어 DOI를 찾아야 하는 주소."""
     t = (text or "").strip()
     if not t:
         return None
+    doi = identifier_from_url(t)
+    if doi:
+        return "doi", doi
     m = re.search(r"\bART\d{9}\b", t, re.I)
     if m:
         return "kci", m.group(0).upper()
@@ -606,9 +650,14 @@ def parse_identifier(text):
                      r"(\d{4}\.\d{4,5}|[a-z\-]+(?:\.[A-Z]{2})?/\d{7})(v\d+)?(?:\.pdf)?", t, re.I)
     if m:
         return "arxiv", m.group(1)
+    m = re.search(r"arxiv\.org/(?:abs|pdf)/(\d{4}\.\d{4,5}|[a-z\-]+(?:\.[A-Z]{2})?/\d{7})", t, re.I)
+    if m:
+        return "arxiv", m.group(1)
     isbn = format_isbn(re.sub(r"(?i)^isbn(?:-1[03])?[:\s]*", "", t))
     if isbn:
         return "isbn", isbn
+    if re.match(r"https?://\S+$", t):
+        return "url", t
     return None
 
 

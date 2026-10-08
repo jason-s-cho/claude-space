@@ -250,6 +250,13 @@ details.pop[open] > summary, details.pop > summary:hover { border-color: var(--r
 .floating .menu-btn.danger { color: var(--danger); }
 #nameDlg { width: min(420px, calc(100vw - 32px)); }
 .tries { margin-top: 4px; }
+#reviewDlg { width: min(760px, calc(100vw - 32px)); }
+.rev-cur { border: 1px solid var(--rule); border-radius: 12px; padding: 12px 14px; display: grid; gap: 4px; background: var(--bg); }
+.rev-cur .t { font-weight: 700; font-size: 1.02rem; }
+.rev-cur .s { font-size: 0.84rem; color: var(--ink-soft); }
+.rev-cur .f { font-size: 0.74rem; color: var(--ink-faint); overflow-wrap: anywhere; }
+.rev-top { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.paste-hint { font-size: 0.78rem; color: var(--ink-faint); text-align: center; margin: -4px 12px 8px; }
 .tries summary { cursor: pointer; color: var(--accent); font-size: 0.78rem; font-weight: 600; }
 .tries ul { margin: 4px 0 0; padding-left: 16px; font-size: 0.74rem; color: var(--ink-soft); }
 .tries li { margin: 4px 0; overflow-wrap: anywhere; }
@@ -458,11 +465,13 @@ dialog::backdrop { background: rgb(10 12 20 / 0.42); backdrop-filter: blur(3px);
     <div class="brand"><div class="logo"><svg class="ic"><use href="#i-logo"/></svg></div><h1>논문 서재</h1></div>
     <button class="add-btn" id="pickBtn" type="button" title="논문·책 PDF나 보충 동영상 (창에 끌어다 놓아도 됩니다)"><svg class="ic"><use href="#i-upload"/></svg>파일 추가</button>
     <button class="add-sub" id="idBtn" type="button" title="PDF 없이 DOI·ISBN·arXiv·KCI 번호로 서지 정보를 추가합니다"><svg class="ic sm"><use href="#i-link"/></svg>DOI·ISBN으로 추가</button>
+    <div class="paste-hint">논문 주소를 복사해 Ctrl+V 해도 추가됩니다</div>
     <div class="nav-scroll">
       <section>
         <h3>서재</h3>
         <div class="nav-list">
           <button type="button" class="nav-item mine-toggle" id="mineToggle" aria-pressed="false"><svg class="ic"><use href="#i-star"/></svg>내 논문·책<span class="n" id="mineCount"></span></button>
+          <button type="button" class="nav-item" id="reviewBtn" hidden title="온라인에서 정보를 찾지 못해 PDF에서 추정한 항목을 한 편씩 정리합니다"><svg class="ic"><use href="#i-alert"/></svg>확인 필요<span class="n" id="reviewCount"></span></button>
           <button type="button" class="nav-item" id="dupBtn" hidden title="같은 논문으로 보이는 항목을 모아 하나로 합칩니다"><svg class="ic"><use href="#i-dup"/></svg>중복 의심<span class="n" id="dupCount"></span></button>
         </div>
         <div class="nav-list" id="docOpts"></div>
@@ -677,6 +686,13 @@ dialog::backdrop { background: rgb(10 12 20 / 0.42); backdrop-filter: blur(3px);
         <div class="msg" id="kciMsg"></div>
       </div>
       <div class="field">
+        <label>백업</label>
+        <div class="hint" id="bkInfo">서지 정보·컬렉션·메모 등이 든 색인(DB)을 하루에 한 번 <span class="mono">.papershelf/backups</span>에 보관합니다(최근 7개). PDF 파일은 그대로 폴더에 있습니다.</div>
+        <div class="inline" style="margin-top:6px"><select id="bkSel" style="flex:1;border:1px solid var(--rule);border-radius:9px;padding:6px 9px;background:var(--panel)"></select><button class="btn small" type="button" id="bkRestore">이 백업으로 되돌리기</button></div>
+        <div class="inline" style="margin-top:6px"><button class="btn small" type="button" id="bkNow">지금 백업</button><button class="btn small" type="button" id="bkOpen">백업 폴더 열기</button></div>
+        <div class="msg" id="bkMsg"></div>
+      </div>
+      <div class="field">
         <label for="s-theme">화면</label>
         <select id="s-theme"><option value="">시스템 설정 따름</option><option value="light">밝게</option><option value="dark">어둡게</option></select>
       </div>
@@ -704,13 +720,28 @@ dialog::backdrop { background: rgb(10 12 20 / 0.42); backdrop-filter: blur(3px);
     <header><h3>DOI·ISBN으로 추가</h3><button type="button" data-close aria-label="닫기"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button></header>
     <div class="body">
       <div class="hint">PDF가 없어도 서지 정보만 먼저 넣어 둘 수 있습니다. 한 줄에 하나씩, 여러 개를 한꺼번에 넣어도 됩니다.<br>
-        예: <span class="mono">10.1038/nature14539</span> · <span class="mono">https://doi.org/…</span> · <span class="mono">arXiv:1706.03762</span> · <span class="mono">978-0262035613</span>(책) · <span class="mono">ART002345678</span>(KCI)</div>
+        예: <span class="mono">10.1038/nature14539</span> · 논문 주소(<span class="mono">https://www.nature.com/articles/…</span>) · <span class="mono">https://doi.org/…</span> · <span class="mono">arXiv:1706.03762</span> · <span class="mono">978-0262035613</span>(책) · <span class="mono">ART002345678</span>(KCI)</div>
       <div class="field"><textarea id="idList" rows="6" class="mono" aria-label="DOI·ISBN 목록" placeholder="10.1038/nature14539&#10;arXiv:1706.03762"></textarea></div>
       <label class="check"><input type="checkbox" id="idPdf" checked> 무료로 공개된 PDF(arXiv·오픈 액세스)가 있으면 받아 오기</label>
+      <div class="hint"><b>더 빠른 방법</b>: 브라우저에서 논문 주소를 복사한 뒤 앱 화면 아무 곳에서 Ctrl+V(맥은 ⌘V) 하면 바로 추가됩니다. 주소창의 링크를 앱으로 끌어다 놓아도 됩니다.</div>
       <div class="hint">PDF는 나중에 구해서 그 카드 위에 끌어다 놓으면 붙습니다. 같은 DOI의 PDF를 빈 곳에 넣어도 그 항목에 붙습니다.</div>
     </div>
     <footer><span></span><div class="right"><button class="btn" type="button" data-close>취소</button><button class="btn primary" type="submit">추가</button></div></footer>
   </form>
+</dialog>
+
+<dialog id="reviewDlg">
+  <div class="dlg">
+    <header><h3>확인 필요 정리 <span class="hint" id="revProg"></span></h3><button type="button" data-close aria-label="닫기"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button></header>
+    <div class="body">
+      <div class="rev-top"><button type="button" class="btn small" id="revAuto">전부 다시 찾기</button><span class="hint" id="revAutoMsg">확실히 맞는 정보를 찾은 것만 자동으로 고칩니다(본문에 그 제목이 있는지 확인).</span></div>
+      <div id="revCur"></div>
+      <div><div class="hint" style="margin-bottom:6px">맞는 후보를 누르면 그 정보로 고칩니다 (Crossref·Google Books, KCI 키가 있으면 KCI)</div><div class="cands" id="revCands"></div></div>
+      <div class="inline"><input id="revKey" class="mono" placeholder="DOI · 논문 주소 · arXiv ID · ISBN · KCI ID 로 가져오기" style="flex:1;border:1px solid var(--rule);border-radius:9px;padding:8px 11px;background:var(--panel)"><button class="btn" type="button" id="revKeyBtn">가져오기</button></div>
+      <div class="msg" id="revMsg"></div>
+    </div>
+    <footer><button class="btn" type="button" id="revEdit">수정 창에서 직접 고치기</button><div class="right"><button class="btn" type="button" id="revSkip">건너뛰기</button><button class="btn primary" type="button" id="revOk">이대로 맞음</button></div></footer>
+  </div>
 </dialog>
 
 <dialog id="dupDlg">
@@ -808,6 +839,8 @@ function renderSide() {
   $("#mineToggle").setAttribute("aria-pressed", view.mine);
   $("#mineCount").textContent = lastInfo?.mine ? lastInfo.mine : "";
   $("#dupBtn").hidden = !lastInfo?.duplicates;
+  $("#reviewBtn").hidden = !lastInfo?.needs_review;
+  $("#reviewCount").textContent = lastInfo?.needs_review || "";
   $("#dupCount").textContent = lastInfo?.duplicates || "";
   const rd = lastInfo?.reading || {};
   $("#readOpts").innerHTML = [["unread", READ_STATES[""]], ["reading", READ_STATES.reading], ["read", READ_STATES.read]].map(([k, st]) =>
@@ -1731,14 +1764,120 @@ document.addEventListener("click", (e) => {
   e.preventDefault(); browserGet(Number(b.dataset.browserGet));
 });
 
+/* ---------- 주소 붙여넣기·끌어다 놓기로 추가 ---------- */
+const ID_LIKE = /10\.\d{4,9}\/\S+|arxiv[:\s]*\d{4}\.\d{4,5}|^\d{4}\.\d{4,5}(v\d+)?$|ART\d{9}|^(?:isbn[:\s]*)?(97[89][\d\-\s]{10,14}|\d[\d\-\s]{8,11}[\dXx])$|^https?:\/\/\S+$/i;
+function idsFromText(text) {
+  return [...new Set(String(text || "").split(/[\r\n]+/).map((x) => x.trim()).filter((x) => x && ID_LIKE.test(x)))].slice(0, 50);
+}
+document.addEventListener("paste", (e) => {
+  const t = e.target;
+  if (t.closest?.("input, textarea, [contenteditable]") || document.querySelector("dialog[open]")) return;
+  const keys = idsFromText(e.clipboardData?.getData("text"));
+  if (!keys.length) { if (e.clipboardData?.getData("text")) toast("붙여 넣은 내용에서 DOI·논문 주소를 찾지 못했습니다"); return; }
+  e.preventDefault();
+  addByKeys(keys, true);
+});
+// 브라우저 주소창·링크를 앱으로 끌어다 놓기
+window.addEventListener("dragover", (e) => { const ty = [...(e.dataTransfer?.types || [])]; if (!ty.includes("Files") && ty.includes("text/uri-list")) e.preventDefault(); });
+window.addEventListener("drop", (e) => {
+  const ty = [...(e.dataTransfer?.types || [])];
+  if (ty.includes("Files") || !ty.includes("text/uri-list")) return;
+  e.preventDefault();
+  const keys = idsFromText(e.dataTransfer.getData("text/uri-list") || e.dataTransfer.getData("text"));
+  if (keys.length) addByKeys(keys, true); else toast("끌어다 놓은 링크에서 DOI·논문 주소를 찾지 못했습니다");
+});
+
+/* ---------- 확인 필요 정리 ---------- */
+let revIds = [], revIdx = 0, revPaper = null;
+async function openReview() {
+  revIds = (await api("/api/review")).ids; revIdx = 0;
+  $("#revAutoMsg").textContent = "확실히 맞는 정보를 찾은 것만 자동으로 고칩니다(본문에 그 제목이 있는지 확인).";
+  $("#reviewDlg").showModal();
+  showReview();
+}
+async function showReview() {
+  $("#revMsg").textContent = ""; $("#revKey").value = ""; $("#revCands").innerHTML = "";
+  const left = revIds.length - revIdx;
+  $("#revProg").textContent = left > 0 ? `${revIdx + 1} / ${revIds.length}` : "";
+  for (const id of ["#revOk", "#revSkip", "#revEdit", "#revKeyBtn", "#revAuto"]) $(id).disabled = left <= 0;
+  if (left <= 0) {
+    revPaper = null;
+    $("#revCur").innerHTML = `<div class="rev-cur"><div class="t">${ic("check")} 모두 살펴봤습니다</div><div class="s">남은 ‘확인 필요’ 항목이 없거나, 이번에는 건너뛴 것만 남았습니다.</div></div>`;
+    return;
+  }
+  revPaper = await api(`/api/papers/${revIds[revIdx]}`).catch(() => null);
+  if (!revPaper) { revIdx++; return showReview(); }
+  const p = revPaper;
+  const pdf = p.has_file ? `<a href="/pdf/${p.id}/${encodeURIComponent(p.file_name)}" target="_blank" rel="noopener">${ic("external", "sm")} PDF 열어 보기</a>` : "PDF 없음";
+  $("#revCur").innerHTML = `<div class="rev-cur"><div class="t">${esc(p.title || "제목 없음")}</div>
+    <div class="s">${esc([p.scholar_authors || "저자 모름", p.journal, p.year].filter(Boolean).join(" · "))}</div>
+    <div class="f mono">${esc(p.original_name || p.file_name || "")}</div><div class="s">${pdf}</div></div>`;
+  $("#revCands").innerHTML = `<div class="hint"><span class="spin"></span> 후보 찾는 중…</div>`;
+  try {
+    const res = await api("/api/lookup?q=" + encodeURIComponent((p.title || "").slice(0, 200)) + (isBook(p) ? "&doc=book" : ""));
+    if (revPaper !== p) return;
+    revCands = res.items;
+    $("#revCands").innerHTML = res.items.length ? res.items.map((it, i) => `<button type="button" class="cand" data-rc="${i}"><b>${isBook(it) ? "[책] " : ""}${esc(it.title)}</b><span>${esc([it.scholar_authors, [it.journal || it.publisher, it.year].filter(Boolean).join(", "), it.doi ? "DOI " + it.doi : it.source === "kci" ? "KCI" : ""].filter(Boolean).join(" · "))}</span></button>`).join("")
+      : `<div class="hint">후보를 찾지 못했습니다. DOI나 논문 주소를 아래에 넣거나, 수정 창에서 직접 고치세요.</div>`;
+  } catch (err) { $("#revCands").innerHTML = `<div class="hint">${esc(err.message)}</div>`; }
+}
+let revCands = [];
+function nextReview(msg) { if (msg) toast(msg); revIdx++; refresh(true); showReview(); }
+$("#reviewBtn").addEventListener("click", openReview);
+$("#revSkip").addEventListener("click", () => nextReview());
+$("#revOk").addEventListener("click", async () => {
+  try { await api(`/api/papers/${revPaper.id}/reviewed`, { method: "POST" }); revIds.splice(revIdx, 1); revIdx--; nextReview("확인했습니다"); }
+  catch (err) { $("#revMsg").textContent = err.message; }
+});
+$("#revEdit").addEventListener("click", () => { const id = revPaper.id; $("#reviewDlg").close(); openEdit(id); });
+async function reviewApply(body) {
+  $("#revMsg").style.color = "var(--ink-soft)"; $("#revMsg").textContent = "가져오는 중…";
+  try {
+    const p = await api(`/api/papers/${revPaper.id}/refetch`, jsonOpts("POST", body));
+    revIds.splice(revIdx, 1); revIdx--;
+    nextReview("고쳤습니다 → " + p.file_name);
+  } catch (err) { $("#revMsg").style.color = ""; $("#revMsg").textContent = err.message; }
+}
+$("#revCands").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-rc]"); if (!b) return;
+  const it = revCands[Number(b.dataset.rc)];
+  if (it.doi) return reviewApply({ doi: it.doi });
+  if (it.kci_id) return reviewApply({ kci_id: it.kci_id });
+  if (it.isbn) return reviewApply({ isbn: it.isbn });
+  // 식별 번호가 없는 후보: 값을 그대로 저장
+  const data = {};
+  for (const k of ["title", "journal", "year", "publisher", "volume", "issue", "pages", "url", "abstract", "type"]) if (it[k]) data[k] = it[k];
+  data.authors = it.authors || []; data.needs_review = false;
+  try { await api(`/api/papers/${revPaper.id}`, jsonOpts("PUT", data)); revIds.splice(revIdx, 1); revIdx--; nextReview("고쳤습니다"); }
+  catch (err) { $("#revMsg").textContent = err.message; }
+});
+$("#revKeyBtn").addEventListener("click", () => { const k = $("#revKey").value.trim(); if (k) reviewApply({ key: k }); });
+$("#revKey").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("#revKeyBtn").click(); } });
+$("#revAuto").addEventListener("click", async () => {
+  const todo = revIds.slice(revIdx);
+  if (!todo.length) return;
+  $("#revAuto").disabled = true;
+  let fixed = 0;
+  for (let i = 0; i < todo.length; i++) {
+    $("#revAutoMsg").textContent = `다시 찾는 중 ${i + 1} / ${todo.length} — ${fixed}편 고침`;
+    try { const r = await api(`/api/papers/${todo[i]}/auto-fix`, { method: "POST" }); if (r.fixed) fixed++; } catch {}
+  }
+  $("#revAutoMsg").textContent = `${todo.length}편 중 ${fixed}편을 자동으로 고쳤습니다. 남은 것은 한 편씩 살펴보세요.`;
+  $("#revAuto").disabled = false;
+  revIds = (await api("/api/review")).ids; revIdx = 0;
+  refresh(true); showReview();
+});
+
 /* ---------- DOI·ISBN 으로 추가 ---------- */
 $("#idBtn").addEventListener("click", () => { $("#idList").value = ""; $("#idDlg").showModal(); $("#idList").focus(); });
 $("#idForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   const keys = [...new Set($("#idList").value.split(/[\n,]+/).map((x) => x.trim()).filter(Boolean))];
   if (!keys.length) return $("#idList").focus();
-  const fetchPdf = $("#idPdf").checked;
   $("#idDlg").close();
+  addByKeys(keys, $("#idPdf").checked);
+});
+async function addByKeys(keys, fetchPdf) {
   $("#tray").classList.add("on");
   const jobs = keys.map((k) => {
     const li = document.createElement("li");
@@ -1757,7 +1896,7 @@ $("#idForm").addEventListener("submit", async (e) => {
     } catch (err) { setItem(li, "error", esc(err.message)); }
     pending--; updateTrayTitle(); refresh(true);
   }
-});
+}
 $("#pdfInput").addEventListener("change", (e) => {
   const file = e.target.files[0]; e.target.value = "";
   if (!file || !editing) return;
@@ -1771,6 +1910,7 @@ $("#settingsBtn").addEventListener("click", async () => {
   $("#appVersion").textContent = `논문 서재 ${info.version || ""}`;
   $("#s-names").value = info.my_names || "";
   $("#s-kci").value = ""; delete $("#s-kci").dataset.touched; $("#kciMsg").textContent = "";
+  $("#bkMsg").textContent = ""; loadBackups();
   $("#s-kci").placeholder = info.kci_key ? "저장된 키가 있습니다 — 바꾸려면 새 키를 넣으세요" : "발급받은 키를 붙여 넣으세요";
   $("#settingsDlg").dataset.hasKci = info.kci_key ? "1" : "";
   $("#s-lib").value = info.library; $("#s-theme").value = store("papershelf.theme") || ""; $("#settingsMsg").textContent = "";
@@ -1793,6 +1933,24 @@ $("#kciTest").addEventListener("click", async () => {
     const r = await api("/api/kci-test", jsonOpts("POST", { key }));
     msg.style.color = "var(--good)"; msg.textContent = `키가 맞습니다 (시험 검색 결과 ${r.found}건). 저장을 눌러 주세요.`;
   } catch (err) { msg.style.color = ""; msg.textContent = err.message; }
+});
+async function loadBackups() {
+  try {
+    const r = await api("/api/backups");
+    $("#bkSel").innerHTML = r.items.length ? r.items.map((b) => `<option value="${esc(b.name)}">${new Date(b.time * 1000).toLocaleString("ko-KR")} · ${(b.size / 1048576).toFixed(1)}MB</option>`).join("") : `<option value="">아직 백업이 없습니다</option>`;
+    $("#bkRestore").disabled = !r.items.length;
+  } catch (err) { $("#bkMsg").textContent = err.message; }
+}
+$("#bkNow").addEventListener("click", async () => {
+  try { await api("/api/backups", { method: "POST" }); $("#bkMsg").style.color = "var(--good)"; $("#bkMsg").textContent = "백업했습니다"; loadBackups(); }
+  catch (err) { $("#bkMsg").style.color = ""; $("#bkMsg").textContent = err.message; }
+});
+$("#bkOpen").addEventListener("click", () => api("/api/backups/open", { method: "POST" }).catch((err) => toast(err.message)));
+$("#bkRestore").addEventListener("click", async () => {
+  const name = $("#bkSel").value; if (!name) return;
+  if (!confirm(`${$("#bkSel").selectedOptions[0].textContent} 백업으로 되돌릴까요?\n그 뒤에 바뀐 서지 정보·컬렉션·메모는 사라집니다(지금 상태도 따로 백업해 둡니다).\n되돌린 뒤에는 ‘폴더 다시 읽기’로 파일과 맞춰 주세요.`)) return;
+  try { await api("/api/backups/restore", jsonOpts("POST", { name })); $("#settingsDlg").close(); toast("백업으로 되돌렸습니다. 왼쪽 아래 ‘폴더 다시 읽기’를 한 번 눌러 주세요."); refresh(); }
+  catch (err) { $("#bkMsg").style.color = ""; $("#bkMsg").textContent = err.message; }
 });
 let citePoll = null;
 async function watchCitations() {

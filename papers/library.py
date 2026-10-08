@@ -827,6 +827,116 @@ class Library:
                 c.execute("DELETE FROM collection_items WHERE paper_id=?", (x["id"],))
         return True
 
+    # ------------------------------------------------------------ '확인 필요' 정리
+
+    def review_ids(self):
+        with self.connect() as c:
+            return [r[0] for r in c.execute("SELECT id FROM papers WHERE kind='main' AND needs_review=1 "
+                                            "ORDER BY added_at DESC")]
+
+    def auto_fix(self, pid, log=None):
+        """'확인 필요' 항목의 서지 정보를 다시 찾아 본다. 확실히 맞는 것을 찾으면 고치고 True."""
+        p = self.get(pid, with_text=True)
+        if not p or p["kind"] != "main":
+            return False
+        text_key = md.norm_key((p.get("fulltext") or "")[:6000])
+        rec = None
+        try:
+            if p.get("doi"):
+                rec = md.crossref_by_doi(p["doi"])
+            elif p.get("arxiv_id"):
+                rec = md.arxiv_by_id(p["arxiv_id"])
+            elif p.get("isbn"):
+                rec = md.book_by_isbn(md.format_isbn(p["isbn"]))
+        except Exception as e:
+            (log or print)(f"다시 찾기 실패 {p['title']}: {e}")
+            rec = None
+        if rec is None and p.get("title"):
+            searchers = [md.crossref_search]
+            if md.KCI_KEY:
+                searchers = [md.kci_search] + searchers if md.is_hangul(p["title"]) else searchers + [md.kci_search]
+            for search in searchers:
+                try:
+                    cands = search(p["title"])
+                except Exception:
+                    continue
+                for cand in cands:
+                    titles = [t for t in (cand.get("title"), cand.get("title_alt")) if t]
+                    # 본문(PDF) 앞부분에 그 제목이 실제로 있거나, 지금 제목과 거의 같아야 채택
+                    if any((text_key and md.title_in_text(t, text_key)) or md.similarity(t, p["title"]) >= 0.93
+                           for t in titles):
+                        rec = cand
+                        break
+                if rec:
+                    break
+        if not rec or not rec.get("title"):
+            return False
+        rec["needs_review"] = False
+        self.update(pid, rec)
+        try:
+            self.refresh_citations([pid])
+        except Exception:
+            pass
+        return True
+
+    def mark_reviewed(self, pid):
+        with self.lock, self.connect() as c:
+            c.execute("UPDATE papers SET needs_review=0 WHERE id=?", (pid,))
+        return self.get(pid)
+
+    # ------------------------------------------------------------ 자동 백업
+
+    @property
+    def backup_dir(self):
+        d = self.meta_dir / "backups"
+        d.mkdir(exist_ok=True)
+        return d
+
+    def backups(self):
+        out = []
+        for f in sorted(self.backup_dir.glob("library-*.db"), reverse=True):
+            st = f.stat()
+            out.append({"name": f.name, "size": st.st_size, "time": st.st_mtime})
+        return out
+
+    def backup(self, keep=7, force=False):
+        """오늘 백업이 없으면(force 면 언제나) library.db 를 backups/library-날짜.db 로 복사. 오래된 것은 지운다."""
+        stamp = time.strftime("%Y-%m-%d")
+        target = self.backup_dir / (f"library-{stamp}.db" if not force else f"library-{stamp}-{time.strftime('%H%M%S')}.db")
+        if target.exists() and not force:
+            return None
+        with self.connect() as src:
+            dst = sqlite3.connect(target)
+            try:
+                src.backup(dst)  # 쓰는 중이어도 일관된 사본
+            finally:
+                dst.close()
+        files = sorted(self.backup_dir.glob("library-*.db"), reverse=True)
+        for old in files[keep:]:
+            try:
+                old.unlink()
+            except OSError:
+                pass
+        return target.name
+
+    def restore(self, name):
+        """백업으로 되돌린다. 지금 상태도 먼저 백업해 둔다."""
+        src = self.backup_dir / name
+        if not re.fullmatch(r"library-[\d\-]+\.db", name) or not src.exists():
+            raise LookupError("없는 백업입니다")
+        self.backup(keep=50, force=True)
+        with self.lock:
+            b = sqlite3.connect(src)
+            try:
+                with self.connect() as dst:
+                    b.backup(dst)
+            finally:
+                b.close()
+        if hasattr(self, "_cols"):
+            del self._cols
+        # 백업 뒤에 바뀐 파일 이름은 폴더 다시 읽기로 맞춘다
+        return True
+
     # ------------------------------------------------------------ 같은 논문의 다른 판
 
     def _add_version_locked(self, c, main, src, original_name, sha, rec, in_place=False, preprint=True):
@@ -1103,10 +1213,20 @@ class Library:
         """
         ident = md.parse_identifier(key)
         if ident is None:
-            raise ValueError("DOI, arXiv ID, ISBN, KCI 논문 ID(ART…) 중 하나를 넣어 주세요")
+            raise ValueError("DOI, 논문 주소, arXiv ID, ISBN, KCI 논문 ID(ART…) 중 하나를 넣어 주세요")
         if not online:
             raise ValueError("오프라인 모드에서는 정보를 받아올 수 없습니다")
         kind, value = ident
+        if kind == "url":
+            try:
+                doi = md.doi_from_page(value)
+            except md.Blocked as e:
+                raise LookupError(str(e))
+            except Exception as e:
+                raise LookupError(f"주소를 열지 못했습니다 ({e})")
+            if not doi:
+                raise LookupError("이 주소에서 DOI를 찾지 못했습니다. DOI를 붙여 넣어 주세요.")
+            kind, value = "doi", doi
         try:
             rec = {"doi": md.crossref_by_doi, "arxiv": md.arxiv_by_id, "isbn": md.book_by_isbn,
                    "kci": md.kci_by_id}[kind](value)

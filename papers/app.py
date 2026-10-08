@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import metadata as md  # noqa: E402
 from library import BLOCKED_EXTS, Library, is_video, parse_my_names  # noqa: E402
 
-APP_VERSION = "1.5.4"
+APP_VERSION = "1.5.5"
 HERE = Path(__file__).resolve().parent
 # 설치판(PyInstaller)으로 묶였을 때는 화면 파일이 압축 해제 폴더에 있다
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", HERE))
@@ -519,6 +519,17 @@ class Handler(BaseHTTPRequestHandler):
 
     def refetch(self, qs, pid):
         data = self.read_json()
+        if data.get("key"):  # DOI·주소·arXiv·ISBN·KCI 아무거나
+            ident = md.parse_identifier(str(data["key"]))
+            if ident and ident[0] == "url":
+                try:
+                    doi = md.doi_from_page(ident[1])
+                except Exception as e:
+                    return self.send_error_json(400, f"주소에서 DOI를 읽지 못했습니다: {e}")
+                ident = ("doi", doi) if doi else None
+            if not ident:
+                return self.send_error_json(400, "DOI, 논문 주소, arXiv ID, ISBN, KCI 논문 ID 중 하나를 넣어 주세요")
+            data = {{"doi": "doi", "arxiv": "arxiv_id", "isbn": "isbn", "kci": "kci_id"}[ident[0]]: ident[1]}
         try:
             p = state["lib"].refetch(int(pid), doi=data.get("doi"), arxiv_id=data.get("arxiv_id"),
                                      isbn=data.get("isbn"), kci_id=data.get("kci_id"))
@@ -717,6 +728,45 @@ class Handler(BaseHTTPRequestHandler):
             state["lib"].ignore_duplicate(ids)
         self.send_json({"ok": True})
 
+    def review_list(self, qs):
+        self.send_json({"ids": state["lib"].review_ids()})
+
+    def auto_fix(self, qs, pid):
+        if not state["online"]:
+            return self.send_error_json(400, "오프라인 모드입니다")
+        ok = state["lib"].auto_fix(int(pid), log=log)
+        self.send_json({"fixed": ok, "paper": self.with_extras(state["lib"].get(int(pid)))})
+
+    def reviewed(self, qs, pid):
+        p = state["lib"].mark_reviewed(int(pid))
+        if not p:
+            return self.send_error_json(404, "없는 논문입니다")
+        self.send_json({"ok": True})
+
+    def backups(self, qs):
+        lib = state["lib"]
+        self.send_json({"items": lib.backups(), "folder": str(lib.backup_dir)})
+
+    def backup_now(self, qs):
+        name = state["lib"].backup(force=True)
+        self.send_json({"name": name, "items": state["lib"].backups()})
+
+    def restore(self, qs):
+        name = str(self.read_json().get("name", ""))
+        try:
+            state["lib"].restore(name)
+        except LookupError as e:
+            return self.send_error_json(400, str(e))
+        log(f"백업 {name} 으로 되돌렸습니다")
+        self.send_json({"ok": True})
+
+    def open_backups(self, qs):
+        folder = state["lib"].backup_dir
+        system = platform.system()
+        cmd = ["explorer", str(folder)] if system == "Windows" else ["open" if system == "Darwin" else "xdg-open", str(folder)]
+        subprocess.Popen(cmd)
+        self.send_json({"ok": True})
+
     def kci_test(self, qs):
         key = str(self.read_json().get("key", "")).strip() or md.KCI_KEY  # 비워 두면 저장된 키를 확인
         old = md.KCI_KEY
@@ -777,6 +827,13 @@ ROUTES = [
     ("PUT", r"/api/collections/(\d+)", Handler.update_collection),
     ("DELETE", r"/api/collections/(\d+)", Handler.delete_collection),
     ("POST", r"/api/kci-test", Handler.kci_test),
+    ("GET", r"/api/review", Handler.review_list),
+    ("POST", r"/api/papers/(\d+)/auto-fix", Handler.auto_fix),
+    ("POST", r"/api/papers/(\d+)/reviewed", Handler.reviewed),
+    ("GET", r"/api/backups", Handler.backups),
+    ("POST", r"/api/backups", Handler.backup_now),
+    ("POST", r"/api/backups/restore", Handler.restore),
+    ("POST", r"/api/backups/open", Handler.open_backups),
     ("POST", r"/api/collections/(\d+)/papers", Handler.collection_many),
     ("POST", r"/api/papers/mark-many", Handler.mark_many),
     ("GET", r"/api/duplicates", Handler.duplicates),
@@ -864,6 +921,13 @@ def main():
     # 열려 있어서 이름을 못 바꾼 PDF는 1분마다 다시 시도
     def retry_loop():
         while True:
+            try:
+                # 하루에 한 번 서지 정보 DB 를 백업 (켤 때, 그리고 켜 둔 채 날짜가 바뀌면)
+                name = state["lib"].backup()
+                if name:
+                    log(f"백업했습니다: {name}")
+            except Exception as e:
+                log("백업 실패:", e)
             try:
                 n = state["lib"].retry_renames()
                 if n:
