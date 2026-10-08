@@ -701,6 +701,9 @@ async function refresh(keepPage = false) {
   if (view.review) params.set("review", "1");
   if (view.doc !== "all") params.set("doc", view.doc);
   if (view.mine) params.set("mine", "1");
+  // 지금 보는 쪽만 받아 온다
+  params.set("offset", String((view.page - 1) * view.perPage));
+  params.set("limit", String(view.perPage));
   try {
     const [res, info] = await Promise.all([api("/api/papers?" + params), api("/api/info")]);
     lastTerms = res.terms;
@@ -731,10 +734,10 @@ function renderResults(res, info) {
           <div class="tips"><span>${ic("clip", "sm")}보충자료는 본문에 자동으로 묶임</span><span>${ic("film", "sm")}동영상도 보충자료로</span><span>${ic("book", "sm")}책은 ISBN으로</span></div></div>`;
     return;
   }
-  const pages = Math.max(1, Math.ceil(res.papers.length / view.perPage));
-  view.page = Math.min(Math.max(1, view.page), pages);
-  const start = (view.page - 1) * view.perPage;
-  const shown = res.papers.slice(start, start + view.perPage);
+  const pages = Math.max(1, Math.ceil(res.total / view.perPage));
+  const start = res.offset || 0;
+  view.page = Math.floor(start / view.perPage) + 1;
+  const shown = res.papers;
   if (pages > 1) $("#count").innerHTML += ` <span>· ${start + 1}–${start + shown.length}번째</span>`;
   box.innerHTML = shown.map(resultHTML).join("") + pagerHTML(view.page, pages);
 }
@@ -793,13 +796,14 @@ function rerender(scrollTop = false) {
 }
 $("#results").addEventListener("click", (e) => {
   const b = e.target.closest("[data-page]"); if (!b || b.disabled) return;
-  view.page = Number(b.dataset.page); rerender(true);
+  view.page = Number(b.dataset.page);
+  refresh(true).then(() => $("#scroller").scrollTo({ top: 0, behavior: "smooth" }));
 });
 function setPerPage(n) {
   const first = (view.page - 1) * view.perPage;  // 보던 첫 항목이 계속 보이게
   view.perPage = clampPer(n); store("papershelf.perPage", String(view.perPage));
   view.page = Math.floor(first / view.perPage) + 1;
-  rerender();
+  refresh(true);
 }
 $("#perPage").addEventListener("input", (e) => setPerPage(e.target.value));
 $("#ppDown").addEventListener("click", () => setPerPage(view.perPage - 10));

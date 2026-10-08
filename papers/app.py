@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import metadata as md  # noqa: E402
 from library import Library, is_video, parse_my_names  # noqa: E402
 
-APP_VERSION = "1.4.9"
+APP_VERSION = "1.4.10"
 HERE = Path(__file__).resolve().parent
 # 설치판(PyInstaller)으로 묶였을 때는 화면 파일이 압축 해제 폴더에 있다
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", HERE))
@@ -288,7 +288,9 @@ class Handler(BaseHTTPRequestHandler):
             q=qs.get("q", ""), field=qs.get("field", "all"),
             year_from=qs.get("from") or None, year_to=qs.get("to") or None,
             sort=qs.get("sort", "relevance"), review_only=qs.get("review") == "1", doc=qs.get("doc", "all"),
-            mine_only=qs.get("mine") == "1")
+            mine_only=qs.get("mine") == "1",
+            offset=int(qs.get("offset") or 0) if (qs.get("offset") or "0").isdigit() else 0,
+            limit=min(int(qs["limit"]), 200) if (qs.get("limit") or "").isdigit() and int(qs["limit"]) > 0 else None)
         self.send_json(res)
 
     def get_paper(self, qs, pid):

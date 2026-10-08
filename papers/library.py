@@ -224,7 +224,7 @@ class Library:
 
     # ------------------------------------------------------------ 변환
 
-    def to_dict(self, row, with_text=False):
+    def to_dict(self, row, with_text=False, check_file=True):
         p = dict(row)
         p["authors"] = json.loads(p.get("authors") or "[]")
         if not with_text:
@@ -234,7 +234,8 @@ class Library:
         p["doc_group"] = doc_group(p.get("type"))
         p["is_mine"] = self.is_mine(p)
         p["scholar_authors"] = md.scholar_authors(p["authors"])
-        p["missing"] = not (self.root / p["file_name"]).exists()
+        # 파일이 실제로 있는지는 디스크를 봐야 해서, 목록에서는 보여 줄 쪽만 확인한다
+        p["missing"] = not (self.root / p["file_name"]).exists() if check_file else False
         return p
 
     def is_mine(self, p):
@@ -769,8 +770,18 @@ class Library:
 
     # ------------------------------------------------------------ 검색
 
+    def _columns(self):
+        if not hasattr(self, "_cols"):
+            with self.connect() as c:
+                self._cols = [r["name"] for r in c.execute("PRAGMA table_info(papers)")]
+        return self._cols
+
     def search(self, q="", field="all", year_from=None, year_to=None, sort="relevance",
-               review_only=False, doc="all", mine_only=False, limit=1000):
+               review_only=False, doc="all", mine_only=False, offset=0, limit=None):
+        """검색. 본문(fulltext)은 데이터베이스 안에서만 찾고, 걸린 대목만 꺼낸다.
+
+        offset/limit 을 주면 그 쪽만 돌려준다(total 은 전체 개수).
+        """
         terms = parse_terms(q)
         cols = SEARCH_FIELDS.get(field, SEARCH_FIELDS["all"])
         where, args = [], []
@@ -792,22 +803,34 @@ class Library:
             marks = ",".join("?" * len(types))
             where.append(f"coalesce(type,'') {'IN' if doc in DOC_GROUPS else 'NOT IN'} ({marks})")
             args += list(types)
-        sql = "SELECT * FROM papers" + (" WHERE " + " AND ".join(where) if where else "")
+
+        # 본문 전체는 가져오지 않는다: 낱말마다 '걸렸는지'와 첫 번째 낱말 둘레 글만 계산해서 받는다
+        select = [c for c in self._columns() if c != "fulltext"]
+        sel_args = []
+        use_ft = bool(terms) and any(col == "fulltext" for col, _ in cols)
+        if use_ft:
+            for i, t in enumerate(terms):
+                select.append(f"instr(lower(fulltext), ?) AS ft{i}")
+                sel_args.append(t.lower())
+            select.append("CASE WHEN instr(lower(fulltext), ?) > 0 THEN "
+                          "substr(fulltext, max(1, instr(lower(fulltext), ?) - 70), 230) END AS ft_snip")
+            sel_args += [terms[0].lower()] * 2
+        sql = f"SELECT {', '.join(select)} FROM papers" + (" WHERE " + " AND ".join(where) if where else "")
 
         with self.connect() as c:
-            rows = c.execute(sql, args).fetchall()
+            rows = c.execute(sql, sel_args + args).fetchall()
 
         results = []
         for row in rows:
-            p = self.to_dict(row, with_text=True)
+            p = self.to_dict(row, check_file=False)
             score = 0.0
             matched = set()
-            for t in terms:
+            for i, t in enumerate(terms):
                 tl = t.lower()
                 for col, w in cols:
-                    val = (p.get(col) or "").lower()
-                    if tl in val:
-                        score += w * (1 + min(val.count(tl), 20) / 20 if col == "fulltext" else 1)
+                    hit = (p.get(f"ft{i}") or 0) > 0 if col == "fulltext" else tl in (p.get(col) or "").lower()
+                    if hit:
+                        score += w
                         matched.add(col)
                 if tl in (p.get("title") or "").lower().split():
                     score += 3  # 낱말이 통째로 맞으면 가산
@@ -815,14 +838,15 @@ class Library:
             if terms:
                 if "abstract" in matched:
                     snippet = make_snippet(p.get("abstract"), terms)
-                if not snippet and "fulltext" in matched:
-                    snippet = make_snippet(p.get("fulltext"), terms)
+                if not snippet and "fulltext" in matched and p.get("ft_snip"):
+                    snippet = "…" + " ".join(p["ft_snip"].split()) + "…"
                     p["in_fulltext"] = True
             if not snippet:
                 snippet = (p.get("abstract") or "")[:240] + ("…" if len(p.get("abstract") or "") > 240 else "")
+            for k in [k for k in p if k.startswith("ft")]:
+                p.pop(k)
             p["snippet"] = snippet
             p["score"] = score
-            p.pop("fulltext", None)
             results.append(p)
 
         results = self._group_supplements(results)
@@ -840,7 +864,14 @@ class Library:
             results.sort(key=lambda p: p.get("added_at") or 0, reverse=True)
         else:
             results.sort(key=lambda p: (p["score"], p.get("year") or 0), reverse=True)
-        return {"total": len(results), "terms": terms, "papers": results[:limit]}
+        total = len(results)
+        if limit:
+            # 없는 쪽을 달라고 하면(지운 뒤 등) 마지막 쪽을 준다
+            offset = max(0, min(int(offset), (total - 1) // limit * limit if total else 0))
+            results = results[offset:offset + limit]
+        for p in results:
+            p["missing"] = not (self.root / p["file_name"]).exists()
+        return {"total": total, "offset": offset, "terms": terms, "papers": results}
 
     def _group_supplements(self, results):
         """본문에 묶인 보충자료는 본문 논문 결과 아래로 모은다."""
