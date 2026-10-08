@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import metadata as md  # noqa: E402
 from library import BLOCKED_EXTS, Library, is_video, parse_my_names  # noqa: E402
 
-APP_VERSION = "1.4.13"
+APP_VERSION = "1.4.14"
 HERE = Path(__file__).resolve().parent
 # 설치판(PyInstaller)으로 묶였을 때는 화면 파일이 압축 해제 폴더에 있다
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", HERE))
@@ -220,7 +220,7 @@ class Handler(BaseHTTPRequestHandler):
         """논문 PDF·보충 동영상 파일. 동영상 앞뒤 넘기기를 위해 Range 요청도 받는다."""
         lib = state["lib"]
         p = lib.get(int(pid))
-        if not p or p["missing"]:
+        if not p or p["missing"] or not p["has_file"]:
             return self.send_error_json(404, "파일이 없습니다")
         path = lib.path_of(p)
         size = path.stat().st_size
@@ -268,6 +268,7 @@ class Handler(BaseHTTPRequestHandler):
         lib = state["lib"]
         self.send_json({"app": "papershelf", "version": APP_VERSION, "library": str(lib.root),
                         "standalone": state["standalone"], "my_names": load_config().get("my_names", ""),
+                        "kci_key": bool(md.KCI_KEY),
                         "online": state["online"], **lib.stats()})
 
     def settings(self, qs):
@@ -282,6 +283,8 @@ class Handler(BaseHTTPRequestHandler):
             state["lib"] = Library(path)
         if "my_names" in data:
             cfg["my_names"] = str(data["my_names"]).strip()
+        if "kci_key" in data:
+            cfg["kci_key"] = md.KCI_KEY = str(data["kci_key"]).strip()
         state["lib"].my_names = parse_my_names(cfg.get("my_names", ""))
         cfg["library"] = str(state["lib"].root)
         save_config(cfg)
@@ -292,7 +295,9 @@ class Handler(BaseHTTPRequestHandler):
             q=qs.get("q", ""), field=qs.get("field", "all"),
             year_from=qs.get("from") or None, year_to=qs.get("to") or None,
             sort=qs.get("sort", "relevance"), review_only=qs.get("review") == "1", doc=qs.get("doc", "all"),
-            mine_only=qs.get("mine") == "1",
+            mine_only=qs.get("mine") == "1", read=qs.get("read") or None,
+            collection=int(qs["coll"]) if (qs.get("coll") or "").isdigit() else None,
+            rating_min=int(qs["stars"]) if (qs.get("stars") or "").isdigit() else 0,
             offset=int(qs.get("offset") or 0) if (qs.get("offset") or "0").isdigit() else 0,
             limit=min(int(qs["limit"]), 200) if (qs.get("limit") or "").isdigit() and int(qs["limit"]) > 0 else None)
         self.send_json(res)
@@ -394,6 +399,16 @@ class Handler(BaseHTTPRequestHandler):
             if not f.read(1024).lstrip().startswith(b"%PDF"):
                 tmp.unlink(missing_ok=True)
                 return self.send_error_json(400, f"{name}: PDF나 동영상 파일이 아닙니다")
+        target = lib.get(int(parent_id)) if parent_id and parent_id.isdigit() else None
+        if target and target["kind"] == "main" and not target["has_file"]:
+            # PDF 없이 추가해 둔 항목 위에 놓은 PDF는 그 항목의 PDF가 된다
+            try:
+                status, p = lib.attach_file(target["id"], tmp, name)
+            except Exception as e:
+                tmp.unlink(missing_ok=True)
+                return self.send_error_json(400, f"{name}: {e}")
+            log(f"[{status}] {name} → {p['file_name']}")
+            return self.send_json({"status": status, "paper": p})
         try:
             status, p = lib.import_pdf(tmp, name, online=state["online"], log=log,
                                        parent_id=int(parent_id) if parent_id and parent_id.isdigit() else None)
@@ -417,7 +432,7 @@ class Handler(BaseHTTPRequestHandler):
         data = self.read_json()
         try:
             p = state["lib"].refetch(int(pid), doi=data.get("doi"), arxiv_id=data.get("arxiv_id"),
-                                     isbn=data.get("isbn"))
+                                     isbn=data.get("isbn"), kci_id=data.get("kci_id"))
         except Exception as e:
             return self.send_error_json(400, f"정보를 가져오지 못했습니다: {e}")
         self.send_json(self.with_extras(p))
@@ -429,6 +444,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_json({"items": []})
         items, errors = [], []
         sources = [("Crossref", lambda: md.crossref_search(q, rows=6))]
+        if md.KCI_KEY:
+            kci = ("KCI", lambda: md.kci_search(q, rows=6))
+            sources = [kci] + sources if md.is_hangul(q) else sources + [kci]
         books = [("Google Books", lambda: md.google_books_search(q, rows=4))]
         # 책으로 찾을 때는 Google Books 를 앞에
         for name, fn in (books + sources if qs.get("doc") == "book" else sources + books):
@@ -452,7 +470,7 @@ class Handler(BaseHTTPRequestHandler):
     def reveal_paper(self, qs, pid):
         lib = state["lib"]
         p = lib.get(int(pid))
-        if not p or p["missing"]:
+        if not p or p["missing"] or not p["has_file"]:
             return self.send_error_json(404, "파일이 없습니다")
         reveal(lib.path_of(p))
         self.send_json({"ok": True})
@@ -460,7 +478,7 @@ class Handler(BaseHTTPRequestHandler):
     def open_paper(self, qs, pid):
         lib = state["lib"]
         p = lib.get(int(pid))
-        if not p or p["missing"]:
+        if not p or p["missing"] or not p["has_file"]:
             return self.send_error_json(404, "파일이 없습니다")
         open_file(lib.path_of(p))
         self.send_json({"ok": True})
@@ -479,10 +497,11 @@ class Handler(BaseHTTPRequestHandler):
     def export_bib_dialog(self, qs):
         """독립 창에서는 내려받기가 없으니 저장 위치를 물어 직접 쓴다."""
         import desktop
+        coll = int(qs["coll"]) if (qs.get("coll") or "").isdigit() else None
         path = desktop.save_dialog("library.bib", "BibTeX", "*.bib")
         if not path:
             return self.send_json({"saved": None})
-        body = "\n\n".join(md.bibtex(p) for p in state["lib"].all_papers())
+        body = "\n\n".join(md.bibtex(p) for p in state["lib"].all_papers(coll))
         Path(path).write_text(body, encoding="utf-8")
         self.send_json({"saved": str(path)})
 
@@ -511,8 +530,75 @@ class Handler(BaseHTTPRequestHandler):
     def citations_status(self, qs):
         self.send_json(cite_job)
 
+    def add_by_id(self, qs):
+        data = self.read_json()
+        try:
+            status, p, source = state["lib"].add_by_id(str(data.get("key", "")), online=state["online"],
+                                                       fetch_pdf=data.get("fetch_pdf", True), log=log)
+        except (LookupError, ValueError) as e:
+            return self.send_error_json(400, str(e))
+        log(f"[{status}] {data.get('key')} → {p['title']}" + (f" (PDF: {source})" if source else ""))
+        self.send_json({"status": status, "paper": p, "pdf_source": source})
+
+    def find_pdf(self, qs, pid):
+        if not state["online"]:
+            return self.send_error_json(400, "오프라인 모드입니다")
+        source = state["lib"].fetch_open_pdf(int(pid), log=log)
+        self.send_json({"pdf_source": source, "paper": state["lib"].get(int(pid))})
+
+    def mark(self, qs, pid):
+        data = self.read_json()
+        try:
+            p = state["lib"].mark(int(pid), read_status=data.get("read_status"), rating=data.get("rating"))
+        except ValueError as e:
+            return self.send_error_json(400, str(e))
+        if not p:
+            return self.send_error_json(404, "없는 논문입니다")
+        self.send_json({"id": p["id"], "read_status": p["read_status"], "rating": p["rating"]})
+
+    def list_collections(self, qs):
+        self.send_json({"items": state["lib"].collections()})
+
+    def create_collection(self, qs):
+        try:
+            self.send_json(state["lib"].create_collection(self.read_json().get("name")))
+        except ValueError as e:
+            self.send_error_json(400, str(e))
+
+    def update_collection(self, qs, cid):
+        try:
+            state["lib"].rename_collection(int(cid), self.read_json().get("name"))
+        except ValueError as e:
+            return self.send_error_json(400, str(e))
+        self.send_json({"ok": True})
+
+    def delete_collection(self, qs, cid):
+        state["lib"].delete_collection(int(cid))
+        self.send_json({"ok": True})
+
+    def set_collection(self, qs, pid):
+        data = self.read_json()
+        try:
+            ids = state["lib"].set_in_collection(int(pid), int(data.get("collection_id") or 0), bool(data.get("on", True)))
+        except LookupError as e:
+            return self.send_error_json(404, str(e))
+        self.send_json({"collections": ids})
+
+    def kci_test(self, qs):
+        key = str(self.read_json().get("key", "")).strip() or md.KCI_KEY  # 비워 두면 저장된 키를 확인
+        old = md.KCI_KEY
+        md.KCI_KEY = key
+        try:
+            n = len(md.kci_search("인공지능", rows=3))
+        except Exception as e:
+            return self.send_error_json(400, f"확인하지 못했습니다: {e}")
+        finally:
+            md.KCI_KEY = old
+        self.send_json({"ok": True, "found": n})
+
     def export_bib(self, qs):
-        body = "\n\n".join(md.bibtex(p) for p in state["lib"].all_papers()).encode("utf-8")
+        coll = int(qs["coll"]) if (qs.get("coll") or "").isdigit() else None
+        body = "\n\n".join(md.bibtex(p) for p in state["lib"].all_papers(coll)).encode("utf-8")
         self.send_response(200)
         self.send_header("Content-Type", "application/x-bibtex; charset=utf-8")
         self.send_header("Content-Disposition", 'attachment; filename="library.bib"')
@@ -548,6 +634,15 @@ ROUTES = [
     ("POST", r"/api/export-bib-dialog", Handler.export_bib_dialog),
     ("POST", r"/api/citations/refresh", Handler.citations_refresh),
     ("GET", r"/api/citations/status", Handler.citations_status),
+    ("POST", r"/api/papers/by-id", Handler.add_by_id),
+    ("POST", r"/api/papers/(\d+)/find-pdf", Handler.find_pdf),
+    ("PUT", r"/api/papers/(\d+)/mark", Handler.mark),
+    ("PUT", r"/api/papers/(\d+)/collection", Handler.set_collection),
+    ("GET", r"/api/collections", Handler.list_collections),
+    ("POST", r"/api/collections", Handler.create_collection),
+    ("PUT", r"/api/collections/(\d+)", Handler.update_collection),
+    ("DELETE", r"/api/collections/(\d+)", Handler.delete_collection),
+    ("POST", r"/api/kci-test", Handler.kci_test),
 ]
 
 
@@ -617,6 +712,7 @@ def main():
     root = args.library or cfg.get("library") or str(DEFAULT_LIBRARY)
     state["lib"] = Library(root)
     state["lib"].my_names = parse_my_names(cfg.get("my_names", ""))
+    md.KCI_KEY = cfg.get("kci_key", "")
     state["online"] = not args.offline
     state["server"] = server
     cfg["library"] = str(state["lib"].root)

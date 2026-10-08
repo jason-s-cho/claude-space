@@ -12,6 +12,7 @@ import sqlite3
 import threading
 import time
 import unicodedata
+import urllib.parse
 from pathlib import Path
 
 import metadata as md
@@ -94,6 +95,17 @@ CREATE TABLE IF NOT EXISTS papers (
     rename_pending INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS papers_doi ON papers(doi);
+CREATE TABLE IF NOT EXISTS collections (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    created_at REAL
+);
+CREATE TABLE IF NOT EXISTS collection_items (
+    collection_id INTEGER NOT NULL,
+    paper_id INTEGER NOT NULL,
+    added_at REAL,
+    PRIMARY KEY (collection_id, paper_id)
+);
 CREATE INDEX IF NOT EXISTS papers_year ON papers(year);
 """
 MIGRATIONS = [
@@ -107,8 +119,11 @@ MIGRATIONS = [
     ("cited_by_url", "ALTER TABLE papers ADD COLUMN cited_by_url TEXT DEFAULT ''"),
     ("cited_by_at", "ALTER TABLE papers ADD COLUMN cited_by_at REAL"),
     ("mine", "ALTER TABLE papers ADD COLUMN mine INTEGER"),
-    ("rename_pending", "ALTER TABLE papers ADD COLUMN rename_pending INTEGER DEFAULT 0"),  # 파일이 열려 있어 이름을 못 바꿈  # 1 내 저작, 0 아님, NULL 이름으로 자동 판단
+    ("rename_pending", "ALTER TABLE papers ADD COLUMN rename_pending INTEGER DEFAULT 0"),
+    ("read_status", "ALTER TABLE papers ADD COLUMN read_status TEXT DEFAULT ''"),  # '' 안 읽음, reading, read
+    ("rating", "ALTER TABLE papers ADD COLUMN rating INTEGER DEFAULT 0"),  # 0~5  # 파일이 열려 있어 이름을 못 바꿈  # 1 내 저작, 0 아님, NULL 이름으로 자동 판단
 ]
+READ_STATUSES = ("", "reading", "read")
 SUPP_SUFFIX = " - Supplementary"
 VIDEO_SUFFIX = " - Supplementary Video"
 VIDEO_EXTS = {".mp4", ".m4v", ".mov", ".avi", ".mkv", ".webm", ".wmv", ".mpg", ".mpeg", ".ogv", ".3gp", ".flv"}
@@ -250,7 +265,10 @@ class Library:
         p["is_mine"] = self.is_mine(p)
         p["scholar_authors"] = md.scholar_authors(p["authors"])
         # 파일이 실제로 있는지는 디스크를 봐야 해서, 목록에서는 보여 줄 쪽만 확인한다
-        p["missing"] = not (self.root / p["file_name"]).exists() if check_file else False
+        p["has_file"] = bool(p.get("file_name"))  # DOI·ISBN 으로만 추가해 PDF가 아직 없는 항목은 False
+        p["missing"] = p["has_file"] and not (self.root / p["file_name"]).exists() if check_file else False
+        p["read_status"] = p.get("read_status") or ""
+        p["rating"] = p.get("rating") or 0
         return p
 
     def is_mine(self, p):
@@ -266,6 +284,16 @@ class Library:
         with self.connect() as c:
             row = c.execute("SELECT * FROM papers WHERE id=?", (pid,)).fetchone()
         return self.to_dict(row, with_text) if row else None
+
+    @staticmethod
+    def _base_of(main):
+        """딸린 파일 이름의 앞부분: 본문 PDF 이름(확장자 뺌). PDF가 아직 없으면 붙을 이름."""
+        main = dict(main)
+        if main.get("file_name"):
+            return Path(main["file_name"]).stem
+        if isinstance(main.get("authors"), str):
+            main["authors"] = json.loads(main["authors"] or "[]")
+        return nice_file_name(main)[:-4]
 
     def path_of(self, p):
         path = (self.root / p["file_name"]).resolve()
@@ -340,13 +368,20 @@ class Library:
                 if parent is not None:
                     rec = self._inherit(rec, parent)
             else:
+                holder = self._find_placeholder(c, rec)
+                if holder is not None:
+                    # DOI·ISBN 으로 먼저 추가해 둔 항목이면 그 항목의 PDF가 된다
+                    self._attach_file_locked(c, holder, src, original_name, sha, rec.get("fulltext", ""),
+                                             rec.get("page_count"), in_place)
+                    return "attached", self.to_dict(c.execute("SELECT * FROM papers WHERE id=?",
+                                                              (holder["id"],)).fetchone())
                 dup = self.find_duplicate(c, sha=sha, doi=rec.get("doi"))
                 if dup:
                     if not in_place:
                         src.unlink(missing_ok=True)
                     return "duplicate", self.to_dict(dup)
             if is_supp or parent is not None:
-                base = parent["file_name"][:-4] if parent is not None else nice_file_name(rec)[:-4]
+                base = self._base_of(parent) if parent is not None else nice_file_name(rec)[:-4]
                 name = base + SUPP_SUFFIX + ".pdf"
             else:
                 name = nice_file_name(rec)
@@ -411,7 +446,7 @@ class Library:
             parent = self._main_of(c, parent)
             rec = self._inherit({}, parent)
             ext = Path(original_name).suffix.lower() or src.suffix.lower()
-            target = self._unique_target(Path(parent["file_name"]).stem + VIDEO_SUFFIX + ext,
+            target = self._unique_target(self._base_of(parent) + VIDEO_SUFFIX + ext,
                                          current=src if in_place else None)
             shutil.move(str(src), str(target))
             now = time.time()
@@ -449,8 +484,8 @@ class Library:
                     src.unlink(missing_ok=True)
                 return "duplicate", self.to_dict(dup)
             rec = self._inherit({}, parent)
-            want = self._note_name(parent["file_name"], original_name, ext)
-            if in_place and src.name.startswith(Path(parent["file_name"]).stem + NOTE_MARK.rstrip()):
+            want = self._note_name(self._base_of(parent), original_name, ext)
+            if in_place and src.name.startswith(self._base_of(parent) + NOTE_MARK.rstrip()):
                 target = src  # 폴더에 이미 규칙대로 놓인 파일
             else:
                 target = self._unique_target(want, current=src if in_place else None)
@@ -471,9 +506,9 @@ class Library:
         return "added", self.get(pid)
 
     @staticmethod
-    def _note_name(main_file, original_name, ext):
+    def _note_name(base, original_name, ext):
         stem = safe_component(Path(original_name).stem, 60) or "자료"
-        return Path(main_file).stem + NOTE_MARK + stem + ext
+        return base + NOTE_MARK + stem + ext
 
     # ------------------------------------------------------------ 보충자료 묶기
 
@@ -573,7 +608,7 @@ class Library:
 
     def _rename_supps_locked(self, c, main_id):
         main = c.execute("SELECT * FROM papers WHERE id=?", (main_id,)).fetchone()
-        base = main["file_name"][:-4]
+        base = self._base_of(main)
         for row in c.execute("SELECT * FROM papers WHERE parent_id=? ORDER BY added_at, id", (main_id,)).fetchall():
             p = self.to_dict(row)
             if p["missing"]:
@@ -582,7 +617,7 @@ class Library:
             if p["kind"] == "note":
                 if current.name.startswith(base + NOTE_MARK):
                     continue
-                want = self._note_name(main["file_name"], p.get("original_name") or current.name, current.suffix.lower())
+                want = self._note_name(base, p.get("original_name") or current.name, current.suffix.lower())
                 target = self._unique_target(want, current=current)
                 if target.name != current.name:
                     self._move_locked(c, row["id"], current, target)
@@ -670,6 +705,8 @@ class Library:
         p = self.to_dict(c.execute("SELECT * FROM papers WHERE id=?", (pid,)).fetchone())
         if is_child(p):
             return self._rename_supps_locked(c, p["parent_id"])
+        if not p["has_file"]:
+            return self._rename_supps_locked(c, pid)  # PDF는 없어도 딸린 자료 이름은 맞춘다
         if p["missing"]:
             return
         current = self.path_of(p)
@@ -697,9 +734,13 @@ class Library:
             sets = ", ".join(f"{k}=?" for k in rec)
             c.execute(f"UPDATE papers SET {sets} WHERE id=?", (*rec.values(), row["id"]))
 
-    def refetch(self, pid, doi=None, arxiv_id=None, isbn=None):
-        """DOI·arXiv ID·ISBN 으로 정보를 다시 받아 덮어쓴다(태그·메모는 유지)."""
-        if isbn:
+    def refetch(self, pid, doi=None, arxiv_id=None, isbn=None, kci_id=None):
+        """DOI·arXiv ID·ISBN·KCI 논문 ID 로 정보를 다시 받아 덮어쓴다(태그·메모는 유지)."""
+        if kci_id:
+            rec = md.kci_by_id(kci_id.strip())
+            if rec is None:
+                raise LookupError("KCI에서 찾지 못했습니다")
+        elif isbn:
             code = md.format_isbn(isbn)
             if not code:
                 raise ValueError("올바른 ISBN이 아닙니다")
@@ -713,7 +754,7 @@ class Library:
             if rec is None:
                 raise LookupError("arXiv에서 찾지 못했습니다")
         else:
-            raise ValueError("DOI, arXiv ID 또는 ISBN이 필요합니다")
+            raise ValueError("DOI, arXiv ID, ISBN 또는 KCI 논문 ID가 필요합니다")
         rec["needs_review"] = False
         p = self.update(pid, rec)
         self.refresh_citations([pid])
@@ -729,7 +770,7 @@ class Library:
             moved = []
             try:
                 for x in rows:
-                    if not x["missing"]:
+                    if x["has_file"] and not x["missing"]:
                         src = self.path_of(x)
                         dest = self.trash_dir / src.name
                         if dest.exists():
@@ -746,7 +787,235 @@ class Library:
                 raise ValueError("PDF가 다른 프로그램에서 열려 있어 지울 수 없습니다. 그 창을 닫은 뒤 다시 해 주세요.")
             for x in rows:
                 c.execute("DELETE FROM papers WHERE id=?", (x["id"],))
+                c.execute("DELETE FROM collection_items WHERE paper_id=?", (x["id"],))
         return True
+
+    # ------------------------------------------------------------ PDF 없이 추가 (DOI·ISBN·arXiv)
+
+    def _find_placeholder(self, c, rec):
+        """같은 DOI·arXiv ID·ISBN 으로 추가해 두었는데 아직 PDF가 없는 항목."""
+        doi = (rec.get("doi") or "").lower()
+        arxiv = (rec.get("arxiv_id") or "").lower()
+        isbn = md.format_isbn(rec.get("isbn") or "")
+        for row in c.execute("SELECT * FROM papers WHERE kind='main' AND file_name=''"):
+            if doi and (row["doi"] or "").lower() == doi or arxiv and (row["arxiv_id"] or "").lower() == arxiv \
+                    or isbn and md.format_isbn(row["isbn"] or "") == isbn:
+                return row
+        return None
+
+    def _find_existing(self, c, rec):
+        """같은 DOI·arXiv ID·ISBN 의 본문 항목(PDF가 있든 없든)."""
+        doi = (rec.get("doi") or "").lower()
+        if doi:
+            row = c.execute("SELECT * FROM papers WHERE kind='main' AND lower(doi)=?", (doi,)).fetchone()
+            if row:
+                return row
+        if rec.get("arxiv_id"):
+            row = c.execute("SELECT * FROM papers WHERE kind='main' AND lower(arxiv_id)=?",
+                            (rec["arxiv_id"].lower(),)).fetchone()
+            if row:
+                return row
+        isbn = md.format_isbn(rec.get("isbn") or "")
+        if isbn:
+            for row in c.execute("SELECT * FROM papers WHERE kind='main' AND isbn<>''"):
+                if md.format_isbn(row["isbn"]) == isbn:
+                    return row
+        # DOI가 없는 국내 논문 등: 제목과 연도가 같으면 같은 논문
+        key = md.norm_key(rec.get("title"))
+        if len(key) >= 10:
+            for row in c.execute("SELECT * FROM papers WHERE kind='main' AND (year IS ? OR year IS NULL OR ? IS NULL)",
+                                 (rec.get("year"), rec.get("year"))):
+                if md.norm_key(row["title"]) == key:
+                    return row
+        return None
+
+    def _attach_file_locked(self, c, row, src, original_name, sha, fulltext, page_count, in_place=False):
+        p = self.to_dict(row)
+        target = self._unique_target(nice_file_name(p), current=Path(src) if in_place else None)
+        shutil.move(str(src), str(target))
+        abstract = row["abstract"] or ("" if row["type"] in BOOK_TYPES else md.abstract_from_text((fulltext or "")[:4000]))
+        c.execute("UPDATE papers SET file_name=?, original_name=?, sha256=?, fulltext=?, page_count=?, abstract=?, "
+                  "updated_at=? WHERE id=?",
+                  (target.name, original_name, sha, fulltext or "", page_count, abstract, time.time(), row["id"]))
+        self._rename_supps_locked(c, row["id"])
+
+    def attach_file(self, pid, src, original_name, in_place=False):
+        """PDF가 없는 항목에 PDF를 붙인다. 반환: (상태, 항목 dict)."""
+        src = Path(src)
+        sha = sha256_file(src)
+        with self.connect() as c:
+            dup = c.execute("SELECT * FROM papers WHERE sha256=?", (sha,)).fetchone()
+        if dup:
+            if not in_place:
+                src.unlink(missing_ok=True)
+            return "duplicate", self.to_dict(dup)
+        pdf = md.read_pdf(src)
+        with self.lock, self.connect() as c:
+            row = c.execute("SELECT * FROM papers WHERE id=?", (pid,)).fetchone()
+            if row is None:
+                raise LookupError("없는 항목입니다")
+            if row["file_name"]:
+                raise ValueError("이미 PDF가 있는 항목입니다")
+            self._attach_file_locked(c, row, src, original_name, sha, pdf["full"], pdf["page_count"], in_place)
+        return "attached", self.get(pid)
+
+    def add_by_id(self, key, online=True, fetch_pdf=True, log=None):
+        """DOI·arXiv ID·ISBN·KCI 논문 ID 로 서지 정보만 먼저 추가한다(PDF는 무료본이 있으면 받아 온다).
+
+        반환: (상태, 항목 dict, PDF 출처 또는 None). 상태는 'added' | 'duplicate'.
+        """
+        ident = md.parse_identifier(key)
+        if ident is None:
+            raise ValueError("DOI, arXiv ID, ISBN, KCI 논문 ID(ART…) 중 하나를 넣어 주세요")
+        if not online:
+            raise ValueError("오프라인 모드에서는 정보를 받아올 수 없습니다")
+        kind, value = ident
+        try:
+            rec = {"doi": md.crossref_by_doi, "arxiv": md.arxiv_by_id, "isbn": md.book_by_isbn,
+                   "kci": md.kci_by_id}[kind](value)
+        except Exception as e:
+            raise LookupError(f"정보를 받아오지 못했습니다 ({e})")
+        if not rec or not rec.get("title"):
+            raise LookupError({"doi": "Crossref", "arxiv": "arXiv", "isbn": "책 정보 서비스",
+                               "kci": "KCI"}[kind] + "에서 찾지 못했습니다")
+        if kind == "isbn" and not rec.get("isbn"):
+            rec["isbn"] = md.format_isbn(value)
+        with self.connect() as c:
+            dup = self._find_existing(c, rec)
+        if dup:
+            return "duplicate", self.to_dict(dup), None
+        cited = md.citation_count(rec, log)
+        with self.lock, self.connect() as c:
+            dup = self._find_existing(c, rec)
+            if dup:
+                return "duplicate", self.to_dict(dup), None
+            now = time.time()
+            cur = c.execute(
+                """INSERT INTO papers (file_name, original_name, sha256, title, authors, authors_text,
+                   journal, year, volume, issue, pages, publisher, doi, arxiv_id, url, abstract, type,
+                   tags, notes, source, needs_review, fulltext, added_at, updated_at, kind, parent_id,
+                   isbn, edition, page_count, cited_by, cited_by_source, cited_by_url, cited_by_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                ("", "", None, rec["title"], json.dumps(rec.get("authors") or [], ensure_ascii=False),
+                 self.authors_text(rec.get("authors") or []), rec.get("journal", ""), rec.get("year"),
+                 rec.get("volume", ""), rec.get("issue", ""), rec.get("pages", ""), rec.get("publisher", ""),
+                 (rec.get("doi") or "").lower(), rec.get("arxiv_id", ""), rec.get("url", ""), rec.get("abstract", ""),
+                 rec.get("type", ""), "", "", rec.get("source", kind), 0, "", now, now, "main", None,
+                 rec.get("isbn", ""), rec.get("edition", ""), None,
+                 cited["count"] if cited else None, cited["source"] if cited else "",
+                 cited["url"] if cited else "", now if cited else None))
+            pid = cur.lastrowid
+        source = self.fetch_open_pdf(pid, log) if fetch_pdf else None
+        return "added", self.get(pid), source
+
+    def fetch_open_pdf(self, pid, log=None):
+        """arXiv·OpenAlex 가 알려 주는 무료(오픈 액세스) PDF를 받아 붙인다. 출처 이름 또는 None."""
+        log = log or (lambda *a: None)
+        p = self.get(pid)
+        if not p or p["has_file"]:
+            return None
+        try:
+            urls = md.open_pdf_urls(p)
+        except Exception as e:
+            log(f"무료 PDF 찾기 실패: {e}")
+            return None
+        for url, source in urls:
+            tmp = self.tmp_dir / f"{os.urandom(8).hex()}.pdf"
+            try:
+                if not md.download_pdf(url, tmp):
+                    continue
+                status, _ = self.attach_file(pid, tmp, Path(urllib.parse.urlparse(url).path).name or "download.pdf")
+                if status == "attached":
+                    return source
+            except Exception as e:
+                log(f"PDF 받기 실패 {url}: {e}")
+            finally:
+                tmp.unlink(missing_ok=True)
+        return None
+
+    # ------------------------------------------------------------ 읽음 상태·별점·컬렉션
+
+    def mark(self, pid, read_status=None, rating=None):
+        fields = {}
+        if read_status is not None:
+            if read_status not in READ_STATUSES:
+                raise ValueError("읽음 상태가 올바르지 않습니다")
+            fields["read_status"] = read_status
+        if rating is not None:
+            fields["rating"] = max(0, min(5, int(rating)))
+        if fields:
+            with self.lock, self.connect() as c:
+                c.execute(f"UPDATE papers SET {', '.join(k + '=?' for k in fields)} WHERE id=?", (*fields.values(), pid))
+        return self.get(pid)
+
+    def collections(self):
+        with self.connect() as c:
+            return [dict(r) for r in c.execute(
+                "SELECT k.id, k.name, count(p.id) AS n FROM collections k "
+                "LEFT JOIN collection_items i ON i.collection_id=k.id "
+                "LEFT JOIN papers p ON p.id=i.paper_id AND p.kind='main' "
+                "GROUP BY k.id ORDER BY k.name COLLATE NOCASE")]
+
+    @staticmethod
+    def _collection_name(name):
+        name = re.sub(r"\s+", " ", str(name or "")).strip()
+        if not name:
+            raise ValueError("컬렉션 이름을 적어 주세요")
+        return name[:80]
+
+    def create_collection(self, name):
+        name = self._collection_name(name)
+        with self.lock, self.connect() as c:
+            try:
+                cur = c.execute("INSERT INTO collections (name, created_at) VALUES (?, ?)", (name, time.time()))
+            except sqlite3.IntegrityError:
+                raise ValueError("같은 이름의 컬렉션이 있습니다")
+            return {"id": cur.lastrowid, "name": name, "n": 0}
+
+    def rename_collection(self, cid, name):
+        name = self._collection_name(name)
+        with self.lock, self.connect() as c:
+            try:
+                c.execute("UPDATE collections SET name=? WHERE id=?", (name, cid))
+            except sqlite3.IntegrityError:
+                raise ValueError("같은 이름의 컬렉션이 있습니다")
+
+    def delete_collection(self, cid):
+        """컬렉션만 지운다(논문과 파일은 그대로)."""
+        with self.lock, self.connect() as c:
+            c.execute("DELETE FROM collection_items WHERE collection_id=?", (cid,))
+            c.execute("DELETE FROM collections WHERE id=?", (cid,))
+
+    def set_in_collection(self, pid, cid, on=True):
+        with self.lock, self.connect() as c:
+            row = c.execute("SELECT * FROM papers WHERE id=?", (pid,)).fetchone()
+            if row is None:
+                raise LookupError("없는 논문입니다")
+            if is_child(row):
+                row = self._main_of(c, row)  # 보충자료·정리 자료는 본문 논문을 넣는다
+            if c.execute("SELECT 1 FROM collections WHERE id=?", (cid,)).fetchone() is None:
+                raise LookupError("없는 컬렉션입니다")
+            if on:
+                c.execute("INSERT OR IGNORE INTO collection_items (collection_id, paper_id, added_at) VALUES (?,?,?)",
+                          (cid, row["id"], time.time()))
+            else:
+                c.execute("DELETE FROM collection_items WHERE collection_id=? AND paper_id=?", (cid, row["id"]))
+        return self.paper_collections([row["id"]]).get(row["id"], [])
+
+    def paper_collections(self, ids):
+        out = {}
+        ids = list(ids)
+        with self.connect() as c:
+            for i in range(0, len(ids), 500):
+                chunk = ids[i:i + 500]
+                for r in c.execute(f"SELECT paper_id, collection_id FROM collection_items WHERE paper_id IN "
+                                   f"({','.join('?' * len(chunk))})", chunk):
+                    out.setdefault(r["paper_id"], []).append(r["collection_id"])
+        return out
+
+    def collection_ids(self, cid):
+        with self.connect() as c:
+            return {r[0] for r in c.execute("SELECT paper_id FROM collection_items WHERE collection_id=?", (cid,))}
 
     # ------------------------------------------------------------ 인용 수
 
@@ -846,7 +1115,7 @@ class Library:
                 dups += 1
         reclassified = self.reclassify()
         with self.lock, self.connect() as c:
-            for r in c.execute("SELECT id, file_name FROM papers").fetchall():
+            for r in c.execute("SELECT id, file_name FROM papers WHERE file_name <> ''").fetchall():
                 if not (self.root / r["file_name"]).exists():
                     c.execute("DELETE FROM papers WHERE id=?", (r["id"],))
                     removed += 1
@@ -891,7 +1160,8 @@ class Library:
         return self._cols
 
     def search(self, q="", field="all", year_from=None, year_to=None, sort="relevance",
-               review_only=False, doc="all", mine_only=False, offset=0, limit=None):
+               review_only=False, doc="all", mine_only=False, offset=0, limit=None,
+               read=None, collection=None, rating_min=0):
         """검색. 본문(fulltext)은 데이터베이스 안에서만 찾고, 걸린 대목만 꺼낸다.
 
         offset/limit 을 주면 그 쪽만 돌려준다(total 은 전체 개수).
@@ -966,8 +1236,18 @@ class Library:
         results = self._group_supplements(results)
         if mine_only:
             results = [p for p in results if p.get("is_mine")]
+        if read in ("unread", "reading", "read"):
+            want = "" if read == "unread" else read
+            results = [p for p in results if (p.get("read_status") or "") == want and p["kind"] == "main"]
+        if collection:
+            members = self.collection_ids(int(collection))
+            results = [p for p in results if p["id"] in members]
+        if rating_min:
+            results = [p for p in results if (p.get("rating") or 0) >= int(rating_min)]
 
-        if sort == "cited":
+        if sort == "rating":
+            results.sort(key=lambda p: (p.get("rating") or 0, p.get("year") or 0), reverse=True)
+        elif sort == "cited":
             results.sort(key=lambda p: (p.get("cited_by") is not None, p.get("cited_by") or 0, p.get("year") or 0),
                          reverse=True)
         elif sort == "year":
@@ -983,8 +1263,11 @@ class Library:
             # 없는 쪽을 달라고 하면(지운 뒤 등) 마지막 쪽을 준다
             offset = max(0, min(int(offset), (total - 1) // limit * limit if total else 0))
             results = results[offset:offset + limit]
+        colls = self.paper_collections(p["id"] for p in results)
         for p in results:
-            p["missing"] = not (self.root / p["file_name"]).exists()
+            p["missing"] = bool(p["file_name"]) and not (self.root / p["file_name"]).exists()
+            p["has_file"] = bool(p["file_name"])
+            p["collections"] = colls.get(p["id"], [])
         return {"total": total, "offset": offset, "terms": terms, "papers": results}
 
     def _group_supplements(self, results):
@@ -1035,20 +1318,28 @@ class Library:
             years = [r[0] for r in c.execute("SELECT DISTINCT year FROM papers WHERE year IS NOT NULL ORDER BY year")]
             supps = c.execute("SELECT count(*) FROM papers WHERE kind='supp'").fetchone()[0]
             notes = c.execute("SELECT count(*) FROM papers WHERE kind='note'").fetchone()[0]
-            mains = c.execute("SELECT type, authors, mine FROM papers WHERE kind='main'").fetchall()
+            mains = c.execute("SELECT type, authors, mine, read_status, file_name FROM papers WHERE kind='main'").fetchall()
         groups = {name: 0 for name in (*DOC_GROUPS, "other")}
         mine_groups = dict(groups)  # '내 논문·책'을 볼 때 쓰는 종류별 개수
         mine = 0
+        reading = {"unread": 0, "reading": 0, "read": 0}
+        no_file = 0
         for r in mains:
+            reading[{"reading": "reading", "read": "read"}.get(r["read_status"] or "", "unread")] += 1
+            no_file += not r["file_name"]
             g = doc_group(r["type"])
             groups[g] += 1
             if self.is_mine({"authors": r["authors"], "mine": r["mine"]}):
                 mine += 1
                 mine_groups[g] += 1
         return {"total": total, "needs_review": review, "years": years, "supplements": supps, "attachments": notes,
-                "books": groups["book"], "groups": groups, "mine": mine, "mine_groups": mine_groups}
+                "books": groups["book"], "groups": groups, "mine": mine, "mine_groups": mine_groups,
+                "reading": reading, "no_file": no_file, "collections": self.collections()}
 
-    def all_papers(self):
+    def all_papers(self, collection=None):
         with self.connect() as c:
             rows = c.execute("SELECT * FROM papers WHERE kind='main' ORDER BY year, title").fetchall()
+        if collection:
+            members = self.collection_ids(int(collection))
+            rows = [r for r in rows if r["id"] in members]
         return [self.to_dict(r) for r in rows]

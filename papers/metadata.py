@@ -494,6 +494,168 @@ def citation_count(rec, log=None):
     return None
 
 
+# ---------------------------------------------------------------- KCI (한국학술지인용색인)
+
+KCI_KEY = ""  # 설정의 KCI Open API 키 (open.kci.go.kr 에서 무료 발급)
+KCI_API = "https://open.kci.go.kr/po/openapi/openApiSearch.kci"
+KCI_VIEW = "https://www.kci.go.kr/kciportal/ci/sereArticleSearch/ciSereArtiView.kci?sereArticleSearchBean.artiId="
+
+
+def _local(tag):
+    return str(tag).rsplit("}", 1)[-1].lower()
+
+
+def _descendants(el, name):
+    return [e for e in el.iter() if _local(e.tag) == name]
+
+
+def _text_of(el, *names):
+    for name in names:
+        for e in _descendants(el, name):
+            t = clean_text("".join(e.itertext()))
+            if t:
+                return t
+    return ""
+
+
+def _kci_author(name):
+    name = re.sub(r"\s*[(\[（].*?[)\]）]\s*", " ", name or "").strip(" ,;")
+    return split_name(name) if name else None
+
+
+def from_kci(rec_el):
+    """KCI 응답의 <record> 하나 → 서지 정보 dict."""
+    titles = _descendants(rec_el, "article-title")
+    original = next((t for t in titles if (t.get("lang") or "").lower() in ("original", "kor", "ko")), titles[0] if titles else None)
+    title = clean_text("".join(original.itertext())) if original is not None else ""
+    others = [clean_text("".join(t.itertext())) for t in titles if t is not original]
+    abstracts = _descendants(rec_el, "abstract")
+    abstract = ""
+    for a in sorted(abstracts, key=lambda a: (a.get("lang") or "").lower() not in ("original", "kor", "ko")):
+        abstract = clean_text("".join(a.itertext()))
+        if abstract:
+            break
+    authors = []
+    for a in _descendants(rec_el, "author"):
+        for part in re.split(r"\s*;\s*", clean_text("".join(a.itertext()))):
+            au = _kci_author(part)
+            if au:
+                authors.append(au)
+    art_id = ""
+    for e in rec_el.iter():
+        art_id = e.get("article-id") or e.get("articleId") or art_id
+        if art_id:
+            break
+    art_id = art_id or _text_of(rec_el, "article-id")
+    fpage, lpage = _text_of(rec_el, "fpage"), _text_of(rec_el, "lpage")
+    year = _year(_text_of(rec_el, "pub-year", "year"))
+    doi = clean_doi(_text_of(rec_el, "doi")).lower()
+    return {
+        "title": title, "title_alt": others[0] if others else "", "authors": authors,
+        "journal": _text_of(rec_el, "journal-name"), "year": year,
+        "volume": _text_of(rec_el, "volume"), "issue": _text_of(rec_el, "issue"),
+        "pages": f"{fpage}-{lpage}" if fpage and lpage and fpage != lpage else fpage,
+        "publisher": _text_of(rec_el, "publisher-name"), "doi": doi if doi.startswith("10.") else "",
+        "url": _text_of(rec_el, "url") or (KCI_VIEW + art_id if art_id else ""),
+        "abstract": abstract, "type": "journal-article", "isbn": "", "edition": "", "arxiv_id": "",
+        "kci_id": art_id, "source": "kci",
+    }
+
+
+def _kci_call(params):
+    if not KCI_KEY:
+        raise RuntimeError("KCI API 키가 설정되지 않았습니다")
+    url = KCI_API + "?" + urllib.parse.urlencode({**params, "key": KCI_KEY})
+    root = ET.fromstring(http_get(url, accept="application/xml"))
+    records = [e for e in root.iter() if _local(e.tag) == "record"]
+    if not records:
+        # 키가 틀렸거나 한도를 넘으면 오류 문구가 온다
+        msg = _text_of(root, "resultmsg", "message", "error", "errmsg")
+        if msg and not re.search(r"(?i)success|정상", msg):
+            raise RuntimeError(f"KCI: {msg}")
+    return [from_kci(r) for r in records]
+
+
+def kci_search(query, rows=5):
+    return [r for r in _kci_call({"apiCode": "articleSearch", "title": query[:200], "displayCount": rows})
+            if r["title"]]
+
+
+def kci_by_id(art_id):
+    found = _kci_call({"apiCode": "articleDetail", "id": art_id.upper()})
+    return found[0] if found and found[0]["title"] else None
+
+
+# ---------------------------------------------------------------- DOI·ISBN 으로 추가, 무료 PDF
+
+def parse_identifier(text):
+    """('doi'|'arxiv'|'isbn'|'kci', 값) 또는 None."""
+    t = (text or "").strip()
+    if not t:
+        return None
+    m = re.search(r"\bART\d{9}\b", t, re.I)
+    if m:
+        return "kci", m.group(0).upper()
+    m = re.search(r"10\.\d{4,9}/\S+", t)
+    if m:
+        doi = clean_doi(m.group(0)).lower()
+        a = re.fullmatch(r"10\.48550/arxiv\.(\d{4}\.\d{4,5})(v\d+)?", doi)
+        return ("arxiv", a.group(1)) if a else ("doi", doi)
+    m = re.fullmatch(r"(?:arxiv:\s*|https?://(?:www\.)?arxiv\.org/(?:abs|pdf)/)?"
+                     r"(\d{4}\.\d{4,5}|[a-z\-]+(?:\.[A-Z]{2})?/\d{7})(v\d+)?(?:\.pdf)?", t, re.I)
+    if m:
+        return "arxiv", m.group(1)
+    isbn = format_isbn(re.sub(r"(?i)^isbn(?:-1[03])?[:\s]*", "", t))
+    if isbn:
+        return "isbn", isbn
+    return None
+
+
+def open_pdf_urls(p):
+    """이 논문의 무료(오픈 액세스) PDF 주소 후보: [(주소, 출처 이름)]."""
+    out, seen = [], set()
+
+    def add(url, source):
+        if url and url.startswith(("http://", "https://")) and url not in seen:
+            seen.add(url)
+            out.append((url, source))
+
+    doi = (p.get("doi") or "").lower()
+    arxiv = p.get("arxiv_id") or ""
+    if not arxiv and doi.startswith("10.48550/arxiv."):
+        arxiv = doi.split("arxiv.", 1)[1]
+    if arxiv:
+        add(f"https://arxiv.org/pdf/{arxiv}", "arXiv")
+    if doi and not doi.startswith("10.48550/"):
+        w = openalex_get("works/https://doi.org/" + urllib.parse.quote(doi, safe="/:;()"))
+        locs = [w.get("best_oa_location") or {}, w.get("primary_location") or {}] + list(w.get("locations") or [])
+        for loc in locs:
+            if loc.get("pdf_url") and loc.get("is_oa", True):
+                add(loc["pdf_url"], ((loc.get("source") or {}).get("display_name") or "OpenAlex"))
+        add((w.get("open_access") or {}).get("oa_url"), "OpenAlex")
+    return out
+
+
+def download_pdf(url, dest, max_bytes=300 * 1024 * 1024):
+    """주소의 파일이 PDF면 dest 에 저장하고 True. PDF가 아니면(안내 페이지 등) False."""
+    if not url.startswith(("http://", "https://")):
+        return False
+    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/pdf,*/*;q=0.5"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        head = r.read(1024)
+        if not head.lstrip().startswith(b"%PDF"):
+            return False
+        total = len(head)
+        with open(dest, "wb") as f:
+            f.write(head)
+            while chunk := r.read(1 << 16):
+                total += len(chunk)
+                if total > max_bytes:
+                    raise ValueError("PDF가 너무 큽니다")
+                f.write(chunk)
+    return True
+
+
 ATOM = "{http://www.w3.org/2005/Atom}"
 ARXIV_NS = "{http://arxiv.org/schemas/atom}"
 
@@ -692,15 +854,24 @@ def extract(path, filename="", online=True, log=None, supplement=None):
             if (not queries or supplement) and pdf["first"]:
                 queries.append(SUPP_TEXT_RE.sub(" ", clean_text(pdf["first"])[:300]) if supplement
                                else clean_text(pdf["first"])[:300])
-            for q in queries:
-                try:
-                    results = crossref_search(q)
-                except Exception as e:
-                    log(f"Crossref 검색 실패: {e}")
-                    break
-                for rec in results:
-                    if title_in_text(rec["title"], text_key) or similarity(rec["title"], q) >= 0.9:
-                        record = rec
+            # 한글 제목은 KCI(키가 있을 때)를 먼저, 그다음 Crossref
+            searchers = [("Crossref", crossref_search)]
+            if KCI_KEY:
+                kci = ("KCI", kci_search)
+                searchers = [kci] + searchers if any(is_hangul(q) for q in queries) else searchers + [kci]
+            for name, search in searchers:
+                for q in queries:
+                    try:
+                        results = search(q)
+                    except Exception as e:
+                        log(f"{name} 검색 실패: {e}")
+                        break
+                    for rec in results:
+                        if any(t and (title_in_text(t, text_key) or similarity(t, q) >= 0.9)
+                               for t in (rec["title"], rec.get("title_alt"))):
+                            record = rec
+                            break
+                    if record:
                         break
                 if record:
                     break

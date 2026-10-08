@@ -211,6 +211,38 @@ details.pop[open] > summary, details.pop > summary:hover { border-color: var(--r
 .ext.ppt { background: #d24726 !important; } .ext.doc { background: #2b579a !important; } .ext.xls { background: #217346 !important; }
 .ext.hwp { background: #1a8cff !important; } .ext.pdf { background: #c62828 !important; } .ext.img { background: #8e44ad !important; }
 .note-add { margin-top: 6px; }
+.add-sub { margin: -2px 12px 8px; display: flex; align-items: center; justify-content: center; gap: 7px; border: 1px dashed var(--rule-strong); border-radius: 10px; background: none; color: var(--ink-soft); font-size: 0.84rem; font-weight: 600; padding: 7px 10px; cursor: pointer; }
+.add-sub:hover { border-color: var(--accent); color: var(--accent); }
+.nav h3 { display: flex; align-items: center; justify-content: space-between; }
+.nav h3 .h-act { border: 0; background: none; color: var(--ink-faint); cursor: pointer; padding: 2px; border-radius: 6px; display: grid; place-items: center; }
+.nav h3 .h-act:hover { color: var(--accent); background: var(--accent-soft); }
+.coll-item .nm { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.coll-item .more { border: 0; background: none; cursor: pointer; color: inherit; padding: 0 2px; border-radius: 5px; opacity: 0; display: grid; place-items: center; margin-right: -4px; }
+.coll-item:hover .more, .coll-item:focus-within .more, .coll-item.on .more { opacity: 1; }
+.coll-item .more:hover { background: color-mix(in srgb, var(--ink) 10%, transparent); }
+.coll-item:hover .n, .coll-item.on .n { margin-left: auto; }
+.nav-empty { font-size: 0.8rem; color: var(--ink-faint); padding: 2px 10px 6px; line-height: 1.45; }
+.tag.coll { background: var(--accent-soft); color: var(--accent); font-weight: 600; cursor: pointer; border: 0; font-family: inherit; }
+.tag.nofile { background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink-soft); }
+.result .actions .status.reading { color: var(--accent); }
+.result .actions .status.read { color: var(--good); }
+.stars { display: inline-flex; align-items: center; }
+.stars button { border: 0; background: none; padding: 3px 1px; cursor: pointer; color: var(--rule-strong); line-height: 0; border-radius: 4px; }
+.stars button:hover, .stars:hover button.hov { color: var(--star); }
+.stars button.on { color: var(--star); }
+.floating { position: fixed; z-index: 60; width: 260px; max-height: 60vh; overflow: auto; background: var(--panel); border: 1px solid var(--rule); border-radius: 12px; box-shadow: var(--shadow-md); padding: 10px; display: none; }
+.floating.on { display: grid; gap: 4px; animation: pop 0.12s ease-out; }
+.floating .lbl { font-size: 0.75rem; color: var(--ink-faint); font-weight: 650; padding: 2px 6px 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.floating label.chk { display: flex; gap: 9px; align-items: center; padding: 6px; border-radius: 7px; cursor: pointer; font-size: 0.88rem; }
+.floating label.chk:hover, .floating .menu-btn:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); }
+.floating label.chk input { accent-color: var(--accent); }
+.floating .row { display: flex; gap: 6px; margin-top: 4px; padding-top: 8px; border-top: 1px solid var(--rule); }
+.floating input[type=text] { flex: 1; min-width: 0; width: auto; border: 1px solid var(--rule); border-radius: 8px; padding: 5px 9px; background: var(--panel); font-size: 0.86rem; }
+.floating input[type=text]:focus { outline: none; border-color: var(--accent); }
+.floating .menu-btn { text-align: left; border: 0; background: none; padding: 7px 8px; border-radius: 7px; cursor: pointer; font-size: 0.88rem; color: var(--ink); display: flex; gap: 9px; align-items: center; font-family: inherit; }
+.floating .menu-btn.danger { color: var(--danger); }
+#nameDlg { width: min(420px, calc(100vw - 32px)); }
+.inline { display: flex; gap: 8px; }
 .supp-row a { color: var(--ink-soft); text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
 .supp-row a:hover { color: var(--accent); }
 .result.droptarget { outline: 2px dashed var(--accent); outline-offset: 3px; background: var(--accent-soft); }
@@ -362,6 +394,10 @@ dialog::backdrop { background: rgb(10 12 20 / 0.42); backdrop-filter: blur(3px);
   <symbol id="i-clip" viewBox="0 0 24 24"><path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l8.6-8.6a4 4 0 0 1 5.7 5.7l-8.6 8.5a2 2 0 0 1-2.8-2.8l8.5-8.5"/></symbol>
   <symbol id="i-film" viewBox="0 0 24 24"><rect x="2.5" y="2.5" width="19" height="19" rx="2.5"/><path d="M7 2.5v19M17 2.5v19M2.5 12h19M2.5 7H7M2.5 17H7M17 7h4.5M17 17h4.5"/></symbol>
   <symbol id="i-note" viewBox="0 0 24 24"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5Z"/><path d="M14 2v6h6"/><path d="m9.5 17.5 1-3.5 5-5 2.5 2.5-5 5Z"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-dots" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></symbol>
+  <symbol id="i-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/></symbol>
+  <symbol id="i-bookopen" viewBox="0 0 24 24"><path d="M2 5h6a4 4 0 0 1 4 4v11a3 3 0 0 0-3-3H2Z"/><path d="M22 5h-6a4 4 0 0 0-4 4v11a3 3 0 0 1 3-3h7Z"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
   <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="M12 7.5v5M12 16.5h.01"/></symbol>
@@ -374,6 +410,7 @@ dialog::backdrop { background: rgb(10 12 20 / 0.42); backdrop-filter: blur(3px);
   <aside class="nav">
     <div class="brand"><div class="logo"><svg class="ic"><use href="#i-logo"/></svg></div><h1>논문 서재</h1></div>
     <button class="add-btn" id="pickBtn" type="button" title="논문·책 PDF나 보충 동영상 (창에 끌어다 놓아도 됩니다)"><svg class="ic"><use href="#i-upload"/></svg>파일 추가</button>
+    <button class="add-sub" id="idBtn" type="button" title="PDF 없이 DOI·ISBN·arXiv·KCI 번호로 서지 정보를 추가합니다"><svg class="ic sm"><use href="#i-link"/></svg>DOI·ISBN으로 추가</button>
     <div class="nav-scroll">
       <section>
         <h3>서재</h3>
@@ -381,6 +418,14 @@ dialog::backdrop { background: rgb(10 12 20 / 0.42); backdrop-filter: blur(3px);
           <button type="button" class="nav-item mine-toggle" id="mineToggle" aria-pressed="false"><svg class="ic"><use href="#i-star"/></svg>내 논문·책<span class="n" id="mineCount"></span></button>
         </div>
         <div class="nav-list" id="docOpts"></div>
+      </section>
+      <section>
+        <h3>읽기</h3>
+        <div class="nav-list" id="readOpts"></div>
+      </section>
+      <section>
+        <h3>컬렉션 <button type="button" class="h-act" id="newColl" title="새 컬렉션 만들기" aria-label="새 컬렉션 만들기"><svg class="ic sm"><use href="#i-plus"/></svg></button></h3>
+        <div class="nav-list" id="collOpts"></div>
       </section>
       <section>
         <h3>기간</h3>
@@ -500,9 +545,9 @@ dialog::backdrop { background: rgb(10 12 20 / 0.42); backdrop-filter: blur(3px);
         <div class="hint" id="classifyHint"></div>
       </div>
       <div class="fetchbox">
-        <div class="hint">DOI·arXiv ID·ISBN(책)을 넣으면 정보를 다시 받아옵니다. 제목 일부로 Crossref·Google Books에서 찾을 수도 있습니다.</div>
+        <div class="hint">DOI·arXiv ID·ISBN(책)·KCI 논문 ID(ART…)를 넣으면 정보를 다시 받아옵니다. 제목 일부로 Crossref·Google Books(KCI 키가 있으면 KCI)에서 찾을 수도 있습니다.</div>
         <div class="row">
-          <input id="fetchKey" placeholder="DOI · arXiv ID · ISBN(책) · 제목 일부">
+          <input id="fetchKey" placeholder="DOI · arXiv ID · ISBN(책) · KCI ID · 제목 일부">
           <button class="btn" type="button" id="fetchBtn">가져오기</button>
         </div>
         <div class="msg" id="fetchMsg"></div>
@@ -566,6 +611,13 @@ dialog::backdrop { background: rgb(10 12 20 / 0.42); backdrop-filter: blur(3px);
           머리글자(G. Hong)는 같은 성의 다른 사람과 겹칠 수 있으니, 잘못 표시된 논문은 수정 창에서 끄면 됩니다.</div>
       </div>
       <div class="field">
+        <label for="s-kci">KCI Open API 키 <span class="hint">— 국내 학술지 논문 정보</span></label>
+        <div class="inline"><input id="s-kci" class="mono" autocomplete="off" spellcheck="false"><button class="btn" type="button" id="kciTest">확인</button></div>
+        <div class="hint">KCI(한국학술지인용색인) 누리집 <span class="mono">open.kci.go.kr</span>에서 회원 가입 후 ‘오픈 API 신청’으로 무료로 받습니다.
+          넣어 두면 DOI가 없는 한글 논문도 제목으로 찾아 학술지·권·호·쪽·초록을 채우고, 수정 창에서 KCI 논문 ID(ART…)로도 가져올 수 있습니다.</div>
+        <div class="msg" id="kciMsg"></div>
+      </div>
+      <div class="field">
         <label for="s-theme">화면</label>
         <select id="s-theme"><option value="">시스템 설정 따름</option><option value="light">밝게</option><option value="dark">어둡게</option></select>
       </div>
@@ -588,6 +640,35 @@ dialog::backdrop { background: rgb(10 12 20 / 0.42); backdrop-filter: blur(3px);
   </form>
 </dialog>
 
+<dialog id="idDlg">
+  <form class="dlg" id="idForm" method="dialog">
+    <header><h3>DOI·ISBN으로 추가</h3><button type="button" data-close aria-label="닫기"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button></header>
+    <div class="body">
+      <div class="hint">PDF가 없어도 서지 정보만 먼저 넣어 둘 수 있습니다. 한 줄에 하나씩, 여러 개를 한꺼번에 넣어도 됩니다.<br>
+        예: <span class="mono">10.1038/nature14539</span> · <span class="mono">https://doi.org/…</span> · <span class="mono">arXiv:1706.03762</span> · <span class="mono">978-0262035613</span>(책) · <span class="mono">ART002345678</span>(KCI)</div>
+      <div class="field"><textarea id="idList" rows="6" class="mono" aria-label="DOI·ISBN 목록" placeholder="10.1038/nature14539&#10;arXiv:1706.03762"></textarea></div>
+      <label class="check"><input type="checkbox" id="idPdf" checked> 무료로 공개된 PDF(arXiv·오픈 액세스)가 있으면 받아 오기</label>
+      <div class="hint">PDF는 나중에 구해서 그 카드 위에 끌어다 놓으면 붙습니다. 같은 DOI의 PDF를 빈 곳에 넣어도 그 항목에 붙습니다.</div>
+    </div>
+    <footer><span></span><div class="right"><button class="btn" type="button" data-close>취소</button><button class="btn primary" type="submit">추가</button></div></footer>
+  </form>
+</dialog>
+
+<dialog id="nameDlg">
+  <form class="dlg" id="nameForm" method="dialog">
+    <header><h3 id="nameTitle">새 컬렉션</h3><button type="button" data-close aria-label="닫기"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button></header>
+    <div class="body">
+      <div class="field"><input id="nameInput" maxlength="80" placeholder="예: 졸업논문, 과제 제안서, 읽을거리" aria-label="컬렉션 이름" autocomplete="off"></div>
+      <div class="msg" id="nameMsg"></div>
+    </div>
+    <footer><span class="hint">논문을 여러 컬렉션에 넣어도 파일은 하나입니다</span><div class="right"><button class="btn" type="button" data-close>취소</button><button class="btn primary" type="submit">확인</button></div></footer>
+  </form>
+</dialog>
+
+<div class="floating" id="collPop" role="dialog" aria-label="컬렉션에 넣기"></div>
+<div class="floating" id="collMenu" role="menu"></div>
+<input type="file" id="pdfInput" accept="application/pdf,.pdf" hidden>
+
 <div class="toast" id="toast" role="status"></div>
 
 <script>
@@ -596,7 +677,9 @@ const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "
 const thisYear = new Date().getFullYear();
 const TYPE_LABEL = { "journal-article": "", "proceedings-article": "학술대회", "proceedings": "학술대회", "preprint": "프리프린트", "posted-content": "프리프린트", "book-chapter": "책의 장", "book": "책", "monograph": "책", "edited-book": "편저", "reference-book": "책", "dissertation": "학위논문", "thesis": "학위논문", "report": "보고서" };
 
-const view = { q: "", field: "all", from: "", to: "", sort: "relevance", review: false, doc: "all", mine: false, page: 1 };
+const view = { q: "", field: "all", from: "", to: "", sort: "relevance", review: false, doc: "all", mine: false, read: "", coll: null, page: 1 };
+const READ_STATES = { "": { label: "안 읽음", icon: "circle" }, reading: { label: "읽는 중", icon: "bookopen" }, read: { label: "읽음", icon: "check" } };
+let collById = new Map();
 const clampPer = (n) => Math.min(50, Math.max(10, Math.round((Number(n) || 10) / 10) * 10));
 view.perPage = clampPer(store("papershelf.perPage"));
 view.abs = ["off", "short", "full"].includes(store("papershelf.abs")) ? store("papershelf.abs") : "short";
@@ -653,7 +736,15 @@ function renderSide() {
   $("#mineToggle").classList.toggle("on", view.mine);
   $("#mineToggle").setAttribute("aria-pressed", view.mine);
   $("#mineCount").textContent = lastInfo?.mine ? lastInfo.mine : "";
-  const sorts = [["relevance", "관련도"], ["cited", "인용"], ["added", "추가"], ["year", "연도"], ["title", "제목"]];
+  const rd = lastInfo?.reading || {};
+  $("#readOpts").innerHTML = [["unread", READ_STATES[""]], ["reading", READ_STATES.reading], ["read", READ_STATES.read]].map(([k, st]) =>
+    `<button type="button" class="nav-item ${view.read === k ? "on" : ""}" data-read="${k}">${ic(st.icon)}${st.label}<span class="n">${rd[k] || ""}</span></button>`).join("");
+  const colls = lastInfo?.collections || [];
+  collById = new Map(colls.map((c) => [c.id, c]));
+  $("#collOpts").innerHTML = colls.length
+    ? colls.map((c) => `<div class="nav-item coll-item ${view.coll === c.id ? "on" : ""}" data-coll="${c.id}" role="button" tabindex="0">${ic("folder")}<span class="nm" title="${esc(c.name)}">${esc(c.name)}</span><span class="n">${c.n || ""}</span><button type="button" class="more" data-coll-menu="${c.id}" aria-label="‘${esc(c.name)}’ 메뉴">${ic("dots", "sm")}</button></div>`).join("")
+    : `<div class="nav-empty">‘+’로 만들고, 논문 카드의 ‘컬렉션’ 단추로 넣습니다. 파일은 그대로 두고 목록만 묶습니다.</div>`;
+  const sorts = [["relevance", "관련도"], ["cited", "인용"], ["rating", "별점"], ["added", "추가"], ["year", "연도"], ["title", "제목"]];
   $("#sortOpts").innerHTML = sorts.map(([k, label]) =>
     `<button type="button" class="opt ${view.sort === k ? "on" : ""}" data-sort="${k}">${label}</button>`).join("");
   $("#yFrom").value = view.from; $("#yTo").value = view.to;
@@ -687,6 +778,127 @@ $("#docOpts").addEventListener("click", (e) => {
   view.doc = b.dataset.doc; refresh();
 });
 $("#reviewOnly").addEventListener("change", (e) => { view.review = e.target.checked; refresh(); });
+$("#readOpts").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-read]"); if (!b) return;
+  view.read = view.read === b.dataset.read ? "" : b.dataset.read; refresh();
+});
+$("#collOpts").addEventListener("click", (e) => {
+  const m = e.target.closest("[data-coll-menu]");
+  if (m) { e.stopPropagation(); openCollMenu(Number(m.dataset.collMenu), m); return; }
+  const b = e.target.closest("[data-coll]"); if (!b) return;
+  const id = Number(b.dataset.coll);
+  view.coll = view.coll === id ? null : id; refresh();
+});
+$("#collOpts").addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.matches("[data-coll]")) e.target.click(); });
+
+/* ---------- 컬렉션 ---------- */
+let nameAction = null;
+function askName(title, value, action) {
+  $("#nameTitle").textContent = title; $("#nameInput").value = value || ""; $("#nameMsg").textContent = "";
+  nameAction = action;
+  $("#nameDlg").showModal(); $("#nameInput").select();
+}
+$("#nameForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const name = $("#nameInput").value.trim();
+  if (!name) { $("#nameMsg").textContent = "이름을 적어 주세요"; return; }
+  try { await nameAction(name); $("#nameDlg").close(); } catch (err) { $("#nameMsg").textContent = err.message; }
+});
+const jsonOpts = (method, body) => ({ method, headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+$("#newColl").addEventListener("click", () => askName("새 컬렉션", "", async (name) => {
+  await api("/api/collections", jsonOpts("POST", { name }));
+  toast(`‘${name}’ 컬렉션을 만들었습니다. 논문 카드의 ‘컬렉션’ 단추로 넣으세요.`); refresh(true);
+}));
+function openFloating(el, anchor) {
+  for (const o of document.querySelectorAll(".floating.on")) if (o !== el) closeFloating(o);
+  el.classList.add("on");
+  const r = anchor.getBoundingClientRect(), w = el.offsetWidth, h = el.offsetHeight;
+  let top = r.bottom + 6;
+  if (top + h > innerHeight - 8) top = Math.max(8, r.top - h - 6);
+  el.style.left = Math.max(8, Math.min(r.left, innerWidth - w - 8)) + "px";
+  el.style.top = top + "px";
+}
+function closeFloating(el) {
+  if (!el.classList.contains("on")) return;
+  el.classList.remove("on");
+  if (el.dataset.changed) { delete el.dataset.changed; refresh(true); }
+}
+document.addEventListener("mousedown", (e) => {
+  for (const el of document.querySelectorAll(".floating.on"))
+    if (!el.contains(e.target) && !e.target.closest("[data-coll-menu], [data-act='coll']")) closeFloating(el);
+});
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") document.querySelectorAll(".floating.on").forEach(closeFloating); });
+window.addEventListener("resize", () => document.querySelectorAll(".floating.on").forEach(closeFloating));
+$("#scroller").addEventListener("scroll", () => document.querySelectorAll(".floating.on").forEach(closeFloating), { passive: true });
+
+function openCollMenu(id, anchor) {
+  const c = collById.get(id); if (!c) return;
+  const m = $("#collMenu");
+  m.dataset.id = id;
+  m.innerHTML = `<div class="lbl">${esc(c.name)} · ${c.n || 0}편</div>
+    <button type="button" class="menu-btn" data-cm="rename">${ic("pencil", "sm")}이름 바꾸기</button>
+    <button type="button" class="menu-btn" data-cm="bib">${ic("download", "sm")}이 컬렉션만 BibTeX 내보내기</button>
+    <button type="button" class="menu-btn danger" data-cm="del">${ic("x", "sm")}컬렉션 지우기</button>`;
+  openFloating(m, anchor);
+}
+$("#collMenu").addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-cm]"); if (!b) return;
+  const id = Number($("#collMenu").dataset.id), c = collById.get(id);
+  closeFloating($("#collMenu"));
+  if (b.dataset.cm === "rename") askName("컬렉션 이름 바꾸기", c.name, async (name) => { await api(`/api/collections/${id}`, jsonOpts("PUT", { name })); refresh(true); });
+  else if (b.dataset.cm === "bib") exportBib(id, c.name);
+  else if (b.dataset.cm === "del") {
+    if (!confirm(`‘${c.name}’ 컬렉션을 지울까요?\n안에 든 논문과 파일은 서재에 그대로 남습니다.`)) return;
+    try { await api(`/api/collections/${id}`, { method: "DELETE" }); if (view.coll === id) view.coll = null; toast("컬렉션을 지웠습니다"); refresh(true); }
+    catch (err) { toast(err.message); }
+  }
+});
+async function exportBib(coll, name) {
+  if (standalone) {
+    try { const r = await api(`/api/export-bib-dialog?coll=${coll}`, { method: "POST" }); if (r.saved) toast("저장했습니다 → " + r.saved); }
+    catch (err) { toast(err.message); }
+    return;
+  }
+  const a = document.createElement("a");
+  a.href = `/api/export.bib?coll=${coll}`; a.download = `${(name || "collection").replace(/[\\/:*?"<>|]/g, " ")}.bib`;
+  document.body.append(a); a.click(); a.remove();
+}
+function openCollPop(pid, anchor) {
+  const p = papersById.get(pid); if (!p) return;
+  const pop = $("#collPop");
+  pop.dataset.id = pid;
+  const colls = [...collById.values()];
+  pop.innerHTML = `<div class="lbl">컬렉션에 넣기</div>`
+    + (colls.length ? colls.map((c) => `<label class="chk"><input type="checkbox" data-cid="${c.id}" ${(p.collections || []).includes(c.id) ? "checked" : ""}> ${esc(c.name)}</label>`).join("")
+      : `<div class="nav-empty">아직 컬렉션이 없습니다. 아래에서 만드세요.</div>`)
+    + `<div class="row"><input type="text" id="collNew" placeholder="새 컬렉션 이름" maxlength="80" aria-label="새 컬렉션 이름"><button class="btn small" type="button" id="collNewBtn">만들기</button></div>`;
+  openFloating(pop, anchor);
+}
+$("#collPop").addEventListener("change", async (e) => {
+  const cb = e.target.closest("[data-cid]"); if (!cb) return;
+  const pop = $("#collPop"), pid = Number(pop.dataset.id);
+  try {
+    const r = await api(`/api/papers/${pid}/collection`, jsonOpts("PUT", { collection_id: Number(cb.dataset.cid), on: cb.checked }));
+    const p = papersById.get(pid); if (p) p.collections = r.collections;
+    pop.dataset.changed = "1";
+  } catch (err) { cb.checked = !cb.checked; toast(err.message); }
+});
+async function createAndAdd() {
+  const pop = $("#collPop"), pid = Number(pop.dataset.id), name = $("#collNew").value.trim();
+  if (!name) return $("#collNew").focus();
+  try {
+    const c = await api("/api/collections", jsonOpts("POST", { name }));
+    const r = await api(`/api/papers/${pid}/collection`, jsonOpts("PUT", { collection_id: c.id, on: true }));
+    const p = papersById.get(pid); if (p) p.collections = r.collections;
+    collById.set(c.id, { ...c, n: 1 });
+    pop.dataset.changed = "1";
+    const anchor = document.querySelector(`.result[data-id="${pid}"] [data-act="coll"]`);
+    if (anchor) openCollPop(pid, anchor);
+    toast(`‘${name}’ 컬렉션에 넣었습니다`);
+  } catch (err) { toast(err.message); }
+}
+$("#collPop").addEventListener("click", (e) => { if (e.target.closest("#collNewBtn")) createAndAdd(); });
+$("#collPop").addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.id === "collNew") { e.preventDefault(); createAndAdd(); } });
 
 /* ---------- 검색 ---------- */
 $("#searchForm").addEventListener("submit", (e) => { e.preventDefault(); view.q = $("#q").value.trim(); view.field = $("#field").value; refresh(); });
@@ -716,6 +928,8 @@ async function refresh(keepPage = false) {
   if (view.review) params.set("review", "1");
   if (view.doc !== "all") params.set("doc", view.doc);
   if (view.mine) params.set("mine", "1");
+  if (view.read) params.set("read", view.read);
+  if (view.coll) params.set("coll", String(view.coll));
   // 지금 보는 쪽만 받아 온다
   params.set("offset", String((view.page - 1) * view.perPage));
   params.set("limit", String(view.perPage));
@@ -734,7 +948,7 @@ async function refresh(keepPage = false) {
 function renderResults(res, info) {
   $("#libPath").textContent = info.library;
   $("#libPath").title = "논문 폴더";
-  const filtered = view.q || view.from || view.to || view.review || view.doc !== "all" || view.mine;
+  const filtered = view.q || view.from || view.to || view.review || view.doc !== "all" || view.mine || view.read || view.coll;
   $("#count").innerHTML = filtered
     ? `검색결과 <b>${res.total}</b>개 <span>/ 전체 ${info.total}편</span>`
     : `전체 <b>${info.total}</b>편` + (info.books ? ` (책 ${info.books}권)` : "") + (info.supplements ? ` · 보충자료 ${info.supplements}개` : "") + (info.needs_review ? ` · 확인 필요 <b>${info.needs_review}</b>편` : "");
@@ -746,7 +960,7 @@ function renderResults(res, info) {
       : `<div class="empty">${EMPTY_ART}<h2>서재가 비어 있습니다</h2>
           <p>논문이나 책 PDF를 이 창에 끌어다 놓으면 제목·저자·저널(책은 ISBN으로 출판사·판)을 찾아 <span class="mono">${esc(info.library)}</span>에 정리해 둡니다.</p>
           <button class="btn primary" type="button" onclick="document.getElementById('fileInput').click()">${ic("upload")}파일 고르기</button>
-          <div class="tips"><span>${ic("clip", "sm")}보충자료는 본문에 자동으로 묶임</span><span>${ic("film", "sm")}동영상도 보충자료로</span><span>${ic("book", "sm")}책은 ISBN으로</span></div></div>`;
+          <div class="tips"><span>${ic("link", "sm")}PDF 없이 DOI·ISBN으로도 추가</span><span>${ic("clip", "sm")}보충자료는 본문에 자동으로 묶임</span><span>${ic("film", "sm")}동영상도 보충자료로</span><span>${ic("book", "sm")}책은 ISBN으로</span></div></div>`;
     return;
   }
   const pages = Math.max(1, Math.ceil(res.total / view.perPage));
@@ -774,6 +988,8 @@ const EMPTY_ART_SEARCH = `<svg class="art" viewBox="0 0 168 120" aria-hidden="tr
 function activeFiltersHTML() {
   const f = [];
   if (view.mine) f.push("★ 내 논문·책");
+  if (view.coll) f.push(`컬렉션 ‘${collById.get(view.coll)?.name || ""}’`);
+  if (view.read) f.push({ unread: "안 읽음", reading: "읽는 중", read: "읽음" }[view.read]);
   if (view.doc !== "all") f.push(GROUPS[view.doc]?.label || "논문");
   if (view.from || view.to) f.push(`기간 ${view.from || "…"}–${view.to || "…"}`);
   if (view.review) f.push("확인 필요한 것만");
@@ -784,7 +1000,7 @@ function activeFiltersHTML() {
 }
 document.addEventListener("click", (e) => {
   if (!e.target.closest("#clearFilters")) return;
-  Object.assign(view, { q: "", field: "all", from: "", to: "", review: false, doc: "all", mine: false });
+  Object.assign(view, { q: "", field: "all", from: "", to: "", review: false, doc: "all", mine: false, read: "", coll: null });
   $("#q").value = ""; $("#field").value = "all"; $("#reviewOnly").checked = false;
   refresh();
 });
@@ -889,10 +1105,18 @@ function resultHTML(p) {
   const doi = p.doi ? `<a href="https://doi.org/${esc(p.doi)}" target="_blank" rel="noopener">${ic("link", "sm")}DOI</a>`
     : (p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">${ic("external", "sm")}${isBook(p) ? "책 정보" : "원문 페이지"}</a>` : "");
   const bookMeta = isBook(p) ? [p.isbn ? `ISBN ${p.isbn}` : "", p.page_count ? `${p.page_count}쪽` : ""].filter(Boolean).join(" · ") : "";
-  return `<article class="result" data-id="${p.id}" data-kind="${p.kind}">
-    <div class="meta">${badge}${p.is_mine ? `<span class="tag mine" title="내 논문·책">${ic("star", "fill")}내 저작</span>` : ""}${p.needs_review ? `<span class="tag warn" title="온라인에서 정보를 찾지 못해 PDF에서 추정했습니다">${ic("alert")}확인 필요</span>` : ""}${p.missing ? '<span class="tag miss">파일 없음</span>' : ""}${p.kind === "supp" ? '<span class="tag supp" title="본문 논문이 서재에 없습니다. 본문을 추가하면 자동으로 묶입니다.">보충자료 · 본문 없음</span>' : ""}${tags.map((t) => `<span class="tag kw">#${highlight(t)}</span>`).join("")}</div>
-    <a class="open" href="${pdfHref}" target="_blank" rel="noopener" title="PDF 열기">${ic("external", "sm")}PDF</a>
-    <h2 class="r-title"><a href="${pdfHref}" target="_blank" rel="noopener">${highlight(p.title || "제목 없음")}</a></h2>
+  const noFile = p.has_file === false;
+  const extHref = p.doi ? `https://doi.org/${p.doi}` : p.url;
+  const titleHTML = noFile
+    ? (extHref ? `<a href="${esc(extHref)}" target="_blank" rel="noopener">${highlight(p.title || "제목 없음")}</a>` : `<span>${highlight(p.title || "제목 없음")}</span>`)
+    : `<a href="${pdfHref}" target="_blank" rel="noopener">${highlight(p.title || "제목 없음")}</a>`;
+  const st = READ_STATES[p.read_status || ""] || READ_STATES[""];
+  const colls = (p.collections || []).map((cid) => collById.get(cid)).filter(Boolean);
+  return `<article class="result" data-id="${p.id}" data-kind="${p.kind}" data-nofile="${noFile ? 1 : 0}">
+    <div class="meta">${badge}${p.is_mine ? `<span class="tag mine" title="내 논문·책">${ic("star", "fill")}내 저작</span>` : ""}${p.needs_review ? `<span class="tag warn" title="온라인에서 정보를 찾지 못해 PDF에서 추정했습니다">${ic("alert")}확인 필요</span>` : ""}${p.missing ? '<span class="tag miss">파일 없음</span>' : ""}${noFile && p.kind === "main" ? '<span class="tag nofile" title="서지 정보만 있습니다. PDF를 이 카드 위에 끌어다 놓으면 붙습니다.">PDF 없음</span>' : ""}${colls.map((c) => `<button type="button" class="tag coll" data-goto-coll="${c.id}" title="이 컬렉션 보기">${ic("folder")}${esc(c.name)}</button>`).join("")}${p.kind === "supp" ? '<span class="tag supp" title="본문 논문이 서재에 없습니다. 본문을 추가하면 자동으로 묶입니다.">보충자료 · 본문 없음</span>' : ""}${tags.map((t) => `<span class="tag kw">#${highlight(t)}</span>`).join("")}</div>
+    ${noFile ? `<button type="button" class="open" data-act="findpdf" title="arXiv·오픈 액세스에 무료로 공개된 PDF를 찾아 받습니다">${ic("download", "sm")}무료 PDF 찾기</button>`
+      : `<a class="open" href="${pdfHref}" target="_blank" rel="noopener" title="PDF 열기">${ic("external", "sm")}PDF</a>`}
+    <h2 class="r-title">${titleHTML}</h2>
     <div class="byline">${highlight(by.join(" · "))}</div>
     ${snippetHTML(p)}
     ${(p.supplements || []).length ? `<div class="supps"><span class="lbl">${ic("clip", "sm")}보충자료</span>${p.supplements.map((sp, i) =>
@@ -903,11 +1127,15 @@ function resultHTML(p) {
       ${citedHTML(p)}
       <button type="button" data-act="cite">${ic("quote", "sm")}인용</button>
       <button type="button" data-act="edit">${ic("pencil", "sm")}수정</button>
-      <button type="button" data-act="reveal">${ic("folder", "sm")}폴더에서 보기</button>
+      <button type="button" data-act="coll" title="컬렉션에 넣기·빼기">${ic("folder", "sm")}컬렉션</button>
+      ${noFile ? "" : `<button type="button" data-act="reveal">${ic("external", "sm")}폴더에서 보기</button>`}
       ${doi}
       ${bookMeta ? `<span class="meta-txt mono">${esc(bookMeta)}</span>` : ""}
+      <span class="spacer"></span>
+      <button type="button" data-act="status" class="status ${p.read_status || ""}" title="누를 때마다 안 읽음 → 읽는 중 → 읽음">${ic(st.icon, "sm")}${st.label}</button>
+      <span class="stars" role="group" aria-label="별점 ${p.rating || 0}개">${[1, 2, 3, 4, 5].map((n) => `<button type="button" data-star="${n}" class="${n <= (p.rating || 0) ? "on" : ""}" aria-label="별 ${n}개" title="${n === p.rating ? "다시 누르면 별점 지움" : `별 ${n}개`}">${ic("star", n <= (p.rating || 0) ? "sm fill" : "sm")}</button>`).join("")}</span>
     </div>
-    <div class="file mono">${esc(p.file_name)}${p.rename_pending ? ` <span class="tag warn" title="PDF가 다른 프로그램에서 열려 있어 이름을 아직 못 바꿨습니다. 닫으면 자동으로 바뀝니다.">${ic("alert")}이름 바꾸기 대기</span>` : ""}</div>
+    <div class="file mono">${noFile ? "PDF 없음 — PDF를 이 카드에 끌어다 놓거나 ‘무료 PDF 찾기’를 누르세요" : esc(p.file_name)}${p.rename_pending ? ` <span class="tag warn" title="PDF가 다른 프로그램에서 열려 있어 이름을 아직 못 바꿨습니다. 닫으면 자동으로 바뀝니다.">${ic("alert")}이름 바꾸기 대기</span>` : ""}</div>
   </article>`;
 }
 
@@ -920,10 +1148,51 @@ $("#results").addEventListener("click", async (e) => {
     card.outerHTML = resultHTML(papersById.get(id));
     return;
   }
+  if (b.dataset.act === "status") {
+    const p = papersById.get(id);
+    const next = { "": "reading", reading: "read", read: "" }[p.read_status || ""];
+    return setMark(id, { read_status: next });
+  }
+  if (b.dataset.act === "coll") return openCollPop(id, b);
+  if (b.dataset.act === "findpdf") {
+    b.disabled = true; b.innerHTML = `<span class="spin"></span>찾는 중…`;
+    try {
+      const r = await api(`/api/papers/${id}/find-pdf`, { method: "POST" });
+      toast(r.pdf_source ? `${r.pdf_source}에서 PDF를 받아 붙였습니다` : "무료로 공개된 PDF를 찾지 못했습니다. 구한 PDF를 이 카드 위에 끌어다 놓으세요.");
+    } catch (err) { toast(err.message); }
+    return refresh(true);
+  }
   if (b.dataset.act === "cite") openCite(id);
   else if (b.dataset.act === "edit") openEdit(id);
   else if (b.dataset.act === "reveal") api(`/api/papers/${id}/reveal`, { method: "POST" }).catch((err) => toast(err.message));
 });
+
+$("#results").addEventListener("click", (e) => {
+  const s = e.target.closest("[data-star]");
+  if (s) {
+    const id = Number(s.closest(".result").dataset.id), n = Number(s.dataset.star);
+    return setMark(id, { rating: papersById.get(id)?.rating === n ? 0 : n });
+  }
+  const g = e.target.closest("[data-goto-coll]");
+  if (g) { view.coll = Number(g.dataset.gotoColl); refresh(); }
+});
+$("#results").addEventListener("mouseover", (e) => {
+  const s = e.target.closest("[data-star]"); const box = e.target.closest(".stars");
+  if (!box) return;
+  box.querySelectorAll("[data-star]").forEach((x) => x.classList.toggle("hov", !!s && Number(x.dataset.star) <= Number(s.dataset.star)));
+});
+$("#results").addEventListener("mouseout", (e) => { const box = e.target.closest(".stars"); if (box && !box.contains(e.relatedTarget)) box.querySelectorAll(".hov").forEach((x) => x.classList.remove("hov")); });
+async function setMark(id, change) {
+  try {
+    const r = await api(`/api/papers/${id}/mark`, jsonOpts("PUT", change));
+    const p = papersById.get(id);
+    if (p) Object.assign(p, { read_status: r.read_status, rating: r.rating });
+    if (view.read || view.sort === "rating") return refresh(true);  // 걸러 보는 중이면 목록을 다시
+    const card = document.querySelector(`.result[data-id="${id}"]`);
+    if (card && p) card.outerHTML = resultHTML(p);
+    lastInfo = await api("/api/info"); renderSide();
+  } catch (err) { toast(err.message); }
+}
 
 /* ---------- 인용 ---------- */
 let citeData = null, citeKind = store("papershelf.cite") || "APA";
@@ -1012,7 +1281,9 @@ async function openEdit(id) {
   $("#editDlg").showModal();
 }
 function renderEditFiles() {
-  $("#editFile").innerHTML = `파일: <span class="mono">${esc(editing.file_name)}</span>` + (editing.original_name ? ` · 원래 이름: <span class="mono">${esc(editing.original_name)}</span>` : "")
+  $("#editFile").innerHTML = (editing.has_file === false
+    ? `<div class="supp-list"><b>PDF 없음</b><div class="note-add"><button type="button" class="btn small" id="pdfAddBtn">${ic("upload", "sm")}PDF 파일 고르기</button> <span class="hint">PDF를 붙이면 ‘저자 - 연도 - 제목.pdf’로 저장됩니다. 목록의 카드 위에 끌어다 놓아도 됩니다.</span></div></div>`
+    : `파일: <span class="mono">${esc(editing.file_name)}</span>` + (editing.original_name ? ` · 원래 이름: <span class="mono">${esc(editing.original_name)}</span>` : ""))
     + (editing.supplements?.length ? `<div class="supp-list"><b>보충자료 ${editing.supplements.length}개</b>` + editing.supplements.map((x) =>
       `<div class="supp-row"><span class="mono">${esc(x.file_name)}</span><button type="button" class="btn danger small" data-del-supp="${x.id}">빼기</button></div>`).join("") + "</div>" : "")
     + (editing.kind === "main" ? `<div class="supp-list"><b>내 정리 자료${editing.attachments?.length ? ` ${editing.attachments.length}개` : ""}</b>` + (editing.attachments || []).map((x) =>
@@ -1077,11 +1348,12 @@ $("#fetchBtn").addEventListener("click", async () => {
   const msg = $("#fetchMsg"); msg.style.color = "var(--ink-soft)"; msg.textContent = "찾는 중…"; $("#cands").innerHTML = "";
   const doiMatch = key.match(/10\.\d{4,9}\/\S+/);
   const arxivMatch = key.match(/^(?:arxiv:)?(\d{4}\.\d{4,5}|[a-z\-]+\/\d{7})(v\d+)?$/i);
+  const kciMatch = key.match(/^ART\d{9}$/i);
   const isbnDigits = key.replace(/^isbn[:\s]*/i, "").replace(/[\s\-]/g, "");
   const isbnMatch = !doiMatch && /^(97[89]\d{10}|\d{9}[\dXx])$/.test(isbnDigits);
   try {
-    if (doiMatch || arxivMatch || isbnMatch) {
-      const body = doiMatch ? { doi: doiMatch[0] } : isbnMatch ? { isbn: isbnDigits } : { arxiv_id: arxivMatch[1] };
+    if (doiMatch || arxivMatch || isbnMatch || kciMatch) {
+      const body = kciMatch ? { kci_id: kciMatch[0] } : doiMatch ? { doi: doiMatch[0] } : isbnMatch ? { isbn: isbnDigits } : { arxiv_id: arxivMatch[1] };
       editing = await api(`/api/papers/${editing.id}/refetch`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       fillEdit(editing);
       msg.style.color = editing.rename_pending ? "var(--warn)" : "var(--good)";
@@ -1105,6 +1377,7 @@ $("#fetchBtn").addEventListener("click", async () => {
 $("#fetchKey").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); $("#fetchBtn").click(); } });
 $("#editFile").addEventListener("click", async (e) => {
   if (e.target.closest("#noteAddBtn")) return $("#noteInput").click();
+  if (e.target.closest("#pdfAddBtn")) return $("#pdfInput").click();
   const nb = e.target.closest("[data-del-note]");
   if (nb) {
     const id = Number(nb.dataset.delNote);
@@ -1137,21 +1410,68 @@ $("#deleteBtn").addEventListener("click", async () => {
   $("#editDlg").close(); toast("삭제했습니다"); refresh(true);
 });
 
+/* ---------- DOI·ISBN 으로 추가 ---------- */
+$("#idBtn").addEventListener("click", () => { $("#idList").value = ""; $("#idDlg").showModal(); $("#idList").focus(); });
+$("#idForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const keys = [...new Set($("#idList").value.split(/[\n,]+/).map((x) => x.trim()).filter(Boolean))];
+  if (!keys.length) return $("#idList").focus();
+  const fetchPdf = $("#idPdf").checked;
+  $("#idDlg").close();
+  $("#tray").classList.add("on");
+  const jobs = keys.map((k) => {
+    const li = document.createElement("li");
+    li.innerHTML = `<span class="ico"><span class="spin"></span></span><span class="from">${ic("link", "sm")} ${esc(k)}</span><span class="to">대기 중</span>`;
+    $("#trayList").prepend(li); pending++;
+    return [k, li];
+  });
+  updateTrayTitle();
+  for (const [k, li] of jobs) {
+    li.querySelector(".to").textContent = fetchPdf ? "정보와 무료 PDF 찾는 중…" : "정보 찾는 중…";
+    try {
+      const r = await api("/api/papers/by-id", jsonOpts("POST", { key: k, fetch_pdf: fetchPdf }));
+      const pp = r.paper;
+      if (r.status === "added") setItem(li, "added", esc(pp.title) + (pp.has_file ? ` <span class="tag supp">PDF 받음 · ${esc(r.pdf_source)}</span>` : ` <span class="tag nofile">PDF 없음</span>`));
+      else setItem(li, "duplicate", `이미 서재에 있습니다 — ${esc(pp.title)}`);
+    } catch (err) { setItem(li, "error", esc(err.message)); }
+    pending--; updateTrayTitle(); refresh(true);
+  }
+});
+$("#pdfInput").addEventListener("change", (e) => {
+  const file = e.target.files[0]; e.target.value = "";
+  if (!file || !editing) return;
+  addFiles([file], { id: editing.id, title: editing.title, nofile: true });
+  $("#editDlg").close();
+});
+
 /* ---------- 설정 ---------- */
 $("#settingsBtn").addEventListener("click", async () => {
   const info = await api("/api/info");
   $("#appVersion").textContent = `논문 서재 ${info.version || ""}`;
   $("#s-names").value = info.my_names || "";
+  $("#s-kci").value = ""; delete $("#s-kci").dataset.touched; $("#kciMsg").textContent = "";
+  $("#s-kci").placeholder = info.kci_key ? "저장된 키가 있습니다 — 바꾸려면 새 키를 넣으세요" : "발급받은 키를 붙여 넣으세요";
+  $("#settingsDlg").dataset.hasKci = info.kci_key ? "1" : "";
   $("#s-lib").value = info.library; $("#s-theme").value = store("papershelf.theme") || ""; $("#settingsMsg").textContent = "";
   $("#settingsDlg").showModal();
 });
 $("#settingsForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   try {
-    await api("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ library: $("#s-lib").value, my_names: $("#s-names").value }) });
+    await api("/api/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ library: $("#s-lib").value, my_names: $("#s-names").value, ...($("#s-kci").dataset.touched ? { kci_key: $("#s-kci").value.trim() } : {}) }) });
     store("papershelf.theme", $("#s-theme").value); applyTheme($("#s-theme").value);
     $("#settingsDlg").close(); refresh();
   } catch (err) { $("#settingsMsg").textContent = err.message; }
+});
+$("#s-kci").addEventListener("input", () => { $("#s-kci").dataset.touched = "1"; });
+$("#kciTest").addEventListener("click", async () => {
+  const msg = $("#kciMsg"), key = $("#s-kci").value.trim();
+  if (!key && !$("#settingsDlg").dataset.hasKci) { msg.style.color = ""; msg.textContent = "키를 먼저 넣어 주세요"; return; }
+  msg.style.color = "var(--ink-soft)"; msg.textContent = "KCI에 물어보는 중…";
+  try {
+    const r = await api("/api/kci-test", jsonOpts("POST", { key }));
+    msg.style.color = "var(--good)"; msg.textContent = `키가 맞습니다 (시험 검색 결과 ${r.found}건). 저장을 눌러 주세요.`;
+  } catch (err) { msg.style.color = ""; msg.textContent = err.message; }
 });
 let citePoll = null;
 async function watchCitations() {
@@ -1253,7 +1573,7 @@ window.addEventListener("drop", (e) => {
   if (!hasFiles(e)) return;
   e.preventDefault(); dragDepth = 0; $("#overlay").classList.remove("on"); document.body.classList.remove("dragging");
   const card = dropCard; markDropCard(null);
-  addFiles([...e.dataTransfer.files], card ? { id: Number(card.dataset.id), title: card.querySelector(".r-title a").textContent } : null);
+  addFiles([...e.dataTransfer.files], card ? { id: Number(card.dataset.id), title: card.querySelector(".r-title").textContent, nofile: card.dataset.nofile === "1" } : null);
 });
 $("#pickBtn").addEventListener("click", () => $("#fileInput").click());
 $("#fileInput").addEventListener("change", (e) => { addFiles([...e.target.files]); e.target.value = ""; });
@@ -1288,7 +1608,8 @@ function addFiles(files, parent = null, asNote = false) {
     const li = document.createElement("li");
     // PDF·동영상이 아닌 파일(PPT·Word 등)은 내 정리 자료
     const note = asNote || (!isPdfFile(file) && !isVideoFile(file));
-    li.innerHTML = `<span class="ico"><span class="spin"></span></span><span class="from">${note ? ic("note", "sm") + " " : isVideoFile(file) ? ic("film", "sm") + " " : ""}${esc(file.name)}${parent ? ` → ‘${esc(parent.title)}’의 ${note ? "정리 자료" : "보충자료"}` : ""}</span><span class="to">대기 중</span>`;
+    const role = note ? "정리 자료" : parent?.nofile && isPdfFile(file) ? "PDF" : "보충자료";
+    li.innerHTML = `<span class="ico"><span class="spin"></span></span><span class="from">${note ? ic("note", "sm") + " " : isVideoFile(file) ? ic("film", "sm") + " " : ""}${esc(file.name)}${parent ? ` → ‘${esc(parent.title)}’의 ${role}` : ""}</span><span class="to">대기 중</span>`;
     list.prepend(li);
     if (note && BLOCKED_EXT.test(file.name)) { setItem(li, "error", "실행 파일은 넣을 수 없어 건너뛰었습니다"); continue; }
     if (note) { batch.videos.push({ file, li, parent, batch, note: true }); pending++; continue; }
@@ -1328,7 +1649,8 @@ function pump() {
         if (!job.video && !job.note && pp.kind === "main") batch.mains.set(pp.id, { id: pp.id, title: pp.title });
         const supp = pp.kind === "supp" ? (pp.parent_id ? ` <span class="tag supp">${job.video ? "보충 동영상으로 묶음" : "보충자료로 묶음"}</span>` : ' <span class="tag supp">보충자료 · 본문 없음</span>') : "";
         const noteTag = pp.kind === "note" ? ' <span class="tag supp">내 정리 자료로 붙임</span>' : "";
-        if (r.status === "added") setItem(li, "added", `<span class="mono">${esc(pp.file_name)}</span>` + supp + noteTag + (pp.needs_review ? ' <span class="tag warn">확인 필요</span>' : ""));
+        if (r.status === "attached") setItem(li, "added", `<span class="mono">${esc(pp.file_name)}</span> <span class="tag supp">PDF 없던 항목에 붙임</span>`);
+        else if (r.status === "added") setItem(li, "added", `<span class="mono">${esc(pp.file_name)}</span>` + supp + noteTag + (pp.needs_review ? ' <span class="tag warn">확인 필요</span>' : ""));
         else setItem(li, "duplicate", job.note ? `이 논문에 이미 붙어 있습니다 — ${esc(pp.file_name)}` : `이미 서재에 있습니다 — ${esc(pp.title)}`);
       })
       .catch(async (err) => {
