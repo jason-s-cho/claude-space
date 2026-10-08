@@ -249,6 +249,10 @@ details.pop[open] > summary, details.pop > summary:hover { border-color: var(--r
 .floating .menu-btn { text-align: left; border: 0; background: none; padding: 7px 8px; border-radius: 7px; cursor: pointer; font-size: 0.88rem; color: var(--ink); display: flex; gap: 9px; align-items: center; font-family: inherit; }
 .floating .menu-btn.danger { color: var(--danger); }
 #nameDlg { width: min(420px, calc(100vw - 32px)); }
+.tries { margin-top: 4px; }
+.tries summary { cursor: pointer; color: var(--accent); font-size: 0.78rem; font-weight: 600; }
+.tries ul { margin: 4px 0 0; padding-left: 16px; font-size: 0.74rem; color: var(--ink-soft); }
+.tries li { margin: 4px 0; overflow-wrap: anywhere; }
 .supps.versions .lbl { color: var(--t-other); }
 #dupDlg { width: min(820px, calc(100vw - 32px)); }
 .dup-group { border: 1px solid var(--rule); border-radius: 12px; padding: 10px; display: grid; gap: 4px; }
@@ -1228,14 +1232,15 @@ function resultHTML(p) {
       <button type="button" data-act="cite">${ic("quote", "sm")}인용</button>
       <button type="button" data-act="edit">${ic("pencil", "sm")}수정</button>
       <button type="button" data-act="coll" title="컬렉션에 넣기·빼기">${ic("folder", "sm")}컬렉션</button>
-      ${noFile ? "" : `<button type="button" data-act="reveal">${ic("external", "sm")}폴더에서 보기</button>`}
+      ${noFile ? (p.doi ? `<button type="button" data-browser-get="${p.id}" title="출판사 페이지를 브라우저로 열고, 내려받은 PDF를 자동으로 붙입니다">${ic("download", "sm")}브라우저로 받기</button>` : "")
+        : `<button type="button" data-act="reveal">${ic("external", "sm")}폴더에서 보기</button>`}
       ${doi}
       ${bookMeta ? `<span class="meta-txt mono">${esc(bookMeta)}</span>` : ""}
       <span class="spacer"></span>
       <label class="status-box ${p.read_status || "unread"}" title="읽음 상태">${ic(st.icon, "sm")}<select data-status aria-label="읽음 상태">${Object.entries(READ_STATES).map(([k, x]) => `<option value="${k}" ${k === (p.read_status || "") ? "selected" : ""}>${x.label}</option>`).join("")}</select></label>
       <span class="stars" role="group" aria-label="별점 ${p.rating || 0}개">${[1, 2, 3, 4, 5].map((n) => `<button type="button" data-star="${n}" class="${n <= (p.rating || 0) ? "on" : ""}" aria-label="별 ${n}개" title="${n === p.rating ? "다시 누르면 별점 지움" : `별 ${n}개`}">${ic("star", n <= (p.rating || 0) ? "sm fill" : "sm")}</button>`).join("")}</span>
     </div>
-    <div class="file mono">${noFile ? "PDF 없음 — PDF를 이 카드에 끌어다 놓거나 ‘무료 PDF 찾기’를 누르세요" : esc(p.file_name)}${p.rename_pending ? ` <span class="tag warn" title="PDF가 다른 프로그램에서 열려 있어 이름을 아직 못 바꿨습니다. 닫으면 자동으로 바뀝니다.">${ic("alert")}이름 바꾸기 대기</span>` : ""}</div>
+    <div class="file mono">${noFile ? "PDF 없음 — ‘무료 PDF 찾기’나 ‘브라우저로 받기’를 누르거나, PDF를 이 카드에 끌어다 놓으세요" : esc(p.file_name)}${p.rename_pending ? ` <span class="tag warn" title="PDF가 다른 프로그램에서 열려 있어 이름을 아직 못 바꿨습니다. 닫으면 자동으로 바뀝니다.">${ic("alert")}이름 바꾸기 대기</span>` : ""}</div>
   </article>`;
 }
 
@@ -1253,7 +1258,15 @@ $("#results").addEventListener("click", async (e) => {
     b.disabled = true; b.innerHTML = `<span class="spin"></span>찾는 중…`;
     try {
       const r = await api(`/api/papers/${id}/find-pdf`, { method: "POST" });
-      toast(r.pdf_source ? `${r.pdf_source}에서 PDF를 받아 붙였습니다` : `PDF를 받지 못했습니다 — ${r.pdf_reason || "무료 공개본을 찾지 못했습니다"}. 구한 PDF를 이 카드 위에 끌어다 놓으세요.`);
+      if (r.pdf_source) toast(`${r.pdf_source}에서 PDF를 받아 붙였습니다`);
+      else {
+        // 왜 못 받았는지 아래 알림 상자에 자세히 남긴다
+        const li = document.createElement("li");
+        li.innerHTML = `<span class="ico"></span><span class="from">${ic("download", "sm")} ${esc(papersById.get(id)?.title || "")}</span><span class="to"></span>`;
+        $("#trayList").prepend(li); $("#tray").classList.add("on");
+        setItem(li, "error", "PDF를 받지 못했습니다" + pdfFailHTML({ ...r, paper: r.paper || papersById.get(id) }) + `<br><small class="hint">구한 PDF를 이 카드 위에 끌어다 놓아도 붙습니다.</small>`);
+        $("#trayTitle").textContent = "무료 PDF 찾기";
+      }
     } catch (err) { toast(err.message); }
     return refresh(true);
   }
@@ -1678,6 +1691,46 @@ $("#dupList").addEventListener("click", async (e) => {
   } catch (err) { toast(err.message); }
 });
 
+/* 무료 PDF를 못 받았을 때: 까닭, 시도한 주소별 결과, 브라우저에서 열기 */
+function pdfFailHTML(r) {
+  const tries = r.pdf_attempts || [];
+  const pid = r.paper?.id;
+  return `<br><small class="hint">${esc(r.pdf_reason || "무료 공개본을 찾지 못했습니다")}</small>`
+    + (pid && r.paper?.doi ? ` <button type="button" class="linkbtn" data-browser-get="${pid}">브라우저로 받기</button>` : "")
+    + (tries.length ? `<details class="tries"><summary>자세히 (시도한 곳 ${tries.length}군데)</summary><ul>${tries.map((t) =>
+      `<li><b>${esc(t.source)}</b> <span class="mono">${esc(t.url)}</span><br>→ ${esc(t.result)}</li>`).join("")}</ul></details>` : "");
+}
+function openExternal(url) {
+  if (standalone) return api("/api/open-url", jsonOpts("POST", { url })).catch((err) => toast(err.message));
+  window.open(url, "_blank", "noopener");
+}
+// 브라우저로 받기: 출판사 논문 페이지를 기본 브라우저로 열고, 다운로드 폴더에 그 논문 PDF가 생기면 자동으로 붙인다
+async function browserGet(pid) {
+  const p = papersById.get(pid) || await api(`/api/papers/${pid}`).catch(() => null);
+  if (!p) return;
+  const url = p.doi ? `https://doi.org/${p.doi}` : p.url;
+  if (!url) return toast("DOI나 원문 주소가 없어 열 곳이 없습니다");
+  let w;
+  try { w = await api(`/api/papers/${pid}/watch-pdf`, { method: "POST" }); } catch (err) { return toast(err.message); }
+  openExternal(url);
+  const li = document.createElement("li");
+  li.innerHTML = `<span class="ico"><span class="spin"></span></span><span class="from">${ic("download", "sm")} ${esc(p.title)}</span><span class="to"></span>`;
+  $("#trayList").prepend(li); $("#tray").classList.add("on"); $("#trayTitle").textContent = "브라우저로 받기";
+  li.querySelector(".to").innerHTML = `브라우저에서 PDF를 내려받으세요. <span class="mono">${esc(w.folder)}</span>에 생기면 자동으로 이 논문에 붙입니다 (${Math.round(w.seconds / 60)}분 동안 기다림).`;
+  const until = Date.now() + w.seconds * 1000;
+  const poll = async () => {
+    const q = await api(`/api/papers/${pid}`).catch(() => null);
+    if (q?.has_file) { setItem(li, "added", `<span class="mono">${esc(q.file_name)}</span> <span class="tag supp">브라우저로 받은 PDF를 붙임</span>`); refresh(true); return; }
+    if (Date.now() > until) { setItem(li, "error", "기다리는 시간이 지났습니다. 받은 PDF를 카드 위에 끌어다 놓으세요."); return; }
+    setTimeout(poll, 3000);
+  };
+  setTimeout(poll, 3000);
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-browser-get]"); if (!b) return;
+  e.preventDefault(); browserGet(Number(b.dataset.browserGet));
+});
+
 /* ---------- DOI·ISBN 으로 추가 ---------- */
 $("#idBtn").addEventListener("click", () => { $("#idList").value = ""; $("#idDlg").showModal(); $("#idList").focus(); });
 $("#idForm").addEventListener("submit", async (e) => {
@@ -1699,7 +1752,7 @@ $("#idForm").addEventListener("submit", async (e) => {
     try {
       const r = await api("/api/papers/by-id", jsonOpts("POST", { key: k, fetch_pdf: fetchPdf }));
       const pp = r.paper;
-      if (r.status === "added") setItem(li, "added", esc(pp.title) + (pp.has_file ? ` <span class="tag supp">PDF 받음 · ${esc(r.pdf_source)}</span>` : ` <span class="tag nofile" title="${esc(r.pdf_reason || "")}">PDF 없음</span>` + (r.pdf_reason && fetchPdf ? `<br><small class="hint">${esc(r.pdf_reason)}</small>` : "")));
+      if (r.status === "added") setItem(li, "added", esc(pp.title) + (pp.has_file ? ` <span class="tag supp">PDF 받음 · ${esc(r.pdf_source)}</span>` : ` <span class="tag nofile" title="${esc(r.pdf_reason || "")}">PDF 없음</span>` + (r.pdf_reason && fetchPdf ? pdfFailHTML(r) : "")));
       else setItem(li, "duplicate", `이미 서재에 있습니다 — ${esc(pp.title)}`);
     } catch (err) { setItem(li, "error", esc(err.message)); }
     pending--; updateTrayTitle(); refresh(true);

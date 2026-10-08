@@ -1063,6 +1063,19 @@ class Library:
                   (target.name, original_name, sha, fulltext or "", page_count, abstract, time.time(), row["id"]))
         self._rename_supps_locked(c, row["id"])
 
+    def pdf_matches(self, path, p):
+        """이 PDF가 이 논문의 것인지: 안에 DOI 가 있거나 제목이 앞부분에 있으면."""
+        try:
+            pdf = md.read_pdf(path)
+        except Exception:
+            return False
+        text = (pdf.get("full") or "")[:200_000].lower()
+        if p.get("doi") and p["doi"].lower() in text:
+            return True
+        if p.get("arxiv_id") and p["arxiv_id"].lower() in text:
+            return True
+        return bool(p.get("title")) and md.title_in_text(p["title"], md.norm_key(pdf.get("head") or text[:20000]))
+
     def attach_file(self, pid, src, original_name, in_place=False):
         """PDF가 없는 항목에 PDF를 붙인다. 반환: (상태, 항목 dict)."""
         src = Path(src)
@@ -1129,48 +1142,55 @@ class Library:
                  cited["count"] if cited else None, cited["source"] if cited else "",
                  cited["url"] if cited else "", now if cited else None))
             pid = cur.lastrowid
-        source, reason = self.fetch_open_pdf(pid, log) if fetch_pdf else (None, "")
+        source, reason, attempts = self.fetch_open_pdf(pid, log) if fetch_pdf else (None, "", [])
+        self.last_attempts = attempts
         return "added", self.get(pid), source, reason
 
     def fetch_open_pdf(self, pid, log=None):
         """arXiv·OpenAlex·출판사 페이지에서 무료(오픈 액세스) PDF를 받아 붙인다.
 
-        반환: (출처 이름 또는 None, 못 받았을 때의 까닭).
+        반환: (출처 이름 또는 None, 못 받았을 때의 까닭, 시도 목록 [{source, url, result}]).
         """
         log = log or (lambda *a: None)
         p = self.get(pid)
         if not p or p["has_file"]:
-            return None, ""
+            return None, "", []
         urls = md.open_pdf_urls(p, log)
         if not urls:
-            return None, "DOI·arXiv ID가 없어 찾을 곳이 없습니다"
-        reasons = []
+            return None, "DOI·arXiv ID가 없어 찾을 곳이 없습니다", []
+        reasons, attempts = [], []
         for url, source in urls:
             tmp = self.tmp_dir / f"{os.urandom(8).hex()}.pdf"
+            result = ""
             try:
                 md.download_pdf(url, tmp)
                 status, _ = self.attach_file(pid, tmp, Path(urllib.parse.urlparse(url).path).name or "download.pdf")
                 if status == "attached":
                     log(f"무료 PDF 받음 ({source}): {url}")
-                    return source, ""
-                reasons.append("같은 PDF가 이미 서재에 있습니다")
+                    attempts.append({"source": source, "url": url, "result": "받음"})
+                    return source, "", attempts
+                result = "같은 PDF가 이미 서재에 있습니다"
+                reasons.append(result)
             except urllib.error.HTTPError as e:
-                log(f"PDF 받기 실패 {url}: HTTP {e.code}")
-                reasons.append("출판사가 자동 내려받기를 막았습니다" if e.code in (401, 403, 429)
-                               else f"HTTP {e.code}")
+                result = f"HTTP {e.code}" + (" (출판사가 막음)" if e.code in (401, 403, 429) else "")
+                reasons.append("출판사가 자동 내려받기를 막았습니다" if e.code in (401, 403, 429) else f"HTTP {e.code}")
+            except md.Blocked as e:
+                result = str(e)
+                reasons.append("출판사가 자동 내려받기를 막았습니다")
             except md.NotPdf as e:
-                log(f"PDF 받기 실패 {url}: {e}")
+                result = str(e)
                 reasons.append("무료 공개본이 아니거나 로그인이 필요합니다")
             except Exception as e:
-                log(f"PDF 받기 실패 {url}: {e}")
-                reasons.append(str(e))
+                result = str(e) or e.__class__.__name__
+                reasons.append(result)
             finally:
                 tmp.unlink(missing_ok=True)
-        # 가장 쓸모 있는 까닭 하나를 고른다
+            log(f"PDF 받기 실패 {url}: {result}")
+            attempts.append({"source": source, "url": url, "result": result})
         for want in ("출판사가 자동 내려받기를 막았습니다", "무료 공개본이 아니거나 로그인이 필요합니다"):
             if want in reasons:
-                return None, want
-        return None, reasons[-1] if reasons else "무료 공개본을 찾지 못했습니다"
+                return None, want, attempts
+        return None, (reasons[-1] if reasons else "무료 공개본을 찾지 못했습니다"), attempts
 
     # ------------------------------------------------------------ 읽음 상태·별점·컬렉션
 

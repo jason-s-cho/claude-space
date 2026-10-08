@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import metadata as md  # noqa: E402
 from library import BLOCKED_EXTS, Library, is_video, parse_my_names  # noqa: E402
 
-APP_VERSION = "1.5.3"
+APP_VERSION = "1.5.4"
 HERE = Path(__file__).resolve().parent
 # 설치판(PyInstaller)으로 묶였을 때는 화면 파일이 압축 해제 폴더에 있다
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", HERE))
@@ -72,6 +72,91 @@ def start_citation_job(only_stale=True):
             cite_job.update(running=False, finished_at=time.time())
     threading.Thread(target=run, daemon=True).start()
     return True
+
+
+# ---------------------------------------------------------------- 브라우저로 받은 PDF 자동으로 붙이기
+
+watch = {"items": {}, "thread": None}
+watch_lock = threading.Lock()
+WATCH_SECONDS = 300
+
+
+def downloads_dir():
+    """사용자의 '다운로드' 폴더 (Windows 는 위치를 옮겼을 수 있어 레지스트리를 먼저 본다)."""
+    if os.environ.get("PAPERSHELF_DOWNLOADS"):
+        return Path(os.environ["PAPERSHELF_DOWNLOADS"])
+    if platform.system() == "Windows":
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders") as k:
+                v = winreg.QueryValueEx(k, "{374DE290-123F-4565-9164-39C4925E467B}")[0]
+                return Path(os.path.expandvars(v))
+        except Exception:
+            pass
+    return Path.home() / "Downloads"
+
+
+def watch_download(pid):
+    """pid 논문의 PDF를 사용자가 브라우저로 내려받으면 잠시 동안 찾아서 붙인다."""
+    now = time.time()
+    with watch_lock:
+        watch["items"][pid] = {"since": now - 2, "until": now + WATCH_SECONDS, "sizes": {}, "checked": set()}
+        if watch["thread"] is None or not watch["thread"].is_alive():
+            watch["thread"] = threading.Thread(target=_watch_loop, daemon=True)
+            watch["thread"].start()
+    return downloads_dir()
+
+
+def _watch_loop():
+    while True:
+        with watch_lock:
+            now = time.time()
+            for pid in [k for k, v in watch["items"].items() if v["until"] < now]:
+                watch["items"].pop(pid)
+            items = dict(watch["items"])
+            if not items:
+                watch["thread"] = None
+                return
+        lib = state["lib"]
+        try:
+            files = [f for f in downloads_dir().glob("*") if f.suffix.lower() == ".pdf" and f.is_file()]
+        except OSError:
+            files = []
+        for pid, w in items.items():
+            p = lib.get(pid)
+            if not p or p["has_file"]:
+                with watch_lock:
+                    watch["items"].pop(pid, None)
+                continue
+            for f in files:
+                try:
+                    st = f.stat()
+                except OSError:
+                    continue
+                key = str(f)
+                if st.st_mtime < w["since"] or key in w["checked"]:
+                    continue
+                if w["sizes"].get(key) != st.st_size:  # 아직 받는 중이면 크기가 바뀐다
+                    w["sizes"][key] = st.st_size
+                    continue
+                w["checked"].add(key)
+                if not lib.pdf_matches(f, p):
+                    log(f"다운로드 폴더의 {f.name} 은(는) ‘{p['title']}’의 PDF가 아니어서 건너뜀")
+                    continue
+                tmp = lib.tmp_dir / f"{uuid.uuid4().hex}.pdf"
+                try:
+                    import shutil
+                    shutil.copy2(f, tmp)  # 다운로드 폴더의 원본은 그대로 둔다
+                    status, _ = lib.attach_file(pid, tmp, f.name)
+                    log(f"[{status}] 브라우저로 받은 {f.name} → {p['title']}")
+                except Exception as e:
+                    tmp.unlink(missing_ok=True)
+                    log(f"브라우저로 받은 PDF 붙이기 실패 {f.name}: {e}")
+                with watch_lock:
+                    watch["items"].pop(pid, None)
+                break
+        time.sleep(2)
 
 
 def log(*a):
@@ -542,13 +627,22 @@ class Handler(BaseHTTPRequestHandler):
         except (LookupError, ValueError) as e:
             return self.send_error_json(400, str(e))
         log(f"[{status}] {data.get('key')} → {p['title']}" + (f" (PDF: {source})" if source else ""))
-        self.send_json({"status": status, "paper": p, "pdf_source": source, "pdf_reason": reason})
+        self.send_json({"status": status, "paper": p, "pdf_source": source, "pdf_reason": reason,
+                        "pdf_attempts": getattr(state["lib"], "last_attempts", []) if status == "added" else []})
+
+    def watch_pdf(self, qs, pid):
+        p = state["lib"].get(int(pid))
+        if not p:
+            return self.send_error_json(404, "없는 논문입니다")
+        folder = watch_download(int(pid))
+        self.send_json({"ok": True, "folder": str(folder), "seconds": WATCH_SECONDS})
 
     def find_pdf(self, qs, pid):
         if not state["online"]:
             return self.send_error_json(400, "오프라인 모드입니다")
-        source, reason = state["lib"].fetch_open_pdf(int(pid), log=log)
-        self.send_json({"pdf_source": source, "pdf_reason": reason, "paper": state["lib"].get(int(pid))})
+        source, reason, attempts = state["lib"].fetch_open_pdf(int(pid), log=log)
+        self.send_json({"pdf_source": source, "pdf_reason": reason, "pdf_attempts": attempts,
+                        "paper": state["lib"].get(int(pid))})
 
     def mark(self, qs, pid):
         data = self.read_json()
@@ -675,6 +769,7 @@ ROUTES = [
     ("GET", r"/api/citations/status", Handler.citations_status),
     ("POST", r"/api/papers/by-id", Handler.add_by_id),
     ("POST", r"/api/papers/(\d+)/find-pdf", Handler.find_pdf),
+    ("POST", r"/api/papers/(\d+)/watch-pdf", Handler.watch_pdf),
     ("PUT", r"/api/papers/(\d+)/mark", Handler.mark),
     ("PUT", r"/api/papers/(\d+)/collection", Handler.set_collection),
     ("GET", r"/api/collections", Handler.list_collections),

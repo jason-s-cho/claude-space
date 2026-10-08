@@ -642,6 +642,12 @@ def open_pdf_urls(p, log=None):
         for loc in oa:
             add(loc.get("pdf_url"), (loc.get("source") or {}).get("display_name") or "OpenAlex")
         add((w.get("open_access") or {}).get("oa_url"), "OpenAlex")
+        # Europe PMC: 오픈 액세스 논문 사본(출판 후 며칠~몇 주 뒤 올라옴). 출판사가 자동 내려받기를 막아도 여기서 받을 수 있다
+        try:
+            for url in europepmc_pdf_urls(doi):
+                add(url, "Europe PMC")
+        except Exception as e:
+            log(f"Europe PMC 조회 실패 {doi}: {e}")
         # 오픈 액세스 출판사는 DOI만으로 PDF 주소를 안다 (OpenAlex 에 아직 없는 새 논문도)
         for pattern, template, name in PUBLISHER_PDF:
             m = re.match(pattern, doi)
@@ -652,6 +658,21 @@ def open_pdf_urls(p, log=None):
         # 마지막으로 출판사 논문 페이지(DOI). 무료 공개본이면 페이지에 PDF 주소가 적혀 있다
         add("https://doi.org/" + doi, "출판사 누리집")
     return out
+
+
+def europepmc_pdf_urls(doi):
+    q = urllib.parse.urlencode({"query": f'DOI:"{doi}"', "resultType": "core", "format": "json", "pageSize": 1})
+    data = json.loads(http_get("https://www.ebi.ac.uk/europepmc/webservices/rest/search?" + q))
+    out = []
+    for r in (data.get("resultList") or {}).get("result") or []:
+        if (r.get("doi") or "").lower() != doi.lower():
+            continue
+        for u in ((r.get("fullTextUrlList") or {}).get("fullTextUrl") or []):
+            if (u.get("documentStyle") or "").lower() == "pdf" and (u.get("availabilityCode") or "") in ("OA", "F"):
+                out.append(u.get("url"))
+        if r.get("pmcid") and r.get("isOpenAccess") == "Y":
+            out.append(f"https://europepmc.org/articles/{r['pmcid']}?pdf=render")
+    return [u for u in out if u]
 
 
 PUBLISHER_PDF = [
@@ -711,13 +732,37 @@ def download_pdf(url, dest, max_bytes=300 * 1024 * 1024, _follow=True):
                     f.write(chunk)
             return True
         final = r.geturl()
-        if not _follow:
-            raise NotPdf(f"PDF가 아닌 페이지가 왔습니다 ({final})")
-        page = (head + r.read(3_000_000)).decode("utf-8", "replace")
+        page = (head + r.read(3_000_000 if _follow else 300_000)).decode("utf-8", "replace")
+    title = page_title(page)
+    if looks_blocked(page):
+        raise Blocked(f"사람 확인 페이지가 왔습니다 — {final}" + (f" ‘{title}’" if title else ""))
+    if not _follow:
+        raise NotPdf(f"PDF 대신 웹페이지가 왔습니다 — {final}" + (f" ‘{title}’" if title else ""))
     pdf = citation_pdf_url(page, final)
     if not pdf or pdf == url:
-        raise NotPdf(f"페이지에 PDF 주소가 없습니다 ({final})")
+        raise NotPdf(f"페이지에 PDF 주소가 없습니다 — {final}" + (f" ‘{title}’" if title else ""))
     return download_pdf(pdf, dest, max_bytes, _follow=False)
+
+
+def looks_blocked(page):
+    """자동 접속을 막는 사람 확인·차단 페이지인지 (논문 페이지라면 있어야 할 서지 표시가 없음)."""
+    title = page_title(page).lower()
+    if re.search(r"just a moment|attention required|captcha|robot|access denied|are you human|verify|security check|"
+                 r"cookies? (?:not supported|required)|bot", title):
+        return True
+    # 제목으로 알 수 없으면: 서지 표시가 하나도 없고, 작은 페이지가 자바스크립트·쿠키를 요구하면 확인 페이지로 본다
+    low = page.lower()
+    return ("citation_" not in low and "dc.title" not in low and len(page) < 40_000
+            and bool(re.search(r"enable javascript|javascript is (?:disabled|required)|enable cookies|challenge", low)))
+
+
+class Blocked(Exception):
+    """출판사가 사람 확인 페이지로 자동 내려받기를 막음."""
+
+
+def page_title(page):
+    m = re.search(r"<title[^>]*>(.*?)</title>", page or "", re.I | re.S)
+    return clean_text(html.unescape(m.group(1)))[:80] if m else ""
 
 
 ATOM = "{http://www.w3.org/2005/Atom}"
