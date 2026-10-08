@@ -1158,7 +1158,7 @@ $("#results").addEventListener("click", async (e) => {
     b.disabled = true; b.innerHTML = `<span class="spin"></span>찾는 중…`;
     try {
       const r = await api(`/api/papers/${id}/find-pdf`, { method: "POST" });
-      toast(r.pdf_source ? `${r.pdf_source}에서 PDF를 받아 붙였습니다` : "무료로 공개된 PDF를 찾지 못했습니다. 구한 PDF를 이 카드 위에 끌어다 놓으세요.");
+      toast(r.pdf_source ? `${r.pdf_source}에서 PDF를 받아 붙였습니다` : `PDF를 받지 못했습니다 — ${r.pdf_reason || "무료 공개본을 찾지 못했습니다"}. 구한 PDF를 이 카드 위에 끌어다 놓으세요.`);
     } catch (err) { toast(err.message); }
     return refresh(true);
   }
@@ -1431,7 +1431,7 @@ $("#idForm").addEventListener("submit", async (e) => {
     try {
       const r = await api("/api/papers/by-id", jsonOpts("POST", { key: k, fetch_pdf: fetchPdf }));
       const pp = r.paper;
-      if (r.status === "added") setItem(li, "added", esc(pp.title) + (pp.has_file ? ` <span class="tag supp">PDF 받음 · ${esc(r.pdf_source)}</span>` : ` <span class="tag nofile">PDF 없음</span>`));
+      if (r.status === "added") setItem(li, "added", esc(pp.title) + (pp.has_file ? ` <span class="tag supp">PDF 받음 · ${esc(r.pdf_source)}</span>` : ` <span class="tag nofile" title="${esc(r.pdf_reason || "")}">PDF 없음</span>` + (r.pdf_reason && fetchPdf ? `<br><small class="hint">${esc(r.pdf_reason)}</small>` : "")));
       else setItem(li, "duplicate", `이미 서재에 있습니다 — ${esc(pp.title)}`);
     } catch (err) { setItem(li, "error", esc(err.message)); }
     pending--; updateTrayTitle(); refresh(true);

@@ -12,6 +12,7 @@ import sqlite3
 import threading
 import time
 import unicodedata
+import urllib.error
 import urllib.parse
 from pathlib import Path
 
@@ -862,7 +863,7 @@ class Library:
     def add_by_id(self, key, online=True, fetch_pdf=True, log=None):
         """DOI·arXiv ID·ISBN·KCI 논문 ID 로 서지 정보만 먼저 추가한다(PDF는 무료본이 있으면 받아 온다).
 
-        반환: (상태, 항목 dict, PDF 출처 또는 None). 상태는 'added' | 'duplicate'.
+        반환: (상태, 항목 dict, PDF 출처 또는 None, PDF를 못 받은 까닭). 상태는 'added' | 'duplicate'.
         """
         ident = md.parse_identifier(key)
         if ident is None:
@@ -883,12 +884,12 @@ class Library:
         with self.connect() as c:
             dup = self._find_existing(c, rec)
         if dup:
-            return "duplicate", self.to_dict(dup), None
+            return "duplicate", self.to_dict(dup), None, ""
         cited = md.citation_count(rec, log)
         with self.lock, self.connect() as c:
             dup = self._find_existing(c, rec)
             if dup:
-                return "duplicate", self.to_dict(dup), None
+                return "duplicate", self.to_dict(dup), None, ""
             now = time.time()
             cur = c.execute(
                 """INSERT INTO papers (file_name, original_name, sha256, title, authors, authors_text,
@@ -905,33 +906,48 @@ class Library:
                  cited["count"] if cited else None, cited["source"] if cited else "",
                  cited["url"] if cited else "", now if cited else None))
             pid = cur.lastrowid
-        source = self.fetch_open_pdf(pid, log) if fetch_pdf else None
-        return "added", self.get(pid), source
+        source, reason = self.fetch_open_pdf(pid, log) if fetch_pdf else (None, "")
+        return "added", self.get(pid), source, reason
 
     def fetch_open_pdf(self, pid, log=None):
-        """arXiv·OpenAlex 가 알려 주는 무료(오픈 액세스) PDF를 받아 붙인다. 출처 이름 또는 None."""
+        """arXiv·OpenAlex·출판사 페이지에서 무료(오픈 액세스) PDF를 받아 붙인다.
+
+        반환: (출처 이름 또는 None, 못 받았을 때의 까닭).
+        """
         log = log or (lambda *a: None)
         p = self.get(pid)
         if not p or p["has_file"]:
-            return None
-        try:
-            urls = md.open_pdf_urls(p)
-        except Exception as e:
-            log(f"무료 PDF 찾기 실패: {e}")
-            return None
+            return None, ""
+        urls = md.open_pdf_urls(p, log)
+        if not urls:
+            return None, "DOI·arXiv ID가 없어 찾을 곳이 없습니다"
+        reasons = []
         for url, source in urls:
             tmp = self.tmp_dir / f"{os.urandom(8).hex()}.pdf"
             try:
-                if not md.download_pdf(url, tmp):
-                    continue
+                md.download_pdf(url, tmp)
                 status, _ = self.attach_file(pid, tmp, Path(urllib.parse.urlparse(url).path).name or "download.pdf")
                 if status == "attached":
-                    return source
+                    log(f"무료 PDF 받음 ({source}): {url}")
+                    return source, ""
+                reasons.append("같은 PDF가 이미 서재에 있습니다")
+            except urllib.error.HTTPError as e:
+                log(f"PDF 받기 실패 {url}: HTTP {e.code}")
+                reasons.append("출판사가 자동 내려받기를 막았습니다" if e.code in (401, 403, 429)
+                               else f"HTTP {e.code}")
+            except md.NotPdf as e:
+                log(f"PDF 받기 실패 {url}: {e}")
+                reasons.append("무료 공개본이 아니거나 로그인이 필요합니다")
             except Exception as e:
                 log(f"PDF 받기 실패 {url}: {e}")
+                reasons.append(str(e))
             finally:
                 tmp.unlink(missing_ok=True)
-        return None
+        # 가장 쓸모 있는 까닭 하나를 고른다
+        for want in ("출판사가 자동 내려받기를 막았습니다", "무료 공개본이 아니거나 로그인이 필요합니다"):
+            if want in reasons:
+                return None, want
+        return None, reasons[-1] if reasons else "무료 공개본을 찾지 못했습니다"
 
     # ------------------------------------------------------------ 읽음 상태·별점·컬렉션
 

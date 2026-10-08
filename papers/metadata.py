@@ -611,8 +611,12 @@ def parse_identifier(text):
     return None
 
 
-def open_pdf_urls(p):
-    """이 논문의 무료(오픈 액세스) PDF 주소 후보: [(주소, 출처 이름)]."""
+def open_pdf_urls(p, log=None):
+    """이 논문의 무료(오픈 액세스) PDF 주소 후보: [(주소, 출처 이름)].
+
+    PDF 주소가 아니라 논문 안내 페이지여도 된다(download_pdf 가 페이지의 citation_pdf_url 을 따라간다).
+    """
+    log = log or (lambda *a: None)
     out, seen = [], set()
 
     def add(url, source):
@@ -627,33 +631,76 @@ def open_pdf_urls(p):
     if arxiv:
         add(f"https://arxiv.org/pdf/{arxiv}", "arXiv")
     if doi and not doi.startswith("10.48550/"):
-        w = openalex_get("works/https://doi.org/" + urllib.parse.quote(doi, safe="/:;()"))
+        try:
+            w = openalex_get("works/https://doi.org/" + urllib.parse.quote(doi, safe="/:;()"))
+        except Exception as e:
+            log(f"OpenAlex 조회 실패 {doi}: {e}")
+            w = {}
         locs = [w.get("best_oa_location") or {}, w.get("primary_location") or {}] + list(w.get("locations") or [])
-        for loc in locs:
-            if loc.get("pdf_url") and loc.get("is_oa", True):
-                add(loc["pdf_url"], ((loc.get("source") or {}).get("display_name") or "OpenAlex"))
+        oa = [loc for loc in locs if loc.get("is_oa")]
+        for loc in oa:
+            add(loc.get("pdf_url"), (loc.get("source") or {}).get("display_name") or "OpenAlex")
         add((w.get("open_access") or {}).get("oa_url"), "OpenAlex")
+        for loc in oa:
+            add(loc.get("landing_page_url"), (loc.get("source") or {}).get("display_name") or "출판사 누리집")
+        # 마지막으로 출판사 논문 페이지(DOI). 무료 공개본이면 페이지에 PDF 주소가 적혀 있다
+        add("https://doi.org/" + doi, "출판사 누리집")
     return out
 
 
-def download_pdf(url, dest, max_bytes=300 * 1024 * 1024):
-    """주소의 파일이 PDF면 dest 에 저장하고 True. PDF가 아니면(안내 페이지 등) False."""
+# 일부 출판사는 브라우저가 아닌 요청을 막으므로, 브라우저 형식을 앞에 둔 이름으로 묻는다
+DOWNLOAD_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+               "PaperShelf/1.0 (+https://github.com/jason-s-cho/claude-space)")
+CITATION_PDF_RE = re.compile(r"<meta\b[^>]*?\bname\s*=\s*[\"']citation_pdf_url[\"'][^>]*>", re.I)
+CONTENT_RE = re.compile(r"\bcontent\s*=\s*[\"']([^\"']+)[\"']", re.I)
+
+
+def citation_pdf_url(page, base):
+    """논문 페이지 HTML 의 <meta name="citation_pdf_url" content="…"> (대부분의 출판사가 씀)."""
+    m = CITATION_PDF_RE.search(page)
+    if not m:
+        return ""
+    c = CONTENT_RE.search(m.group(0))
+    return urllib.parse.urljoin(base, html.unescape(c.group(1)).strip()) if c else ""
+
+
+def _open_url(url, accept):
+    req = urllib.request.Request(url, headers={"User-Agent": DOWNLOAD_UA, "Accept": accept,
+                                               "Accept-Language": "en-US,en;q=0.8,ko;q=0.6"})
+    return urllib.request.urlopen(req, timeout=60)
+
+
+class NotPdf(Exception):
+    """받은 것이 PDF가 아님(안내·로그인 페이지 등)."""
+
+
+def download_pdf(url, dest, max_bytes=300 * 1024 * 1024, _follow=True):
+    """주소의 PDF를 dest 에 저장하고 True. 논문 안내 페이지면 그 페이지의 PDF 주소를 한 번 따라간다.
+
+    PDF를 못 받으면 NotPdf 나 urllib 오류를 낸다.
+    """
     if not url.startswith(("http://", "https://")):
-        return False
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept": "application/pdf,*/*;q=0.5"})
-    with urllib.request.urlopen(req, timeout=60) as r:
+        raise NotPdf("http 주소가 아닙니다")
+    with _open_url(url, "application/pdf,text/html;q=0.9,*/*;q=0.5") as r:
         head = r.read(1024)
-        if not head.lstrip().startswith(b"%PDF"):
-            return False
-        total = len(head)
-        with open(dest, "wb") as f:
-            f.write(head)
-            while chunk := r.read(1 << 16):
-                total += len(chunk)
-                if total > max_bytes:
-                    raise ValueError("PDF가 너무 큽니다")
-                f.write(chunk)
-    return True
+        if head.lstrip().startswith(b"%PDF"):
+            total = len(head)
+            with open(dest, "wb") as f:
+                f.write(head)
+                while chunk := r.read(1 << 16):
+                    total += len(chunk)
+                    if total > max_bytes:
+                        raise ValueError("PDF가 너무 큽니다")
+                    f.write(chunk)
+            return True
+        final = r.geturl()
+        if not _follow:
+            raise NotPdf(f"PDF가 아닌 페이지가 왔습니다 ({final})")
+        page = (head + r.read(3_000_000)).decode("utf-8", "replace")
+    pdf = citation_pdf_url(page, final)
+    if not pdf or pdf == url:
+        raise NotPdf(f"페이지에 PDF 주소가 없습니다 ({final})")
+    return download_pdf(pdf, dest, max_bytes, _follow=False)
 
 
 ATOM = "{http://www.w3.org/2005/Atom}"

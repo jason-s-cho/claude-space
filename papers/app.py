@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import metadata as md  # noqa: E402
 from library import BLOCKED_EXTS, Library, is_video, parse_my_names  # noqa: E402
 
-APP_VERSION = "1.4.14"
+APP_VERSION = "1.4.15"
 HERE = Path(__file__).resolve().parent
 # 설치판(PyInstaller)으로 묶였을 때는 화면 파일이 압축 해제 폴더에 있다
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", HERE))
@@ -533,18 +533,18 @@ class Handler(BaseHTTPRequestHandler):
     def add_by_id(self, qs):
         data = self.read_json()
         try:
-            status, p, source = state["lib"].add_by_id(str(data.get("key", "")), online=state["online"],
-                                                       fetch_pdf=data.get("fetch_pdf", True), log=log)
+            status, p, source, reason = state["lib"].add_by_id(str(data.get("key", "")), online=state["online"],
+                                                               fetch_pdf=data.get("fetch_pdf", True), log=log)
         except (LookupError, ValueError) as e:
             return self.send_error_json(400, str(e))
         log(f"[{status}] {data.get('key')} → {p['title']}" + (f" (PDF: {source})" if source else ""))
-        self.send_json({"status": status, "paper": p, "pdf_source": source})
+        self.send_json({"status": status, "paper": p, "pdf_source": source, "pdf_reason": reason})
 
     def find_pdf(self, qs, pid):
         if not state["online"]:
             return self.send_error_json(400, "오프라인 모드입니다")
-        source = state["lib"].fetch_open_pdf(int(pid), log=log)
-        self.send_json({"pdf_source": source, "paper": state["lib"].get(int(pid))})
+        source, reason = state["lib"].fetch_open_pdf(int(pid), log=log)
+        self.send_json({"pdf_source": source, "pdf_reason": reason, "paper": state["lib"].get(int(pid))})
 
     def mark(self, qs, pid):
         data = self.read_json()
