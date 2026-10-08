@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import metadata as md  # noqa: E402
 from library import Library, is_video, parse_my_names  # noqa: E402
 
-APP_VERSION = "1.4.7"
+APP_VERSION = "1.4.8"
 HERE = Path(__file__).resolve().parent
 # 설치판(PyInstaller)으로 묶였을 때는 화면 파일이 압축 해제 폴더에 있다
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", HERE))
@@ -198,6 +198,21 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def static_file(self, qs, name):
+        """앱에 들어 있는 글꼴·아이콘 파일 (static/ 아래만)."""
+        base = (RESOURCE_DIR / "static").resolve()
+        path = (base / name).resolve()
+        if base not in path.parents or not path.is_file():
+            return self.send_error_json(404, "not found")
+        body = path.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", mimetypes.guess_type(path.name)[0] or
+                         ("font/woff2" if path.suffix == ".woff2" else "application/octet-stream"))
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "max-age=86400")
         self.end_headers()
         self.wfile.write(body)
 
@@ -478,6 +493,7 @@ class Handler(BaseHTTPRequestHandler):
 
 ROUTES = [
     ("GET", r"/", Handler.index),
+    ("GET", r"/static/([\w\-./]+)", Handler.static_file),
     ("GET", r"/(?:pdf|file)/(\d+)(?:/.*)?", Handler.pdf),
     ("GET", r"/api/info", Handler.info),
     ("POST", r"/api/settings", Handler.settings),

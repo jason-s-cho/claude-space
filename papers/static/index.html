@@ -4,339 +4,459 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>논문 서재</title>
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 24 24%22%3E%3Crect x=%224%22 y=%222%22 width=%2216%22 height=%2220%22 rx=%222%22 fill=%22%231a4fc4%22/%3E%3Cpath d=%22M8 7h8M8 11h8M8 15h5%22 stroke=%22white%22 stroke-width=%221.6%22/%3E%3C/svg%3E">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<link rel="icon" href="/static/icon.png">
 <style>
-/* Layout: Google Scholar형 — 위에 검색창, 왼쪽에 기간·정렬, 가운데에 결과 목록. 창 전체가 PDF 놓는 곳. */
+/* Layout: 모던 앱형 — 왼쪽 메뉴 패널(서재·종류·기간·도구) + 오른쪽 도구 막대와 카드 목록. 창 전체가 파일 놓는 곳. */
+@font-face {
+  font-family: "Pretendard Variable";
+  src: url("/static/fonts/PretendardVariable.woff2") format("woff2-variations"), url("/static/fonts/PretendardVariable.woff2") format("woff2");
+  font-weight: 45 920;
+  font-display: swap;
+}
 :root {
-  --paper: #f6f7f9;
-  --sheet: #ffffff;
-  --ink: #1d2433;
-  --ink-soft: #5b6476;
-  --rule: #dde1e8;
-  --accent: #1a4fc4;
-  --accent-soft: #e7edfb;
-  --link: #1a0dab;
-  --byline: #1e7a3c;
-  --warn: #b25e09;
-  --warn-soft: #fdf1e2;
+  --bg: #f4f5f8;
+  --panel: #ffffff;
+  --nav: #fafbfc;
+  --sheet: var(--panel);
+  --paper: var(--bg);
+  --ink: #18202f;
+  --ink-soft: #5d6678;
+  --ink-faint: #8b93a4;
+  --rule: #e5e8ee;
+  --rule-strong: #d3d8e1;
+  --accent: #4f46e5;
+  --accent-hover: #4338ca;
+  --accent-soft: #eef0ff;
+  --on-accent: #ffffff;
+  --link: var(--ink);
+  --byline: #4b5565;
+  --good: #15803d;
+  --warn: #b45309;
+  --warn-soft: #fef3e2;
   --danger: #c0392b;
-  --mark: #fff0a8;
-  --font-body: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
-  --radius: 10px;
+  --mark: #fff1a8;
+  --star: #c48a00;
+  --star-soft: #fdf4dc;
+  --t-journal: #2563eb;
+  --t-proceedings: #7c3aed;
+  --t-book: #b45309;
+  --t-report: #0f766e;
+  --t-other: #64748b;
+  --shadow-sm: 0 1px 2px rgb(16 24 40 / 0.05);
+  --shadow-md: 0 6px 20px rgb(16 24 40 / 0.08);
+  --shadow-lg: 0 18px 50px rgb(16 24 40 / 0.18);
+  --font-body: "Pretendard Variable", Pretendard, "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", Consolas, Menlo, monospace;
+  --radius: 12px;
+  color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --paper: #12151c; --sheet: #1a1f29; --ink: #e7eaf0; --ink-soft: #9aa3b5; --rule: #2c3342;
-    --accent: #7d9ef0; --accent-soft: #233154; --link: #8ab4f8; --byline: #6cc58a;
-    --warn: #f0a85a; --warn-soft: #3a2a17; --danger: #f0806f; --mark: #5a4b12;
+    --bg: #0e1016; --panel: #171a22; --nav: #12151c; --ink: #e9ebf1; --ink-soft: #a3abbc; --ink-faint: #707a8c;
+    --rule: #252a35; --rule-strong: #333948; --accent: #8b8cf8; --accent-hover: #a5a6fb; --accent-soft: #24264a; --on-accent: #10121a;
+    --byline: #aab2c2; --good: #4ade80; --warn: #f5b051; --warn-soft: #3a2a14; --danger: #f28b7c; --mark: #5c4c10;
+    --star: #f2c94c; --star-soft: #3a3212;
+    --t-journal: #7aa7ff; --t-proceedings: #b794f6; --t-book: #f0b35a; --t-report: #4fd1c5; --t-other: #94a3b8;
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3); --shadow-md: 0 8px 24px rgb(0 0 0 / 0.35); --shadow-lg: 0 18px 50px rgb(0 0 0 / 0.55);
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
-  --paper: #12151c; --sheet: #1a1f29; --ink: #e7eaf0; --ink-soft: #9aa3b5; --rule: #2c3342;
-  --accent: #7d9ef0; --accent-soft: #233154; --link: #8ab4f8; --byline: #6cc58a;
-  --warn: #f0a85a; --warn-soft: #3a2a17; --danger: #f0806f; --mark: #5a4b12;
+  --bg: #0e1016; --panel: #171a22; --nav: #12151c; --ink: #e9ebf1; --ink-soft: #a3abbc; --ink-faint: #707a8c;
+  --rule: #252a35; --rule-strong: #333948; --accent: #8b8cf8; --accent-hover: #a5a6fb; --accent-soft: #24264a; --on-accent: #10121a;
+  --byline: #aab2c2; --good: #4ade80; --warn: #f5b051; --warn-soft: #3a2a14; --danger: #f28b7c; --mark: #5c4c10;
+  --star: #f2c94c; --star-soft: #3a3212;
+  --t-journal: #7aa7ff; --t-proceedings: #b794f6; --t-book: #f0b35a; --t-report: #4fd1c5; --t-other: #94a3b8;
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3); --shadow-md: 0 8px 24px rgb(0 0 0 / 0.35); --shadow-lg: 0 18px 50px rgb(0 0 0 / 0.55);
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
-html, body { margin: 0; }
-body { background: var(--paper); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.55; min-height: 100vh; }
-button, input, select, textarea { font: inherit; color: inherit; }
-.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
-a { color: var(--link); }
+html, body { margin: 0; height: 100%; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.55; -webkit-font-smoothing: antialiased; letter-spacing: -0.005em; }
+button, input, select, textarea { font: inherit; color: inherit; letter-spacing: inherit; }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: 0; }
+a { color: var(--accent); }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.ic { width: 18px; height: 18px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.ic.sm { width: 15px; height: 15px; }
+.ic.fill { fill: currentColor; stroke: none; }
 
-/* 상단 */
-header.top { background: var(--sheet); border-bottom: 1px solid var(--rule); padding: 14px 24px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 20px; align-items: center; position: sticky; top: 0; z-index: 5; }
-.brand { display: flex; align-items: baseline; gap: 8px; white-space: nowrap; }
-.brand h1 { margin: 0; font-size: 1.3rem; font-weight: 700; letter-spacing: -0.01em; }
-.brand h1 span { color: var(--accent); }
-form.search { display: flex; max-width: 720px; width: 100%; border: 1px solid var(--rule); border-radius: 999px; background: var(--paper); overflow: hidden; }
-form.search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
-form.search select { border: 0; background: transparent; padding: 0 6px 0 16px; color: var(--ink-soft); border-right: 1px solid var(--rule); cursor: pointer; }
-form.search input { flex: 1; min-width: 0; border: 0; background: transparent; padding: 10px 14px; outline: none; }
-form.search button { border: 0; background: var(--accent); color: var(--sheet); padding: 0 20px; font-weight: 600; cursor: pointer; }
-.top-actions { display: flex; gap: 6px; }
+/* 앱 뼈대 */
+.app { display: grid; grid-template-columns: 252px minmax(0, 1fr); height: 100vh; }
+.nav { background: var(--nav); border-right: 1px solid var(--rule); display: flex; flex-direction: column; min-height: 0; }
+.nav-scroll { flex: 1; overflow-y: auto; padding: 4px 12px 12px; overscroll-behavior: contain; }
+.brand { display: flex; align-items: center; gap: 10px; padding: 18px 20px 14px; }
+.brand .logo { width: 30px; height: 30px; border-radius: 9px; background: linear-gradient(135deg, #6366f1, #4338ca); display: grid; place-items: center; color: #fff; box-shadow: 0 4px 12px rgb(79 70 229 / 0.35); }
+.brand .logo .ic { width: 17px; height: 17px; stroke-width: 2; }
+.brand h1 { margin: 0; font-size: 1.12rem; font-weight: 750; letter-spacing: -0.02em; }
+.add-btn { margin: 4px 12px 10px; display: flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 10px; background: var(--accent); color: var(--on-accent); font-weight: 650; padding: 10px 14px; cursor: pointer; box-shadow: var(--shadow-sm); transition: background 0.15s, transform 0.05s; }
+.add-btn:hover { background: var(--accent-hover); }
+.add-btn:active { transform: translateY(1px); }
+.nav h3 { margin: 18px 8px 6px; font-size: 0.72rem; letter-spacing: 0.06em; color: var(--ink-faint); font-weight: 650; text-transform: uppercase; }
+.nav-list { display: grid; gap: 2px; }
+.nav-item, .opt { display: flex; align-items: center; gap: 10px; width: 100%; border: 0; background: none; text-align: left; padding: 7px 10px; border-radius: 8px; cursor: pointer; color: var(--ink-soft); font-size: 0.92rem; font-weight: 500; text-decoration: none; transition: background 0.12s, color 0.12s; }
+.nav-item:hover, .opt:hover { background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink); }
+.nav-item.on, .opt.on { background: var(--accent-soft); color: var(--accent); font-weight: 650; }
+.nav-item .n, .opt .n { margin-left: auto; font-size: 0.75rem; color: var(--ink-faint); font-variant-numeric: tabular-nums; font-weight: 500; }
+.nav-item.on .n { color: var(--accent); }
+.nav-item .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; margin: 0 5px; }
+.mine-toggle .ic { color: var(--star); }
+.mine-toggle.on { background: var(--star-soft); color: var(--ink); }
+.mine-toggle.on .n { color: var(--star); }
+.year-list { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 4px; }
+.year-list .opt { width: auto; padding: 4px 10px; border: 1px solid var(--rule); border-radius: 999px; font-size: 0.8rem; background: var(--panel); }
+.year-list .opt.on { border-color: transparent; }
+.range { display: flex; align-items: center; gap: 6px; padding: 8px 4px 0; font-size: 0.85rem; color: var(--ink-faint); }
+.range input { width: 0; flex: 1; padding: 5px 8px; border: 1px solid var(--rule); border-radius: 8px; background: var(--panel); font-size: 0.85rem; }
+.nav-foot { border-top: 1px solid var(--rule); padding: 10px 12px 12px; display: grid; gap: 4px; }
+.tools { display: flex; gap: 2px; justify-content: space-between; }
+.tool { position: relative; display: grid; place-items: center; width: 38px; height: 36px; border: 0; background: none; border-radius: 8px; color: var(--ink-soft); cursor: pointer; text-decoration: none; }
+.tool:hover { background: color-mix(in srgb, var(--ink) 7%, transparent); color: var(--ink); }
+.tool:disabled { opacity: 0.4; cursor: default; }
+.tool .ic { width: 19px; height: 19px; }
+.tool[data-tip]:hover::after { content: attr(data-tip); position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--panel); font-size: 0.75rem; padding: 4px 8px; border-radius: 6px; white-space: nowrap; pointer-events: none; z-index: 10; }
+.tool.spinning .ic { animation: spin 1s linear infinite; }
+.nav-foot .sub { font-size: 0.75rem; color: var(--ink-faint); padding: 0 6px; min-height: 0; }
 
-.btn { border: 1px solid var(--rule); background: var(--sheet); border-radius: 8px; padding: 6px 12px; cursor: pointer; font-size: 0.88rem; white-space: nowrap; }
-.btn:hover { border-color: var(--ink-soft); }
-.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--sheet); font-weight: 600; }
+.main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.toolbar { display: flex; align-items: center; gap: 12px; padding: 16px 28px 12px; }
+form.search { flex: 1; min-width: 0; display: flex; align-items: center; max-width: 760px; background: var(--panel); border: 1px solid var(--rule); border-radius: 12px; box-shadow: var(--shadow-sm); transition: border-color 0.15s, box-shadow 0.15s; }
+form.search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft); }
+form.search > .ic { margin-left: 14px; color: var(--ink-faint); }
+form.search input { flex: 1; min-width: 0; border: 0; background: transparent; padding: 11px 12px; outline: none; font-size: 0.95rem; }
+form.search input::placeholder { color: var(--ink-faint); }
+form.search select { border: 0; background: color-mix(in srgb, var(--ink) 5%, transparent); border-radius: 8px; margin-right: 6px; padding: 5px 8px; color: var(--ink-soft); cursor: pointer; font-size: 0.85rem; }
+.kbd { font-family: var(--font-mono); font-size: 0.72rem; color: var(--ink-faint); border: 1px solid var(--rule); border-bottom-width: 2px; border-radius: 5px; padding: 0 6px; margin-right: 8px; }
+form.search:focus-within .kbd { display: none; }
+.subbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; padding: 0 28px 12px; }
+.summary { display: flex; flex-direction: column; min-width: 0; }
+#count { font-size: 0.92rem; color: var(--ink-soft); }
+#count b { color: var(--ink); font-weight: 700; }
+#libPath { font-size: 0.75rem; color: var(--ink-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 52vw; }
+.subbar-right { display: flex; align-items: center; gap: 8px; }
+.seg { display: inline-flex; background: color-mix(in srgb, var(--ink) 5%, transparent); border-radius: 9px; padding: 3px; gap: 2px; }
+.seg button, .seg .opt { width: auto; border: 0; background: none; padding: 4px 10px; font-size: 0.82rem; color: var(--ink-soft); border-radius: 7px; cursor: pointer; font-weight: 500; }
+.seg button:hover, .seg .opt:hover { color: var(--ink); background: none; }
+.seg button.on, .seg .opt.on { background: var(--panel); color: var(--ink); box-shadow: var(--shadow-sm); font-weight: 650; }
+details.pop { position: relative; }
+details.pop > summary { list-style: none; display: flex; align-items: center; gap: 6px; padding: 6px 11px; border: 1px solid var(--rule); border-radius: 9px; background: var(--panel); cursor: pointer; font-size: 0.85rem; color: var(--ink-soft); }
+details.pop > summary::-webkit-details-marker { display: none; }
+details.pop[open] > summary, details.pop > summary:hover { border-color: var(--rule-strong); color: var(--ink); }
+.pop-panel { position: absolute; right: 0; top: calc(100% + 6px); width: 260px; background: var(--panel); border: 1px solid var(--rule); border-radius: 12px; box-shadow: var(--shadow-md); padding: 14px; display: grid; gap: 12px; z-index: 20; }
+.pop-panel .lbl { font-size: 0.75rem; color: var(--ink-faint); font-weight: 650; margin-bottom: 6px; }
+.pop-panel .seg { display: flex; }
+.pop-panel .seg button { flex: 1; }
+.perpage .row { display: flex; align-items: center; gap: 8px; }
+.perpage input[type=range] { flex: 1; width: 0; min-width: 0; margin: 0; accent-color: var(--accent); }
+.perpage output { font-variant-numeric: tabular-nums; min-width: 2.6em; text-align: right; color: var(--accent); font-weight: 700; font-size: 0.9rem; }
+.perpage .step { border: 1px solid var(--rule); background: var(--panel); border-radius: 7px; width: 26px; height: 26px; cursor: pointer; line-height: 1; color: var(--ink-soft); }
+.perpage .step:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.perpage .step:disabled { opacity: 0.4; }
+.check { display: flex; gap: 8px; align-items: center; font-size: 0.88rem; color: var(--ink-soft); cursor: pointer; }
+.check input { accent-color: var(--accent); }
+
+.scroll { flex: 1; overflow-y: auto; padding: 0 28px 60px; scroll-padding-top: 12px; }
+#results { display: grid; gap: 12px; max-width: 980px; }
+
+.btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--rule); background: var(--panel); border-radius: 9px; padding: 7px 13px; cursor: pointer; font-size: 0.88rem; white-space: nowrap; font-weight: 550; transition: border-color 0.12s, background 0.12s; }
+.btn:hover { border-color: var(--rule-strong); background: color-mix(in srgb, var(--ink) 3%, var(--panel)); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
 .btn.danger { color: var(--danger); }
 .btn:disabled { opacity: 0.5; cursor: default; }
+.btn.small { padding: 3px 10px; font-size: 0.8rem; }
 
-/* 본문 */
-.layout { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 32px; max-width: 1180px; margin: 0 auto; padding: 22px 24px 80px; }
-aside.side { display: grid; gap: 22px; align-content: start; position: sticky; top: 90px; max-height: calc(100vh - 100px); overflow-y: auto; overscroll-behavior: contain; min-width: 0; }
-aside.side > section { min-width: 0; }
-.side h3 { margin: 0 0 6px; font-size: 0.75rem; letter-spacing: 0.08em; color: var(--ink-soft); font-weight: 600; }
-.opt-list { display: grid; gap: 1px; }
-.opt { border: 0; background: none; text-align: left; padding: 4px 8px; border-radius: 6px; cursor: pointer; color: var(--ink-soft); font-size: 0.9rem; }
-.opt:hover { background: var(--accent-soft); color: var(--ink); }
-.opt.on { color: var(--accent); font-weight: 600; }
-.range { display: flex; align-items: center; gap: 4px; padding: 4px 8px; font-size: 0.85rem; color: var(--ink-soft); }
-.range input { width: 62px; padding: 3px 6px; border: 1px solid var(--rule); border-radius: 6px; background: var(--sheet); }
-.check { display: flex; gap: 8px; align-items: center; padding: 4px 8px; font-size: 0.9rem; color: var(--ink-soft); cursor: pointer; }
-
-.dropcard { border: 1.5px dashed var(--rule); border-radius: var(--radius); padding: 16px 14px; text-align: center; color: var(--ink-soft); font-size: 0.85rem; background: var(--sheet); display: grid; gap: 8px; justify-items: center; }
-.dropcard svg { color: var(--accent); }
-
-.summary { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; align-items: baseline; color: var(--ink-soft); font-size: 0.85rem; border-bottom: 1px solid var(--rule); padding-bottom: 8px; margin-bottom: 6px; }
-.summary .lib { overflow-wrap: anywhere; }
-
-/* 결과 한 건 — Scholar 모양 */
-.result { padding: 16px 0 14px; border-bottom: 1px solid var(--rule); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 18px; }
-.result .r-title { font-size: 1.12rem; line-height: 1.35; margin: 0; font-weight: 500; overflow-wrap: anywhere; }
-.result .r-title a { color: var(--link); text-decoration: none; }
-.result .r-title a:hover { text-decoration: underline; }
-.result .r-title a:visited { color: color-mix(in srgb, var(--link) 70%, purple); }
-.result .pdf-tag { grid-column: 2; grid-row: 1; font-size: 0.82rem; align-self: start; padding-top: 3px; white-space: nowrap; }
-.result .pdf-tag a { text-decoration: none; color: var(--link); }
-.result .pdf-tag b { color: var(--ink-soft); font-weight: 600; margin-right: 4px; }
-.result .byline { grid-column: 1 / -1; color: var(--byline); font-size: 0.88rem; overflow-wrap: anywhere; }
-.result .snippet { grid-column: 1 / -1; font-size: 0.9rem; color: var(--ink); opacity: 0.88; overflow-wrap: anywhere; }
-.result .snippet .where { font-size: 0.75rem; color: var(--ink-soft); border: 1px solid var(--rule); border-radius: 4px; padding: 0 5px; margin-right: 6px; }
-.result .actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; font-size: 0.83rem; margin-top: 2px; }
-.result .actions button, .result .actions a { border: 0; background: none; padding: 0; color: var(--ink-soft); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
-.result .actions button:hover, .result .actions a:hover { color: var(--accent); }
-.result .file { grid-column: 1 / -1; font-size: 0.75rem; color: var(--ink-soft); overflow-wrap: anywhere; }
-.tag { display: inline-block; font-size: 0.72rem; padding: 0 7px; border-radius: 999px; vertical-align: 2px; margin-left: 6px; font-weight: 600; }
+/* 결과 카드 */
+.result { position: relative; background: var(--panel); border: 1px solid var(--rule); border-radius: var(--radius); padding: 16px 18px 14px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 16px; box-shadow: var(--shadow-sm); transition: box-shadow 0.15s, border-color 0.15s, transform 0.15s; }
+.result:hover { box-shadow: var(--shadow-md); border-color: var(--rule-strong); }
+.result .meta { grid-column: 1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.type-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 0.74rem; font-weight: 650; padding: 2px 9px 2px 7px; border-radius: 999px; color: var(--tc); background: color-mix(in srgb, var(--tc) 12%, transparent); }
+.type-badge .ic { width: 13px; height: 13px; stroke-width: 2; }
+.result .r-title { grid-column: 1; font-size: 1.07rem; line-height: 1.4; margin: 0; font-weight: 650; overflow-wrap: anywhere; letter-spacing: -0.015em; }
+.result .r-title a { color: var(--ink); text-decoration: none; }
+.result .r-title a:hover { color: var(--accent); }
+.result .open { grid-column: 2; grid-row: 1 / span 2; align-self: start; display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 9px; border: 1px solid var(--rule); color: var(--ink-soft); text-decoration: none; font-size: 0.83rem; font-weight: 600; background: var(--panel); transition: all 0.12s; }
+.result .open:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.result .byline { grid-column: 1 / -1; color: var(--byline); font-size: 0.87rem; overflow-wrap: anywhere; }
+.result .snippet { grid-column: 1 / -1; font-size: 0.88rem; color: var(--ink-soft); overflow-wrap: anywhere; line-height: 1.6; }
+.result .snippet .where { font-size: 0.72rem; color: var(--accent); background: var(--accent-soft); border-radius: 5px; padding: 1px 6px; margin-right: 6px; font-weight: 600; }
+.result .snippet.short { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.result .more { border: 0; background: none; padding: 0; color: var(--accent); cursor: pointer; font-size: 0.8rem; grid-column: 1 / -1; justify-self: start; font-weight: 600; }
+.result .actions { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 2px 4px; align-items: center; font-size: 0.82rem; margin-top: 4px; padding-top: 10px; border-top: 1px dashed var(--rule); }
+.result .actions > button, .result .actions > a { border: 0; background: none; padding: 4px 8px; border-radius: 7px; color: var(--ink-soft); cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 5px; font-weight: 550; }
+.result .actions > button:hover, .result .actions > a:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 6%, transparent); }
+.result .actions .cited { color: var(--good); font-weight: 650; font-variant-numeric: tabular-nums; }
+.result .actions a.cited:hover { color: var(--good); background: color-mix(in srgb, var(--good) 10%, transparent); }
+.result .actions .meta-txt { color: var(--ink-faint); font-size: 0.78rem; padding: 0 6px; }
+.result .actions .spacer { flex: 1; }
+.result .file { grid-column: 1 / -1; font-size: 0.72rem; color: var(--ink-faint); overflow-wrap: anywhere; }
+.tag { display: inline-flex; align-items: center; gap: 4px; font-size: 0.72rem; padding: 2px 8px; border-radius: 999px; font-weight: 650; }
+.tag .ic { width: 12px; height: 12px; }
 .tag.warn { background: var(--warn-soft); color: var(--warn); }
-.tag.miss { background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); }
-.tag.kw { background: var(--accent-soft); color: var(--accent); font-weight: 500; margin: 0 4px 0 0; }
-.supps { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 0.82rem; margin-top: 2px; }
-.supps .lbl { color: var(--ink-soft); }
-.supps a { display: inline-flex; align-items: center; gap: 4px; padding: 1px 9px; border: 1px solid var(--rule); border-radius: 999px; text-decoration: none; color: var(--link); background: var(--sheet); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.supps a.hit { border-color: var(--accent); background: var(--accent-soft); }
+.tag.miss { background: color-mix(in srgb, var(--danger) 13%, transparent); color: var(--danger); }
+.tag.kw { background: color-mix(in srgb, var(--ink) 6%, transparent); color: var(--ink-soft); font-weight: 550; }
+.tag.supp { background: color-mix(in srgb, var(--t-report) 13%, transparent); color: var(--t-report); }
+.tag.mine { background: var(--star-soft); color: var(--star); }
+.supps { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 0.8rem; }
+.supps .lbl { display: inline-flex; align-items: center; gap: 4px; color: var(--ink-faint); font-weight: 600; }
+.supps a { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border: 1px solid var(--rule); border-radius: 8px; text-decoration: none; color: var(--ink-soft); background: var(--bg); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 550; }
+.supps a:hover { border-color: var(--accent); color: var(--accent); }
+.supps a.hit { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
 .supps a.miss { color: var(--danger); }
-.tag.supp { background: color-mix(in srgb, var(--byline) 14%, transparent); color: var(--byline); }
-.result.droptarget { outline: 2px dashed var(--accent); outline-offset: 4px; border-radius: 6px; background: var(--accent-soft); }
-.result.droptarget::after { content: "여기에 놓으면 이 논문의 보충자료로 묶습니다"; grid-column: 1 / -1; color: var(--accent); font-weight: 600; font-size: 0.85rem; }
-.classify { display: grid; gap: 8px; border: 1px solid var(--rule); border-radius: 10px; padding: 12px; }
-.classify .row { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; font-size: 0.9rem; }
-.classify select { width: 100%; border: 1px solid var(--rule); border-radius: 8px; padding: 7px 10px; background: var(--paper); }
+.result.droptarget { outline: 2px dashed var(--accent); outline-offset: 3px; background: var(--accent-soft); }
+.result.droptarget::after { content: "여기에 놓으면 이 논문의 보충자료로 묶습니다"; grid-column: 1 / -1; color: var(--accent); font-weight: 700; font-size: 0.85rem; }
+mark { background: var(--mark); color: inherit; border-radius: 3px; padding: 0 2px; }
+
+.pager { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px; padding: 18px 0 4px; }
+.pager button { min-width: 36px; height: 36px; padding: 0 12px; border: 1px solid transparent; background: none; border-radius: 9px; cursor: pointer; color: var(--ink-soft); font-variant-numeric: tabular-nums; font-weight: 550; }
+.pager button:hover:not(:disabled) { border-color: var(--rule); background: var(--panel); color: var(--ink); }
+.pager button.on { color: var(--on-accent); background: var(--accent); font-weight: 700; cursor: default; }
+.pager button:disabled { opacity: 0.35; cursor: default; }
+.pager .gap { color: var(--ink-faint); padding: 0 4px; }
+
+.empty { padding: 70px 20px 40px; text-align: center; color: var(--ink-soft); display: grid; gap: 12px; justify-items: center; }
+.empty h2 { margin: 6px 0 0; color: var(--ink); font-size: 1.2rem; font-weight: 700; }
+.empty p { margin: 0; max-width: 460px; line-height: 1.7; }
+.empty .art { width: 168px; height: auto; }
+.empty .tips { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 4px; }
+.empty .tips span { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; padding: 5px 10px; border-radius: 999px; background: var(--panel); border: 1px solid var(--rule); }
+
+/* 수정 창 안의 분류 */
+.classify { display: grid; gap: 10px; border: 1px solid var(--rule); border-radius: 12px; padding: 12px 14px; background: var(--bg); }
+.classify .row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; font-size: 0.9rem; }
+.classify select { width: 100%; border: 1px solid var(--rule); border-radius: 9px; padding: 8px 10px; background: var(--panel); }
 .locked .grid2 .field:not(.keep) { opacity: 0.55; pointer-events: none; }
 .locked .fetchbox { display: none; }
-.perpage { display: grid; gap: 6px; padding: 4px 8px; }
-.perpage .row { display: flex; align-items: center; gap: 8px; }
-.perpage input[type=range] { flex: 1; min-width: 0; width: 100%; margin: 0; accent-color: var(--accent); }
-.perpage output { font-family: var(--font-mono); font-variant-numeric: tabular-nums; min-width: 2.6em; text-align: right; color: var(--accent); font-weight: 600; }
-.perpage .step { border: 1px solid var(--rule); background: var(--sheet); border-radius: 6px; width: 26px; height: 26px; cursor: pointer; line-height: 1; color: var(--ink-soft); }
-.perpage .step:hover { border-color: var(--accent); color: var(--accent); }
-.seg { display: flex; border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; margin: 2px 8px; }
-.seg button { flex: 1; border: 0; background: var(--sheet); padding: 4px 0; font-size: 0.82rem; color: var(--ink-soft); cursor: pointer; }
-.seg button + button { border-left: 1px solid var(--rule); }
-.seg button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
-.side .sub { font-size: 0.78rem; color: var(--ink-soft); padding: 6px 8px 2px; }
-.result .snippet.short { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
-.result .more { border: 0; background: none; padding: 0; color: var(--link); cursor: pointer; font-size: 0.82rem; grid-column: 1 / -1; justify-self: start; }
-.pager { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 4px; padding: 22px 0 6px; }
-.pager button { min-width: 34px; height: 34px; padding: 0 10px; border: 1px solid transparent; background: none; border-radius: 8px; cursor: pointer; color: var(--link); font-variant-numeric: tabular-nums; }
-.pager button:hover:not(:disabled) { border-color: var(--rule); background: var(--sheet); }
-.pager button.on { color: var(--ink); font-weight: 700; border-color: var(--rule); background: var(--sheet); cursor: default; }
-.pager button:disabled { color: var(--ink-soft); opacity: 0.45; cursor: default; }
-.pager .gap { color: var(--ink-soft); padding: 0 4px; }
-.result .actions .cited { color: var(--byline); font-weight: 500; font-variant-numeric: tabular-nums; }
-.result .actions a.cited:hover { color: var(--accent); text-decoration: underline; }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .chips label { cursor: pointer; }
 .chips input { position: absolute; opacity: 0; pointer-events: none; }
-.chips span { display: inline-block; padding: 4px 12px; border: 1px solid var(--rule); border-radius: 999px; font-size: 0.86rem; color: var(--ink-soft); background: var(--sheet); }
-.chips input:checked + span { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.chips span { display: inline-block; padding: 5px 12px; border: 1px solid var(--rule); border-radius: 999px; font-size: 0.85rem; color: var(--ink-soft); background: var(--panel); font-weight: 550; transition: all 0.12s; }
+.chips span:hover { border-color: var(--rule-strong); color: var(--ink); }
+.chips input:checked + span { border-color: var(--accent); background: var(--accent); color: var(--on-accent); font-weight: 650; }
 .chips input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
-.chips .supp-chip { margin-left: 8px; padding-left: 10px; border-left: 1px solid var(--rule); }
+.chips .supp-chip { margin-left: 6px; padding-left: 12px; border-left: 1px solid var(--rule); }
 .mine-row { display: flex; align-items: center; gap: 6px; font-size: 0.9rem; cursor: pointer; }
+.mine-row input { accent-color: var(--star); }
 .mine-row[hidden] { display: none; }
-.tag.mine { background: color-mix(in srgb, #d4a017 18%, transparent); color: #a07400; }
-:root[data-theme="dark"] .tag.mine { color: #f0c64a; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .tag.mine { color: #f0c64a; } }
-.mine-toggle { width: 100%; text-align: left; border: 1px solid var(--rule); background: var(--sheet); border-radius: 8px; padding: 6px 10px; margin: 0 0 6px; cursor: pointer; color: var(--ink-soft); font-size: 0.9rem; }
-.mine-toggle:hover { border-color: #d4a017; }
-.mine-toggle.on { border-color: #d4a017; background: color-mix(in srgb, #d4a017 14%, transparent); color: var(--ink); font-weight: 600; }
-.opt .n, .mine-toggle .n { font-family: var(--font-mono); font-size: 0.75rem; color: var(--ink-soft); margin-left: 4px; font-weight: 400; }
-.supp-list { display: grid; gap: 4px; margin-top: 8px; }
-.supp-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; border: 1px solid var(--rule); border-radius: 8px; padding: 4px 4px 4px 10px; }
-.supp-row .mono { overflow-wrap: anywhere; font-size: 0.8rem; }
-.btn.small { padding: 2px 10px; font-size: 0.8rem; }
-mark { background: var(--mark); color: inherit; border-radius: 2px; padding: 0 1px; }
+.supp-list { display: grid; gap: 6px; margin-top: 10px; }
+.supp-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; border: 1px solid var(--rule); border-radius: 9px; padding: 5px 5px 5px 12px; }
+.supp-row .mono { overflow-wrap: anywhere; font-size: 0.78rem; }
 
-.empty { padding: 60px 20px; text-align: center; color: var(--ink-soft); display: grid; gap: 10px; justify-items: center; }
-.empty h2 { margin: 0; color: var(--ink); font-size: 1.15rem; }
-
-/* 끌어다 놓기 덮개 */
-.overlay { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); display: none; z-index: 40; pointer-events: none; }
-.overlay.on { display: block; }
-.overlay div { background: var(--sheet); border: 2px dashed var(--accent); border-radius: 14px; padding: 16px 28px; text-align: center; font-size: 1rem; font-weight: 600; color: var(--accent); box-shadow: 0 10px 30px rgb(0 0 0 / 0.16); }
-body.dragging { outline: 3px dashed var(--accent); outline-offset: -6px; }
-.overlay small { display: block; font-weight: 400; color: var(--ink-soft); font-size: 0.85rem; margin-top: 6px; }
+/* 끌어다 놓기 */
+.overlay { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%); display: none; z-index: 40; pointer-events: none; }
+.overlay.on { display: block; animation: rise 0.18s ease-out; }
+.overlay div { display: flex; align-items: center; gap: 14px; background: var(--panel); border: 2px dashed var(--accent); border-radius: 16px; padding: 16px 24px; font-size: 1rem; font-weight: 700; color: var(--accent); box-shadow: var(--shadow-lg); }
+.overlay div .ic { width: 28px; height: 28px; }
+.overlay small { display: block; font-weight: 500; color: var(--ink-soft); font-size: 0.82rem; margin-top: 2px; }
+body.dragging .main { outline: 3px dashed color-mix(in srgb, var(--accent) 60%, transparent); outline-offset: -10px; border-radius: 16px; }
+@keyframes rise { from { opacity: 0; transform: translate(-50%, 8px); } to { opacity: 1; transform: translate(-50%, 0); } }
 
 /* 올리기 진행 상황 */
-.tray { position: fixed; right: 20px; bottom: 20px; width: min(420px, calc(100vw - 32px)); background: var(--sheet); border: 1px solid var(--rule); border-radius: 12px; box-shadow: 0 10px 30px rgb(0 0 0 / 0.14); z-index: 30; display: none; max-height: 55vh; overflow: hidden; }
-.tray.on { display: grid; grid-template-rows: auto minmax(0, 1fr); }
-.tray header { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--rule); font-weight: 600; font-size: 0.9rem; }
-.tray header button { border: 0; background: none; cursor: pointer; color: var(--ink-soft); font-size: 1.1rem; }
+.tray { position: fixed; right: 22px; bottom: 22px; width: min(420px, calc(100vw - 32px)); background: var(--panel); border: 1px solid var(--rule); border-radius: 14px; box-shadow: var(--shadow-lg); z-index: 30; display: none; max-height: 55vh; overflow: hidden; }
+.tray.on { display: grid; grid-template-rows: auto minmax(0, 1fr); animation: fade 0.18s ease-out; }
+.tray header { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--rule); font-weight: 700; font-size: 0.9rem; }
+.tray header button { border: 0; background: none; cursor: pointer; color: var(--ink-soft); display: grid; place-items: center; padding: 4px; border-radius: 6px; }
+.tray header button:hover { background: color-mix(in srgb, var(--ink) 7%, transparent); }
 .tray ul { list-style: none; margin: 0; padding: 4px 0; overflow: auto; }
-.tray li { padding: 8px 14px; display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 2px 8px; font-size: 0.84rem; }
+.tray li { padding: 9px 16px; display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 2px 10px; font-size: 0.84rem; }
+.tray li + li { border-top: 1px solid var(--rule); }
+.tray li .ico { display: grid; place-items: center; height: 20px; }
 .tray li .from { color: var(--ink-soft); overflow-wrap: anywhere; }
 .tray li .to { grid-column: 2; overflow-wrap: anywhere; }
-.tray li.added .ico { color: var(--byline); }
+.tray li.added .ico { color: var(--good); }
 .tray li.duplicate .ico { color: var(--warn); }
 .tray li.error .ico { color: var(--danger); }
-.spin { width: 14px; height: 14px; border: 2px solid var(--rule); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; margin-top: 3px; }
+.spin { width: 14px; height: 14px; border: 2px solid var(--rule); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+@keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 
 /* 대화 상자 */
-dialog { border: 1px solid var(--rule); border-radius: 14px; padding: 0; background: var(--sheet); color: var(--ink); width: min(680px, calc(100vw - 32px)); max-height: calc(100vh - 48px); }
-dialog::backdrop { background: rgb(10 14 22 / 0.45); }
+dialog { border: 1px solid var(--rule); border-radius: 16px; padding: 0; background: var(--panel); color: var(--ink); width: min(700px, calc(100vw - 32px)); max-height: calc(100vh - 48px); box-shadow: var(--shadow-lg); }
+dialog[open] { animation: pop 0.16s ease-out; }
+dialog::backdrop { background: rgb(10 12 20 / 0.42); backdrop-filter: blur(3px); }
+@keyframes pop { from { opacity: 0; transform: scale(0.98) translateY(6px); } to { opacity: 1; transform: none; } }
 .dlg { display: grid; grid-template-rows: auto minmax(0, 1fr) auto; max-height: calc(100vh - 50px); }
-.dlg > header { padding: 16px 20px 10px; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-.dlg > header h3 { margin: 0; font-size: 1.05rem; }
-.dlg > header button { border: 0; background: none; font-size: 1.3rem; cursor: pointer; color: var(--ink-soft); }
-.dlg .body { padding: 4px 20px 16px; overflow: auto; display: grid; gap: 12px; }
-.dlg > footer { padding: 12px 20px; border-top: 1px solid var(--rule); display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.dlg > header { padding: 18px 22px 10px; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.dlg > header h3 { margin: 0; font-size: 1.08rem; font-weight: 750; letter-spacing: -0.015em; }
+.dlg > header button { border: 0; background: none; cursor: pointer; color: var(--ink-soft); display: grid; place-items: center; padding: 6px; border-radius: 8px; }
+.dlg > header button:hover { background: color-mix(in srgb, var(--ink) 7%, transparent); color: var(--ink); }
+.dlg .body { padding: 4px 22px 18px; overflow: auto; display: grid; gap: 14px; }
+.dlg > footer { padding: 12px 22px; border-top: 1px solid var(--rule); display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; align-items: center; background: var(--bg); border-radius: 0 0 16px 16px; }
 .dlg > footer .right { display: flex; gap: 8px; margin-left: auto; }
-.grid2 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
-.field { display: grid; gap: 4px; }
+.grid2 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.field { display: grid; gap: 5px; }
 .field.span2 { grid-column: span 2; }
 .field.span4 { grid-column: 1 / -1; }
 .field[hidden] { display: none; }
-.field label { font-size: 0.78rem; color: var(--ink-soft); }
-.field input, .field textarea, .field select { width: 100%; border: 1px solid var(--rule); border-radius: 8px; padding: 7px 10px; background: var(--paper); }
-.field textarea { resize: vertical; min-height: 70px; }
-.hint { font-size: 0.78rem; color: var(--ink-soft); }
-.fetchbox { display: grid; gap: 8px; border: 1px solid var(--rule); border-radius: 10px; padding: 12px; background: var(--paper); }
+.field label { font-size: 0.78rem; color: var(--ink-soft); font-weight: 600; }
+.field input, .field textarea, .field select { width: 100%; border: 1px solid var(--rule); border-radius: 9px; padding: 8px 11px; background: var(--panel); transition: border-color 0.12s, box-shadow 0.12s; }
+.field input:focus, .field textarea:focus, .field select:focus, .fetchbox input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.field textarea { resize: vertical; min-height: 72px; }
+.hint { font-size: 0.78rem; color: var(--ink-faint); font-weight: 450; }
+.fetchbox { display: grid; gap: 8px; border: 1px solid var(--rule); border-radius: 12px; padding: 12px 14px; background: var(--bg); }
 .fetchbox .row { display: flex; gap: 8px; }
-.fetchbox input { flex: 1; min-width: 0; border: 1px solid var(--rule); border-radius: 8px; padding: 6px 10px; background: var(--sheet); }
-.cands { display: grid; gap: 4px; }
-.cand { border: 1px solid var(--rule); border-radius: 8px; padding: 8px 10px; background: var(--sheet); text-align: left; cursor: pointer; display: grid; gap: 2px; }
-.cand:hover { border-color: var(--accent); }
-.cand b { font-weight: 500; color: var(--link); }
-.cand span { font-size: 0.8rem; color: var(--byline); }
+.fetchbox input { flex: 1; min-width: 0; border: 1px solid var(--rule); border-radius: 9px; padding: 7px 11px; background: var(--panel); }
+.cands { display: grid; gap: 6px; }
+.cand { border: 1px solid var(--rule); border-radius: 10px; padding: 9px 12px; background: var(--panel); text-align: left; cursor: pointer; display: grid; gap: 2px; transition: border-color 0.12s, background 0.12s; }
+.cand:hover { border-color: var(--accent); background: var(--accent-soft); }
+.cand b { font-weight: 650; color: var(--ink); }
+.cand span { font-size: 0.8rem; color: var(--ink-soft); }
 .msg { font-size: 0.84rem; color: var(--danger); min-height: 1em; }
-
-.cite-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--rule); }
-.cite-tabs button { border: 0; background: none; padding: 6px 12px; cursor: pointer; color: var(--ink-soft); border-bottom: 2px solid transparent; margin-bottom: -1px; }
-.cite-tabs button.on { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
-.cite-text { white-space: pre-wrap; background: var(--paper); border: 1px solid var(--rule); border-radius: 8px; padding: 12px; font-size: 0.88rem; overflow-wrap: anywhere; margin: 0; }
+.cite-tabs { display: inline-flex; background: color-mix(in srgb, var(--ink) 5%, transparent); border-radius: 10px; padding: 3px; gap: 2px; justify-self: start; }
+.cite-tabs button { border: 0; background: none; padding: 5px 14px; cursor: pointer; color: var(--ink-soft); border-radius: 8px; font-weight: 550; }
+.cite-tabs button.on { background: var(--panel); color: var(--ink); box-shadow: var(--shadow-sm); font-weight: 700; }
+.cite-text { white-space: pre-wrap; background: var(--bg); border: 1px solid var(--rule); border-radius: 10px; padding: 14px; font-size: 0.88rem; overflow-wrap: anywhere; margin: 0; line-height: 1.65; }
 .cite-text.mono { font-size: 0.8rem; }
 
-.toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: var(--paper); padding: 8px 16px; border-radius: 8px; font-size: 0.88rem; z-index: 60; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
-.toast.on { opacity: 1; }
+.toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%) translateY(8px); background: var(--ink); color: var(--panel); padding: 9px 16px; border-radius: 10px; font-size: 0.88rem; z-index: 60; opacity: 0; transition: opacity 0.2s, transform 0.2s; pointer-events: none; box-shadow: var(--shadow-md); font-weight: 550; }
+.toast.on { opacity: 1; transform: translateX(-50%); }
 
 @media (max-width: 860px) {
-  header.top { grid-template-columns: 1fr; gap: 10px; padding: 12px 16px; position: static; }
-  .top-actions { flex-wrap: wrap; }
-  .layout { grid-template-columns: 1fr; padding: 16px 16px 80px; gap: 16px; }
-  aside.side { position: static; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); }
+  .app { grid-template-columns: 1fr; height: auto; }
+  .nav { border-right: 0; border-bottom: 1px solid var(--rule); }
+  .nav-scroll { overflow: visible; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0 16px; }
+  .main { min-height: 70vh; }
+  .scroll { overflow: visible; padding: 0 16px 60px; }
+  .toolbar, .subbar { padding-left: 16px; padding-right: 16px; }
+  #libPath { max-width: 90vw; }
+  .kbd { display: none; }
+  .pop-panel { right: auto; left: 0; }
   .grid2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  aside.side { max-height: none; overflow: visible; }
-  aside.side > section.view-opts { grid-column: 1 / -1; }
   .field.span2 { grid-column: 1 / -1; }
 }
 </style>
 </head>
 <body>
 
-<header class="top">
-  <div class="brand"><h1>논문 <span>서재</span></h1></div>
-  <form class="search" id="searchForm" role="search">
-    <select id="field" aria-label="검색 범위">
-      <option value="all">전체</option>
-      <option value="title">제목</option>
-      <option value="author">저자</option>
-      <option value="journal">저널</option>
-      <option value="fulltext">본문</option>
-    </select>
-    <input id="q" type="search" placeholder="제목, 저자, 저널, 키워드, DOI…  ( / 키로 바로 검색)" autocomplete="off">
-    <button type="submit" aria-label="검색">검색</button>
-  </form>
-  <div class="top-actions">
-    <button class="btn" id="pickBtn" type="button" title="논문·책 PDF나 보충 동영상">파일 추가</button>
-    <button class="btn" id="rescanBtn" type="button" title="폴더에 직접 넣은 PDF를 등록하고 사라진 파일을 정리합니다">폴더 다시 읽기</button>
-    <button class="btn" id="settingsBtn" type="button" aria-label="설정">설정</button>
-  </div>
-</header>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7.5"/><path d="m20.5 20.5-4.2-4.2"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v3a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-3"/><path d="m17 8-5-5-5 5"/><path d="M12 3v12"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12.8 2.2a2 2 0 0 0-1.6 0L2.6 6.1a1 1 0 0 0 0 1.8l8.6 3.9a2 2 0 0 0 1.6 0l8.6-3.9a1 1 0 0 0 0-1.8Z"/><path d="m22 12.6-9.2 4.2a2 2 0 0 1-1.6 0L2 12.6"/><path d="m22 17.6-9.2 4.2a2 2 0 0 1-1.6 0L2 17.6"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="m12 2.8 2.8 5.8 6.4.9-4.6 4.5 1.1 6.3L12 17.3l-5.7 3 1.1-6.3-4.6-4.5 6.4-.9Z"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5Z"/><path d="M14 2v6h6"/><path d="M8 13h8M8 17h5"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="2.5" y="3" width="19" height="13" rx="2"/><path d="m7 21 5-5 5 5"/><path d="M7 8h6M7 11h10"/></symbol>
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2Z"/><path d="M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7Z"/></symbol>
+  <symbol id="i-report" viewBox="0 0 24 24"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5Z"/><path d="M14 2v6h6"/><path d="M8 18v-3M12 18v-6M16 18v-4"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="M21 8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.7Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 15.4-6.4L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15.4 6.4L3 16"/><path d="M8 16H3v5"/></symbol>
+  <symbol id="i-trend" viewBox="0 0 24 24"><path d="m22 7-8.5 8.5-5-5L2 17"/><path d="M16 7h6v6"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v3a3 3 0 0 1-3 3H6a3 3 0 0 1-3-3v-3"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9L9.6 3.9A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M20 7h-9M14 17H5"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/></symbol>
+  <symbol id="i-quote" viewBox="0 0 24 24"><path d="M3 21c3 0 7-1 7-8V5c0-1.2-.8-2-2-2H4c-1.2 0-2 .8-2 2v6c0 1.2.8 2 2 2h1c0 3-1 5-2 6"/><path d="M15 21c3 0 7-1 7-8V5c0-1.2-.8-2-2-2h-4c-1.2 0-2 .8-2 2v6c0 1.2.8 2 2 2h1c0 3-1 5-2 6"/></symbol>
+  <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M17 3a2.8 2.8 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/></symbol>
+  <symbol id="i-external" viewBox="0 0 24 24"><path d="M15 3h6v6M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7"/></symbol>
+  <symbol id="i-clip" viewBox="0 0 24 24"><path d="m21.4 11.1-9.2 9.2a6 6 0 0 1-8.5-8.5l8.6-8.6a4 4 0 0 1 5.7 5.7l-8.6 8.5a2 2 0 0 1-2.8-2.8l8.5-8.5"/></symbol>
+  <symbol id="i-film" viewBox="0 0 24 24"><rect x="2.5" y="2.5" width="19" height="19" rx="2.5"/><path d="M7 2.5v19M17 2.5v19M2.5 12h19M2.5 7H7M2.5 17H7M17 7h4.5M17 17h4.5"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.5"/><path d="M12 7.5v5M12 16.5h.01"/></symbol>
+  <symbol id="i-dup" viewBox="0 0 24 24"><rect x="8" y="8" width="13" height="13" rx="2"/><path d="M4 16a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2"/></symbol>
+  <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="4.5" width="18" height="17" rx="2"/><path d="M16 2.5v4M8 2.5v4M3 10h18"/></symbol>
+  <symbol id="i-logo" viewBox="0 0 24 24"><path d="M5 4.5A1.5 1.5 0 0 1 6.5 3H18v15H6.5A1.5 1.5 0 0 0 5 19.5Z"/><path d="M5 19.5A1.5 1.5 0 0 0 6.5 21H18v-3"/><path d="M9 7.5h5M9 11h5"/></symbol>
+</svg>
 
-<div class="layout">
-  <aside class="side">
-    <section>
-      <h3>기간</h3>
-      <div class="opt-list" id="yearOpts"></div>
-      <div class="range">
-        <input id="yFrom" inputmode="numeric" placeholder="시작" aria-label="시작 연도"> –
-        <input id="yTo" inputmode="numeric" placeholder="끝" aria-label="끝 연도">
-      </div>
-    </section>
-    <section>
-      <h3>종류</h3>
-      <button type="button" class="mine-toggle" id="mineToggle" aria-pressed="false">★ 내 논문·책 <span class="n" id="mineCount"></span></button>
-      <div class="opt-list" id="docOpts"></div>
-    </section>
-    <section>
-      <h3>정렬</h3>
-      <div class="opt-list" id="sortOpts"></div>
-    </section>
-    <section class="view-opts">
-      <h3>보기</h3>
-      <div class="sub">한 화면에</div>
-      <div class="perpage">
-        <div class="row">
-          <button type="button" class="step" id="ppDown" aria-label="10개 줄이기">−</button>
-          <input type="range" id="perPage" min="10" max="50" step="10" value="10" list="ppTicks" aria-label="한 화면에 보일 개수">
-          <button type="button" class="step" id="ppUp" aria-label="10개 늘리기">+</button>
-          <output id="perPageOut" for="perPage">10개</output>
+<div class="app">
+  <aside class="nav">
+    <div class="brand"><div class="logo"><svg class="ic"><use href="#i-logo"/></svg></div><h1>논문 서재</h1></div>
+    <button class="add-btn" id="pickBtn" type="button" title="논문·책 PDF나 보충 동영상 (창에 끌어다 놓아도 됩니다)"><svg class="ic"><use href="#i-upload"/></svg>파일 추가</button>
+    <div class="nav-scroll">
+      <section>
+        <h3>서재</h3>
+        <div class="nav-list">
+          <button type="button" class="nav-item mine-toggle" id="mineToggle" aria-pressed="false"><svg class="ic"><use href="#i-star"/></svg>내 논문·책<span class="n" id="mineCount"></span></button>
         </div>
-        <datalist id="ppTicks"><option value="10"><option value="20"><option value="30"><option value="40"><option value="50"></datalist>
+        <div class="nav-list" id="docOpts"></div>
+      </section>
+      <section>
+        <h3>기간</h3>
+        <div class="year-list" id="yearOpts"></div>
+        <div class="range">
+          <input id="yFrom" inputmode="numeric" placeholder="시작 연도" aria-label="시작 연도"> –
+          <input id="yTo" inputmode="numeric" placeholder="끝 연도" aria-label="끝 연도">
+        </div>
+      </section>
+    </div>
+    <div class="nav-foot">
+      <div class="tools">
+        <button class="tool" type="button" id="rescanBtn" data-tip="폴더 다시 읽기" aria-label="폴더 다시 읽기"><svg class="ic"><use href="#i-refresh"/></svg></button>
+        <button class="tool" type="button" id="citeRefreshBtn" data-tip="인용 수 새로 고침" aria-label="인용 수 새로 고침"><svg class="ic"><use href="#i-trend"/></svg></button>
+        <a class="tool" href="/api/export.bib" download id="exportBib" data-tip="BibTeX 내보내기" aria-label="BibTeX 전체 내보내기"><svg class="ic"><use href="#i-download"/></svg></a>
+        <button class="tool" type="button" id="openFolderBtn" data-tip="논문 폴더 열기" aria-label="논문 폴더 열기"><svg class="ic"><use href="#i-folder"/></svg></button>
+        <button class="tool" type="button" id="settingsBtn" data-tip="설정" aria-label="설정"><svg class="ic"><use href="#i-settings"/></svg></button>
       </div>
-      <div class="sub">초록</div>
-      <div class="seg" id="absOpts" role="radiogroup" aria-label="초록 보기">
-        <button type="button" data-abs="off" role="radio">숨김</button>
-        <button type="button" data-abs="short" role="radio">짧게</button>
-        <button type="button" data-abs="full" role="radio">전체</button>
-      </div>
-      <label class="check" style="margin-top:6px"><input type="checkbox" id="reviewOnly"> 확인 필요한 것만</label>
-    </section>
-    <section class="dropcard">
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3m0 0-4 4m4-4 4 4"/><path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/></svg>
-      <div>논문·책 PDF를 이 창<br>아무 곳에나 끌어다 놓으세요</div>
-      <div class="hint">제목·저자·저널(책은 ISBN)을<br>찾아 이름을 바꿔 저장합니다</div>
-      <div class="hint">보충자료(PDF·동영상)는<br>본문 논문에 자동으로 묶습니다</div>
-    </section>
-    <section>
-      <h3>내보내기</h3>
-      <div class="opt-list">
-        <a class="opt" href="/api/export.bib" download id="exportBib">BibTeX 전체 (.bib)</a>
-        <button class="opt" type="button" id="openFolderBtn">논문 폴더 열기</button>
-        <button class="opt" type="button" id="citeRefreshBtn" title="OpenAlex·Semantic Scholar·Crossref에서 인용 수를 다시 받아옵니다">인용 수 새로 고침</button>
-        <div class="sub" id="citeStatus" aria-live="polite"></div>
-      </div>
-    </section>
+      <div class="sub" id="citeStatus" aria-live="polite"></div>
+    </div>
   </aside>
 
-  <main>
-    <div class="summary">
-      <span id="count">불러오는 중…</span>
-      <span class="lib mono" id="libPath"></span>
+  <div class="main">
+    <header class="toolbar">
+      <form class="search" id="searchForm" role="search">
+        <svg class="ic"><use href="#i-search"/></svg>
+        <input id="q" type="search" placeholder="제목, 저자, 저널, 키워드, DOI로 찾기" autocomplete="off" aria-label="검색어">
+        <span class="kbd" title="/ 키를 누르면 바로 검색창으로">/</span>
+        <select id="field" aria-label="검색 범위">
+          <option value="all">전체</option>
+          <option value="title">제목</option>
+          <option value="author">저자</option>
+          <option value="journal">저널</option>
+          <option value="fulltext">본문</option>
+        </select>
+      </form>
+    </header>
+    <div class="subbar">
+      <div class="summary">
+        <span id="count">불러오는 중…</span>
+        <span class="mono" id="libPath"></span>
+      </div>
+      <div class="subbar-right">
+        <div class="seg" id="sortOpts" role="group" aria-label="정렬"></div>
+        <details class="pop view-opts">
+          <summary><svg class="ic sm"><use href="#i-sliders"/></svg>보기</summary>
+          <div class="pop-panel">
+            <div class="perpage">
+              <div class="lbl">한 화면에</div>
+              <div class="row">
+                <button type="button" class="step" id="ppDown" aria-label="10개 줄이기">−</button>
+                <input type="range" id="perPage" min="10" max="50" step="10" value="10" list="ppTicks" aria-label="한 화면에 보일 개수">
+                <button type="button" class="step" id="ppUp" aria-label="10개 늘리기">+</button>
+                <output id="perPageOut" for="perPage">10개</output>
+              </div>
+              <datalist id="ppTicks"><option value="10"><option value="20"><option value="30"><option value="40"><option value="50"></datalist>
+            </div>
+            <div>
+              <div class="lbl">초록</div>
+              <div class="seg" id="absOpts" role="radiogroup" aria-label="초록 보기">
+                <button type="button" data-abs="off" role="radio">숨김</button>
+                <button type="button" data-abs="short" role="radio">짧게</button>
+                <button type="button" data-abs="full" role="radio">전체</button>
+              </div>
+            </div>
+            <label class="check"><input type="checkbox" id="reviewOnly"> 확인 필요한 것만 보기</label>
+          </div>
+        </details>
+      </div>
     </div>
-    <div id="results"></div>
-  </main>
+    <div class="scroll" id="scroller">
+      <div id="results"></div>
+    </div>
+  </div>
 </div>
 
 <input type="file" id="fileInput" accept="application/pdf,.pdf,video/*,.mp4,.m4v,.mov,.avi,.mkv,.webm,.wmv,.mpg,.mpeg" multiple hidden>
 
-<div class="overlay" id="overlay"><div>빈 곳에 놓으면 서재에 추가합니다<small>논문 위에 놓으면 그 논문의 보충자료로 묶습니다 · PDF·동영상, 여러 개도 됩니다</small></div></div>
+<div class="overlay" id="overlay"><div><svg class="ic" aria-hidden="true"><use href="#i-upload"/></svg><span>빈 곳에 놓으면 서재에 추가합니다<small>논문 위에 놓으면 그 논문의 보충자료로 묶습니다 · PDF·동영상, 여러 개도 됩니다</small></span></div></div>
 
 <section class="tray" id="tray" aria-live="polite">
-  <header><span id="trayTitle">추가 중</span><button type="button" id="trayClose" aria-label="닫기">×</button></header>
+  <header><span id="trayTitle">추가 중</span><button type="button" id="trayClose" aria-label="닫기"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button></header>
   <ul id="trayList"></ul>
 </section>
 
 <dialog id="citeDlg">
   <div class="dlg">
-    <header><h3>인용</h3><button type="button" data-close aria-label="닫기">×</button></header>
+    <header><h3>인용</h3><button type="button" data-close aria-label="닫기"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button></header>
     <div class="body">
       <div class="cite-tabs" id="citeTabs"></div>
       <pre class="cite-text" id="citeText"></pre>
@@ -347,7 +467,7 @@ dialog::backdrop { background: rgb(10 14 22 / 0.45); }
 
 <dialog id="editDlg">
   <form class="dlg" id="editForm" method="dialog">
-    <header><h3>서지 정보 수정</h3><button type="button" data-close aria-label="닫기">×</button></header>
+    <header><h3>서지 정보 수정</h3><button type="button" data-close aria-label="닫기"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button></header>
     <div class="body">
       <div class="classify">
         <div class="row">
@@ -418,7 +538,7 @@ dialog::backdrop { background: rgb(10 14 22 / 0.45); }
 
 <dialog id="settingsDlg">
   <form class="dlg" id="settingsForm" method="dialog">
-    <header><h3>설정</h3><button type="button" data-close aria-label="닫기">×</button></header>
+    <header><h3>설정</h3><button type="button" data-close aria-label="닫기"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button></header>
     <div class="body">
       <div class="field">
         <label for="s-lib">논문 폴더</label>
@@ -444,7 +564,7 @@ dialog::backdrop { background: rgb(10 14 22 / 0.45); }
 
 <dialog id="pickDlg">
   <form class="dlg" method="dialog" id="pickForm">
-    <header><h3>어느 논문의 보충 동영상인가요?</h3><button type="button" data-close aria-label="닫기">×</button></header>
+    <header><h3>어느 논문의 보충 동영상인가요?</h3><button type="button" data-close aria-label="닫기"><svg class="ic" aria-hidden="true"><use href="#i-x"/></svg></button></header>
     <div class="body">
       <div class="hint" id="pickFile"></div>
       <div class="field"><input id="pickQ" type="search" placeholder="제목·저자·연도로 찾기" autocomplete="off" aria-label="논문 찾기"></div>
@@ -473,6 +593,15 @@ const BOOK_TYPES = ["book", "monograph", "edited-book", "reference-book", "book-
 const isBook = (p) => BOOK_TYPES.includes(p.type);
 let lastTerms = [];
 let papersById = new Map();
+const ic = (name, cls = "") => `<svg class="ic ${cls}" aria-hidden="true"><use href="#i-${name}"/></svg>`;
+// 종류 묶음: 이름 · 아이콘 · 색
+const GROUPS = {
+  journal: { label: "학술지 논문", icon: "file", color: "var(--t-journal)" },
+  proceedings: { label: "학술대회 논문", icon: "mic", color: "var(--t-proceedings)" },
+  book: { label: "책", icon: "book", color: "var(--t-book)" },
+  report: { label: "보고서", icon: "report", color: "var(--t-report)" },
+  other: { label: "기타", icon: "box", color: "var(--t-other)" },
+};
 
 function store(key, val) { try { if (val === undefined) return localStorage.getItem(key); localStorage.setItem(key, val); } catch { return null; } }
 function applyTheme(t) { if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme; }
@@ -495,18 +624,20 @@ function toast(msg) {
 
 /* ---------- 사이드바 ---------- */
 function renderSide() {
-  const yearChoices = [["", "전체 기간"], [thisYear, `${thisYear}년부터`], [thisYear - 1, `${thisYear - 1}년부터`], [thisYear - 4, `${thisYear - 4}년부터`], [thisYear - 10, `${thisYear - 10}년부터`]];
+  const yearChoices = [["", "전체"], [thisYear, `${thisYear}~`], [thisYear - 1, `${thisYear - 1}~`], [thisYear - 4, `${thisYear - 4}~`], [thisYear - 10, `${thisYear - 10}~`]];
   $("#yearOpts").innerHTML = yearChoices.map(([y, label]) =>
     `<button type="button" class="opt ${String(view.from) === String(y) && !view.to ? "on" : ""}" data-from="${y}">${label}</button>`).join("");
   const g = lastInfo?.groups || {};
-  const docs = [["all", "전체"], ["journal", "학술지 논문"], ["proceedings", "학술대회 논문"], ["book", "책"], ["report", "보고서"], ["other", "기타"]];
+  const docs = ["all", "journal", "proceedings", "book", "report", "other"];
   $("#docOpts").innerHTML = docs
-    .filter(([k]) => k === "all" || k === view.doc || g[k] || !lastInfo)  // 하나도 없는 종류는 숨김
-    .map(([k, label]) => `<button type="button" class="opt ${view.doc === k ? "on" : ""}" data-doc="${k}">${label}${g[k] ? ` <span class="n">${g[k]}</span>` : ""}</button>`).join("");
+    .filter((k) => k === "all" || k === view.doc || g[k] || !lastInfo)  // 하나도 없는 종류는 숨김
+    .map((k) => k === "all"
+      ? `<button type="button" class="nav-item ${view.doc === k ? "on" : ""}" data-doc="all">${ic("layers")}전체<span class="n">${lastInfo?.total ?? ""}</span></button>`
+      : `<button type="button" class="nav-item ${view.doc === k ? "on" : ""}" data-doc="${k}">${ic(GROUPS[k].icon)}${GROUPS[k].label}<span class="n">${g[k] || ""}</span></button>`).join("");
   $("#mineToggle").classList.toggle("on", view.mine);
   $("#mineToggle").setAttribute("aria-pressed", view.mine);
   $("#mineCount").textContent = lastInfo?.mine ? lastInfo.mine : "";
-  const sorts = [["relevance", "관련도순"], ["cited", "인용순"], ["added", "추가한 순"], ["year", "연도순"], ["title", "제목순"]];
+  const sorts = [["relevance", "관련도"], ["cited", "인용"], ["added", "추가"], ["year", "연도"], ["title", "제목"]];
   $("#sortOpts").innerHTML = sorts.map(([k, label]) =>
     `<button type="button" class="opt ${view.sort === k ? "on" : ""}" data-sort="${k}">${label}</button>`).join("");
   $("#yFrom").value = view.from; $("#yTo").value = view.to;
@@ -590,8 +721,11 @@ function renderResults(res, info) {
   const box = $("#results");
   if (!res.papers.length) {
     box.innerHTML = info.total
-      ? `<div class="empty"><h2>찾는 항목이 없습니다</h2><div>검색어를 줄이거나 범위를 ‘전체’ 또는 ‘본문’으로 바꿔 보세요.</div></div>`
-      : `<div class="empty"><h2>서재가 비어 있습니다</h2><div>논문이나 책 PDF를 이 창에 끌어다 놓으면<br>제목·저자·저널(책은 ISBN으로 출판사·판)을 찾아 <span class="mono">${esc(info.library)}</span> 에 정리해 둡니다.</div><button class="btn primary" type="button" onclick="document.getElementById('fileInput').click()">PDF 고르기</button></div>`;
+      ? `<div class="empty">${EMPTY_ART_SEARCH}<h2>찾는 항목이 없습니다</h2><p>검색어를 줄이거나, 검색 범위를 ‘전체’나 ‘본문’으로 바꿔 보세요.</p></div>`
+      : `<div class="empty">${EMPTY_ART}<h2>서재가 비어 있습니다</h2>
+          <p>논문이나 책 PDF를 이 창에 끌어다 놓으면 제목·저자·저널(책은 ISBN으로 출판사·판)을 찾아 <span class="mono">${esc(info.library)}</span>에 정리해 둡니다.</p>
+          <button class="btn primary" type="button" onclick="document.getElementById('fileInput').click()">${ic("upload")}파일 고르기</button>
+          <div class="tips"><span>${ic("clip", "sm")}보충자료는 본문에 자동으로 묶임</span><span>${ic("film", "sm")}동영상도 보충자료로</span><span>${ic("book", "sm")}책은 ISBN으로</span></div></div>`;
     return;
   }
   const pages = Math.max(1, Math.ceil(res.papers.length / view.perPage));
@@ -602,25 +736,39 @@ function renderResults(res, info) {
   box.innerHTML = shown.map(resultHTML).join("") + pagerHTML(view.page, pages);
 }
 
+const EMPTY_ART = `<svg class="art" viewBox="0 0 168 120" aria-hidden="true">
+  <rect x="34" y="18" width="64" height="84" rx="8" fill="var(--accent-soft)" transform="rotate(-8 66 60)"/>
+  <rect x="58" y="12" width="64" height="84" rx="8" fill="var(--panel)" stroke="var(--rule-strong)" stroke-width="1.5"/>
+  <path d="M70 32h40M70 42h40M70 52h28M70 62h36M70 72h22" stroke="var(--rule-strong)" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="122" cy="88" r="18" fill="var(--accent)"/>
+  <path d="M122 80v16M114 88h16" stroke="var(--on-accent)" stroke-width="3" stroke-linecap="round"/>
+</svg>`;
+const EMPTY_ART_SEARCH = `<svg class="art" viewBox="0 0 168 120" aria-hidden="true">
+  <rect x="46" y="14" width="64" height="84" rx="8" fill="var(--panel)" stroke="var(--rule-strong)" stroke-width="1.5"/>
+  <path d="M58 34h40M58 44h40M58 54h26" stroke="var(--rule-strong)" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="108" cy="76" r="17" fill="var(--panel)" stroke="var(--accent)" stroke-width="4"/>
+  <path d="m121 89 13 13" stroke="var(--accent)" stroke-width="5" stroke-linecap="round"/>
+</svg>`;
+
 function pagerHTML(page, pages) {
   if (pages <= 1) return "";
   // 1 … 4 5 [6] 7 8 … 20
   const nums = new Set([1, pages]);
   for (let i = page - 2; i <= page + 2; i++) if (i >= 1 && i <= pages) nums.add(i);
   const list = [...nums].sort((a, b) => a - b);
-  let html = `<nav class="pager" aria-label="쪽 이동"><button type="button" data-page="${page - 1}" ${page === 1 ? "disabled" : ""}>‹ 이전</button>`;
+  let html = `<nav class="pager" aria-label="쪽 이동"><button type="button" data-page="${page - 1}" ${page === 1 ? "disabled" : ""} aria-label="이전 쪽">‹</button>`;
   list.forEach((n, i) => {
     if (i && n - list[i - 1] > 1) html += `<span class="gap">…</span>`;
     html += `<button type="button" data-page="${n}" class="${n === page ? "on" : ""}" ${n === page ? 'aria-current="page"' : ""}>${n}</button>`;
   });
-  return html + `<button type="button" data-page="${page + 1}" ${page === pages ? "disabled" : ""}>다음 ›</button></nav>`;
+  return html + `<button type="button" data-page="${page + 1}" ${page === pages ? "disabled" : ""} aria-label="다음 쪽">›</button></nav>`;
 }
 
 function rerender(scrollTop = false) {
   if (!lastRes) return;
   renderSide();
   renderResults(lastRes, lastInfo);
-  if (scrollTop) window.scrollTo({ top: 0, behavior: "smooth" });
+  if (scrollTop) $("#scroller").scrollTo({ top: 0, behavior: "smooth" });
 }
 $("#results").addEventListener("click", (e) => {
   const b = e.target.closest("[data-page]"); if (!b || b.disabled) return;
@@ -650,7 +798,7 @@ function citedHTML(p) {
   if (p.cited_by == null) return "";
   const when = p.cited_by_at ? new Date(p.cited_by_at * 1000).toLocaleDateString("ko-KR") : "";
   const tip = `${p.cited_by_source || ""} 기준${when ? " · " + when + " 확인" : ""}`;
-  const label = `인용 ${Number(p.cited_by).toLocaleString("ko-KR")}회`;
+  const label = `${ic("trend", "sm")}인용 ${Number(p.cited_by).toLocaleString("ko-KR")}회`;
   return p.cited_by_url && p.cited_by > 0
     ? `<a class="cited" href="${esc(p.cited_by_url)}" target="_blank" rel="noopener" title="${esc(tip)} — 인용한 문헌 보기">${label}</a>`
     : `<span class="cited" title="${esc(tip)}">${label}</span>`;
@@ -679,26 +827,28 @@ function resultHTML(p) {
     : isBook(p)
     ? [p.scholar_authors + (p.type === "edited-book" && p.scholar_authors ? " (편)" : ""), [ed, p.year].filter(Boolean).join(" "), p.publisher].filter(Boolean)
     : [p.scholar_authors, venue, p.publisher && p.publisher !== p.journal ? p.publisher : ""].filter(Boolean);
-  const kind = TYPE_LABEL[p.type] ? `[${TYPE_LABEL[p.type]}] ` : "";
+  const g = GROUPS[p.doc_group] || GROUPS.other;
+  const badge = `<span class="type-badge" style="--tc:${g.color}">${ic(g.icon)}${esc(TYPE_LABEL[p.type] || g.label)}</span>`;
   const tags = (p.tags || "").split(/[,;]/).map((s) => s.trim()).filter(Boolean);
   const pdfHref = `/pdf/${p.id}/${encodeURIComponent(p.file_name)}`;
-  const doi = p.doi ? `<a href="https://doi.org/${esc(p.doi)}" target="_blank" rel="noopener">DOI</a>` : (p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">${isBook(p) ? "책 정보" : "원문 페이지"}</a>` : "");
+  const doi = p.doi ? `<a href="https://doi.org/${esc(p.doi)}" target="_blank" rel="noopener">${ic("link", "sm")}DOI</a>`
+    : (p.url ? `<a href="${esc(p.url)}" target="_blank" rel="noopener">${ic("external", "sm")}${isBook(p) ? "책 정보" : "원문 페이지"}</a>` : "");
   const bookMeta = isBook(p) ? [p.isbn ? `ISBN ${p.isbn}` : "", p.page_count ? `${p.page_count}쪽` : ""].filter(Boolean).join(" · ") : "";
   return `<article class="result" data-id="${p.id}" data-kind="${p.kind}">
-    <h2 class="r-title"><span style="color:var(--ink-soft);font-size:.85rem">${esc(kind)}</span><a href="${pdfHref}" target="_blank" rel="noopener">${highlight(p.title || "제목 없음")}</a>${p.is_mine ? '<span class="tag mine" title="내 논문·책">★ 내 저작</span>' : ""}${p.needs_review ? '<span class="tag warn" title="온라인에서 정보를 찾지 못해 PDF에서 추정했습니다">확인 필요</span>' : ""}${p.missing ? '<span class="tag miss">파일 없음</span>' : ""}${p.kind === "supp" ? '<span class="tag supp" title="본문 논문이 서재에 없습니다. 본문을 추가하면 자동으로 묶입니다.">보충자료 · 본문 없음</span>' : ""}</h2>
-    <div class="pdf-tag"><a href="${pdfHref}" target="_blank" rel="noopener"><b>[PDF]</b>열기</a></div>
-    <div class="byline">${highlight(by.join(" - "))}</div>
+    <div class="meta">${badge}${p.is_mine ? `<span class="tag mine" title="내 논문·책">${ic("star", "fill")}내 저작</span>` : ""}${p.needs_review ? `<span class="tag warn" title="온라인에서 정보를 찾지 못해 PDF에서 추정했습니다">${ic("alert")}확인 필요</span>` : ""}${p.missing ? '<span class="tag miss">파일 없음</span>' : ""}${p.kind === "supp" ? '<span class="tag supp" title="본문 논문이 서재에 없습니다. 본문을 추가하면 자동으로 묶입니다.">보충자료 · 본문 없음</span>' : ""}${tags.map((t) => `<span class="tag kw">#${highlight(t)}</span>`).join("")}</div>
+    <a class="open" href="${pdfHref}" target="_blank" rel="noopener" title="PDF 열기">${ic("external", "sm")}PDF</a>
+    <h2 class="r-title"><a href="${pdfHref}" target="_blank" rel="noopener">${highlight(p.title || "제목 없음")}</a></h2>
+    <div class="byline">${highlight(by.join(" · "))}</div>
     ${snippetHTML(p)}
-    ${(p.supplements || []).length ? `<div class="supps"><span class="lbl">📎 보충자료</span>${p.supplements.map((sp, i) =>
-      `<a class="${sp.matched && lastTerms.length ? "hit" : ""} ${sp.missing ? "miss" : ""}" href="/pdf/${sp.id}/${encodeURIComponent(sp.file_name)}" target="_blank" rel="noopener" title="${esc(sp.file_name)}${sp.original_name ? "\n원래 이름: " + esc(sp.original_name) : ""}">${sp.video ? "🎬 " : ""}S${i + 1} · ${esc(shortSupp(sp.file_name, p.file_name))}</a>`).join("")}</div>` : ""}
+    ${(p.supplements || []).length ? `<div class="supps"><span class="lbl">${ic("clip", "sm")}보충자료</span>${p.supplements.map((sp, i) =>
+      `<a class="${sp.matched && lastTerms.length ? "hit" : ""} ${sp.missing ? "miss" : ""}" href="/pdf/${sp.id}/${encodeURIComponent(sp.file_name)}" target="_blank" rel="noopener" title="${esc(sp.file_name)}${sp.original_name ? "\n원래 이름: " + esc(sp.original_name) : ""}">${ic(sp.video ? "film" : "file", "sm")}S${i + 1} · ${esc(shortSupp(sp.file_name, p.file_name))}</a>`).join("")}</div>` : ""}
     <div class="actions">
       ${citedHTML(p)}
-      <button type="button" data-act="cite">❝ 인용</button>
-      <button type="button" data-act="edit">✎ 수정</button>
-      <button type="button" data-act="reveal">폴더에서 보기</button>
+      <button type="button" data-act="cite">${ic("quote", "sm")}인용</button>
+      <button type="button" data-act="edit">${ic("pencil", "sm")}수정</button>
+      <button type="button" data-act="reveal">${ic("folder", "sm")}폴더에서 보기</button>
       ${doi}
-      ${bookMeta ? `<span class="mono" style="color:var(--ink-soft)">${esc(bookMeta)}</span>` : ""}
-      ${tags.map((t) => `<span class="tag kw">${highlight(t)}</span>`).join("")}
+      ${bookMeta ? `<span class="meta-txt mono">${esc(bookMeta)}</span>` : ""}
     </div>
     <div class="file mono">${esc(p.file_name)}</div>
   </article>`;
@@ -930,6 +1080,7 @@ async function watchCitations() {
   const el = $("#citeStatus"), btn = $("#citeRefreshBtn");
   if (!st) return;
   btn.disabled = st.running;
+  btn.classList.toggle("spinning", !!st.running);
   if (st.running) {
     el.textContent = st.total ? `인용 수 받는 중 ${st.done}/${st.total}` : "인용 수 받는 중…";
     citePoll = setTimeout(watchCitations, 2000);
@@ -1033,7 +1184,7 @@ function addFiles(files, parent = null) {
   const batch = { pdfLeft: 0, mains: new Map(), videos: [] };
   for (const file of files) {
     const li = document.createElement("li");
-    li.innerHTML = `<span class="ico"><span class="spin"></span></span><span class="from">${isVideoFile(file) ? "🎬 " : ""}${esc(file.name)}${parent ? ` → ‘${esc(parent.title)}’의 보충자료` : ""}</span><span class="to">대기 중</span>`;
+    li.innerHTML = `<span class="ico"><span class="spin"></span></span><span class="from">${isVideoFile(file) ? ic("film", "sm") + " " : ""}${esc(file.name)}${parent ? ` → ‘${esc(parent.title)}’의 보충자료` : ""}</span><span class="to">대기 중</span>`;
     list.prepend(li);
     if (isVideoFile(file)) { batch.videos.push({ file, li, parent, batch, video: true }); pending++; continue; }
     if (!isPdfFile(file)) { setItem(li, "error", "PDF나 동영상 파일이 아니어서 건너뛰었습니다"); continue; }
@@ -1055,7 +1206,7 @@ function releaseVideos(batch) {
 }
 function setItem(li, kind, html) {
   li.className = kind;
-  li.querySelector(".ico").innerHTML = { added: "✓", duplicate: "≡", error: "!" }[kind] || '<span class="spin"></span>';
+  li.querySelector(".ico").innerHTML = { added: ic("check"), duplicate: ic("dup"), error: ic("alert") }[kind] || '<span class="spin"></span>';
   li.querySelector(".to").innerHTML = html;
 }
 function updateTrayTitle() { $("#trayTitle").textContent = pending ? `추가 중 · 남은 파일 ${pending}개` : "모두 처리했습니다"; }

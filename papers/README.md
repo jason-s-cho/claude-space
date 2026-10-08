@@ -114,6 +114,7 @@ python app.py --library "D:\논문"     # 폴더 지정 (다음부터는 기억�
 - `library.py` — 파일 이름 정하기·이동, SQLite 색인, 검색
 - `metadata.py` — PDF 읽기, DOI/arXiv/제목 추출, Crossref·arXiv 조회, 인용 형식
 - `static/index.html` — 화면
+- `static/fonts/` — 내장 글꼴 Pretendard (SIL Open Font License 1.1, `LICENSE-Pretendard.txt`)
 - `desktop.py` — 자체 창(pywebview)
 - `tray.py` — 브라우저 모드의 알림 영역·메뉴 막대 아이콘
 - `packaging/` — 설치 파일 빌드 설정(PyInstaller, Inno Setup)
