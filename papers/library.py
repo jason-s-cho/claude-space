@@ -889,12 +889,16 @@ class Library:
             supps = c.execute("SELECT count(*) FROM papers WHERE kind='supp'").fetchone()[0]
             mains = c.execute("SELECT type, authors, mine FROM papers WHERE kind='main'").fetchall()
         groups = {name: 0 for name in (*DOC_GROUPS, "other")}
+        mine_groups = dict(groups)  # '내 논문·책'을 볼 때 쓰는 종류별 개수
         mine = 0
         for r in mains:
-            groups[doc_group(r["type"])] += 1
-            mine += self.is_mine({"authors": r["authors"], "mine": r["mine"]})
+            g = doc_group(r["type"])
+            groups[g] += 1
+            if self.is_mine({"authors": r["authors"], "mine": r["mine"]}):
+                mine += 1
+                mine_groups[g] += 1
         return {"total": total, "needs_review": review, "years": years, "supplements": supps,
-                "books": groups["book"], "groups": groups, "mine": mine}
+                "books": groups["book"], "groups": groups, "mine": mine, "mine_groups": mine_groups}
 
     def all_papers(self):
         with self.connect() as c:
