@@ -73,6 +73,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: 0.2.${{ github.run_number }}
         run: |
+          # 이 저장소에는 논문 서재 등 다른 앱의 릴리스도 있으므로 "Latest" 표시는 가져가지 않는다 (문서 보관함 앱은 docmanager-v 태그로 찾는다)
           # 태그로 실행했으면 그 태그, 기본 브랜치 커밋이면 빌드 번호로 새 태그를 만든다 (앱 버전과 같은 번호)
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then TAG="$GITHUB_REF_NAME"; else TAG="docmanager-v$VERSION"; fi
           gh release create "$TAG" installers/* \
@@ -80,4 +81,4 @@ jobs:
             --target "$GITHUB_SHA" \
             --title "문서 보관함 $VERSION" \
             --generate-notes \
-            --latest
+            --latest=false
