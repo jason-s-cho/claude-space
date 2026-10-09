@@ -37,7 +37,9 @@ jobs:
 
       # 빌드할 때마다 버전 번호를 올린다 (0.2.빌드번호). 새 설치 파일을 실행하면
       # 같은 앱의 이전 버전을 지우고 새 버전으로 바꾼다. 문서와 분류·태그·메모는 그대로 남는다.
+      # 윈도우 기본 셸(PowerShell)은 -c.extraMetadata… 를 점에서 잘라 버리므로 bash 로 실행한다.
       - run: npm run dist -- -c.extraMetadata.version=0.2.${{ github.run_number }}
+        shell: bash
         env:
           # 코드 서명 인증서가 없으므로 자동 탐색을 끈다.
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
