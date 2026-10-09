@@ -61,7 +61,8 @@ test("Claude 커넥터: 둘러보기·검색·읽기·버전·관련 문서·새
     assert.deepStrictEqual(tools, ["find_related_documents", "library_overview", "list_versions", "prepare_new_version", "read_document", "save_new_version", "search_documents"]);
 
     const ov = (await call("library_overview")).data;
-    assert.strictEqual(ov.documents, 3);
+    assert.strictEqual(ov.documents, 2); // IR 두 버전은 하나로
+    assert.strictEqual(ov.files_including_old_versions, 3);
     assert.strictEqual(ov.hidden_by_ai_exclusion, 1);
 
     // 검색: 기본은 최신본만, AI제외 문서는 안 보임

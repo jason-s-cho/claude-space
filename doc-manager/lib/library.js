@@ -146,14 +146,18 @@ class Library {
 
   overview() {
     const { views, root, settings } = this.load();
-    const shown = [...views.values()].filter((v) => !v.excluded);
+    const allShown = [...views.values()].filter((v) => !v.excluded);
+    // 문서 수는 search_documents 기본값처럼 문서마다 최신 버전 하나로 센다
+    const shown = allShown.filter((v) => !v.versions || v.versions.latest === v.rel);
     const count = (fn) => shown.filter(fn).length;
     const tagCount = new Map();
     for (const v of shown) for (const t of v.tags) tagCount.set(t, (tagCount.get(t) || 0) + 1);
     return {
       folder: path.basename(root),
       documents: shown.length,
-      hidden_by_ai_exclusion: views.size - shown.length,
+      files_including_old_versions: allShown.length,
+      hidden_by_ai_exclusion: views.size - allShown.length,
+      counting_note: "documents 와 분류별 수는 문서마다 최신 버전 하나로 센 수입니다. 이전 버전 파일까지 합친 수는 files_including_old_versions 입니다.",
       categories: CATEGORIES.map((c) => ({ category: catLabel(c.id), count: count((v) => v.category === c.id) })).filter((x) => x.count),
       projects: (settings.projects || []).map((p) => ({ name: p.name, count: count((v) => v.tags.includes(p.name)) })),
       partners: (settings.partners || []).map((p) => ({ name: p.name, count: count((v) => v.tags.includes(p.name)) })),
