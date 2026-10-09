@@ -91,6 +91,35 @@ function effective(entry) {
   return { category: entry.userCategory || entry.autoCategory || "other", tags };
 }
 
+// 파일 하나를 읽어서 색인 항목을 만든다. f: { full, rel, size, mtimeMs, birthtimeMs }
+async function buildEntry(f) {
+  const x = await extract(f.full);
+  return {
+    rel: f.rel,
+    size: f.size,
+    mtimeMs: f.mtimeMs,
+    birthtimeMs: f.birthtimeMs,
+    kind: x.kind,
+    title: x.title || "",
+    author: x.author || "",
+    pages: x.pages || 0,
+    text: x.text,
+    terms: countTerms([x.title, x.text].join("\n")),
+    error: x.error,
+    indexedAt: Date.now(),
+  };
+}
+
+// 폴더 밖의 파일 하나를 색인에 바로 넣는다. (끌어다 놓은 파일)
+async function addFile(index, full, options) {
+  const st = await fs.promises.stat(full);
+  const rel = path.relative(index.root, full).split(path.sep).join("/");
+  const entry = await buildEntry({ full, rel, size: st.size, mtimeMs: Math.round(st.mtimeMs), birthtimeMs: Math.round(st.birthtimeMs || st.mtimeMs) });
+  reclassify(entry, options);
+  index.files[rel] = entry;
+  return entry;
+}
+
 /**
  * 폴더를 다시 훑어 색인을 갱신한다.
  * onProgress({ done, total, current })
@@ -114,21 +143,7 @@ async function scan(index, options, onProgress) {
   for (const f of todo) {
     if (onProgress) onProgress({ done, total: todo.length, current: f.rel });
     const prev = old[f.rel];
-    const x = await extract(f.full);
-    const entry = {
-      rel: f.rel,
-      size: f.size,
-      mtimeMs: f.mtimeMs,
-      birthtimeMs: f.birthtimeMs,
-      kind: x.kind,
-      title: x.title || "",
-      author: x.author || "",
-      pages: x.pages || 0,
-      text: x.text,
-      terms: countTerms([x.title, x.text].join("\n")),
-      error: x.error,
-      indexedAt: Date.now(),
-    };
+    const entry = await buildEntry(f);
     let source = prev;
     if (!source) {
       const i = orphans.findIndex((o) => o.size === f.size && o.mtimeMs === f.mtimeMs && nameParts(o.rel).ext === nameParts(f.rel).ext);
@@ -145,7 +160,8 @@ async function scan(index, options, onProgress) {
 
   let removed = 0;
   for (const rel of Object.keys(old)) {
-    if (!seen.has(rel)) {
+    // 훑는 도중에 새로 들어온 파일(끌어다 놓기)은 지우지 않는다.
+    if (!seen.has(rel) && !fs.existsSync(path.join(root, ...rel.split("/")))) {
       delete old[rel];
       removed++;
     }
@@ -159,4 +175,4 @@ function reclassifyAll(index, options) {
   for (const e of Object.values(index.files)) reclassify(e, options);
 }
 
-module.exports = { loadIndex, saveIndex, emptyIndex, scan, reclassifyAll, effective, nameParts, USER_FIELDS };
+module.exports = { loadIndex, saveIndex, emptyIndex, scan, reclassifyAll, effective, nameParts, buildEntry, addFile, walk, isTempName, USER_FIELDS };

@@ -206,3 +206,14 @@ dialog::backdrop { background: rgba(10, 14, 22, 0.45); }
 .kwe i { font-style: normal; font-size: 0.68rem; color: var(--ink-soft); }
 .kwe button { border: 0; background: none; color: var(--ink-soft); padding: 0 5px; }
 .kwe button:hover { color: var(--warn); }
+
+/* 끌어다 놓기 */
+.drop-zone { position: fixed; inset: 0; z-index: 50; background: rgba(43, 89, 195, 0.12); display: grid; place-items: center; padding: 24px; pointer-events: none; }
+.drop-zone::before { content: ""; position: absolute; inset: 12px; border: 3px dashed var(--accent); border-radius: 16px; }
+.drop-card { background: var(--sheet); border: 1px solid var(--rule); border-radius: var(--radius); padding: 28px 36px; display: grid; gap: 6px; justify-items: center; text-align: center; box-shadow: 0 12px 40px rgba(0,0,0,0.18); }
+.drop-icon { font-size: 2rem; color: var(--accent); line-height: 1; }
+.drop-card span { color: var(--ink-soft); font-size: 0.88rem; }
+fieldset.field { border: 0; padding: 0; margin: 0; }
+.radio { display: flex; align-items: baseline; gap: 6px; font-weight: 400; }
+.toast.long { max-width: min(640px, calc(100vw - 32px)); white-space: pre-line; }
+.move-hint { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; padding: 8px; border: 1px dashed var(--rule); border-radius: 8px; font-size: 0.8rem; color: var(--ink-soft); }

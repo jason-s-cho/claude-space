@@ -15,6 +15,7 @@ const filter = { view: "all", tags: new Set(), kind: "" };
 let query = "";
 let results = null; // 검색 중이면 Map(rel → { score, snippet })
 let hlTerms = []; // 검색어 중 화면에 칠할 글자
+let lastImported = new Set(); // 방금 넣은 문서
 let selected = "";
 let visible = [];
 let showAllTags = false;
@@ -52,12 +53,13 @@ function fmtSize(n) {
 }
 
 let toastTimer = null;
-function toast(msg) {
+function toast(msg, ms = 3000) {
   const t = $("toast");
   t.textContent = msg;
+  t.classList.toggle("long", msg.length > 60 || msg.includes("\n"));
   t.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => (t.hidden = true), 3000);
+  toastTimer = setTimeout(() => (t.hidden = true), ms);
 }
 
 // ---------- 상태 받기 ----------
@@ -99,6 +101,7 @@ function matchesView(d, view) {
   if (view === "all") return true;
   if (view === "starred") return d.starred;
   if (view === "recent") return Date.now() - d.mtimeMs < 30 * DAY;
+  if (view === "imported") return lastImported.has(d.rel);
   if (view.startsWith("group:")) return (catById[d.category] || {}).group === view.slice(6);
   if (view.startsWith("cat:")) return d.category === view.slice(4);
   return true;
@@ -149,6 +152,7 @@ function renderSide() {
   h += navItem("all", "전체 문서", docs.length);
   h += navItem("starred", "★ 즐겨찾기", count((d) => d.starred));
   h += navItem("recent", "최근 30일", count((d) => Date.now() - d.mtimeMs < 30 * DAY));
+  if (lastImported.size) h += navItem("imported", "⬇ 방금 넣은 문서", count((d) => lastImported.has(d.rel)));
 
   h += "<h3>분류</h3>";
   const groups = [];
@@ -213,6 +217,7 @@ function tagBtn(t, n) {
 function viewLabel(view) {
   if (view === "starred") return "★ 즐겨찾기";
   if (view === "recent") return "최근 30일";
+  if (view === "imported") return "방금 넣은 문서";
   if (view.startsWith("group:")) return view.slice(6);
   if (view.startsWith("cat:")) return catLabel(view.slice(4));
   return "";
@@ -295,6 +300,9 @@ async function renderDetail() {
       <h4>분류</h4>
       <select class="select" id="catSelect">${opts}</select>
       <div class="reason">${reason}</div>
+      ${d.expectedDir && d.dir !== d.expectedDir
+        ? `<div class="move-hint">분류 폴더와 다른 곳에 있습니다.<button class="btn small" data-act="move" type="button" title="문서 폴더 안에서 옮깁니다. 태그·메모는 그대로 따라갑니다.">📁 ${esc(d.expectedDir)} 폴더로 옮기기</button></div>`
+        : ""}
     </section>
     <section>
       <h4>태그</h4>
@@ -608,6 +616,7 @@ function setSettingsTab(tab) {
 }
 
 function openSettings(tab = "rules", group) {
+  for (const r of document.querySelectorAll('input[name="importLayout"]')) r.checked = r.value === (S.settings.importLayout || "category");
   $("partnersInput").value = partnersToText(S.settings.partners);
   $("rulesInput").value = rulesToText(S.settings.tagRules);
   kwDraft = JSON.parse(JSON.stringify(S.settings.keywordOverrides || {}));
@@ -663,6 +672,7 @@ $("settingsDlg").addEventListener("close", async () => {
     partners: textToPartners($("partnersInput").value),
     tagRules: textToRules($("rulesInput").value),
     keywordOverrides: kwDraft,
+    importLayout: (document.querySelector('input[name="importLayout"]:checked') || {}).value,
   });
   toast("설정을 저장하고 모든 문서를 다시 분류했습니다.");
 });
@@ -718,6 +728,14 @@ $("detail").addEventListener("click", async (e) => {
   const act = b.dataset.act;
   if (act === "open") return openDoc(d.rel);
   if (act === "reveal") return api.showInFolder(d.rel);
+  if (act === "move") {
+    const r = await api.moveToCategory(d.rel);
+    if (r.error) return toast("옮기지 못했습니다: " + r.error);
+    if (lastImported.delete(d.rel)) lastImported.add(r.rel);
+    selected = r.rel;
+    renderAll(true);
+    return toast(`${folderOf(r.rel)} 폴더로 옮겼습니다.`);
+  }
   if (act === "star") await patchDoc(d.rel, { starred: !d.starred });
   if (act === "reset-cat") await patchDoc(d.rel, { userCategory: "" });
   if (b.dataset.untag) return removeTag(d, b.dataset.untag);
@@ -845,3 +863,77 @@ $("kwResetGroup").onclick = () => {
   delete kwDraft[kwGroup];
   renderKwEditor();
 };
+
+// ---------- 끌어다 놓기 · 문서 넣기 ----------
+
+function folderOf(rel) {
+  return rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/")) : "(최상위 폴더)";
+}
+
+function showImportResult(r) {
+  if (!r) return;
+  if (r.error) return toast(r.error);
+  const lines = [];
+  if (r.imported.length) {
+    const byFolder = new Map();
+    for (const x of r.imported) byFolder.set(folderOf(x.rel), (byFolder.get(folderOf(x.rel)) || 0) + 1);
+    lines.push(`${r.imported.length}개를 저장하고 분류했습니다.`);
+    for (const [f, n] of byFolder) lines.push(`  · ${f}  ${n}개`);
+  }
+  if (r.existing.length) lines.push(`${r.existing.length}개는 이미 문서 폴더에 있어서 복사하지 않았습니다.`);
+  if (r.skipped.length) lines.push(`${r.skipped.length}개는 넣지 못했습니다: ` + r.skipped.slice(0, 3).map((x) => `${x.name} (${x.reason})`).join(", ") + (r.skipped.length > 3 ? " …" : ""));
+  if (!lines.length) lines.push("넣을 문서가 없습니다.");
+  toast(lines.join("\n"), 6000);
+
+  const rels = [...r.imported, ...r.existing].map((x) => x.rel);
+  if (!rels.length) return;
+  lastImported = new Set(rels);
+  // 넣은 문서만 보이게 하고 첫 문서를 고른다. (분류가 틀렸으면 오른쪽에서 바로 고칠 수 있게)
+  filter.view = "imported";
+  filter.tags.clear();
+  filter.kind = "";
+  if (query) {
+    $("q").value = "";
+    query = "";
+    results = null;
+    hlTerms = [];
+    if ($("sort").value === "relevance") $("sort").value = "mtime";
+  }
+  selected = rels[0];
+  renderAll(true);
+}
+
+$("addBtn").onclick = async () => showImportResult(await api.pickAndImport());
+
+let dragDepth = 0;
+const hasFiles = (e) => e.dataTransfer && [...e.dataTransfer.types].includes("Files");
+
+window.addEventListener("dragenter", (e) => {
+  if (!hasFiles(e)) return;
+  e.preventDefault();
+  dragDepth++;
+  $("dropHint").textContent = S.root
+    ? S.settings.importLayout === "root" ? "문서 폴더 바로 아래에 저장" : "분류에 맞는 하위 폴더에 저장 (예: 국가과제/과제보고서)"
+    : "먼저 문서 폴더를 골라 주세요";
+  $("dropZone").hidden = false;
+});
+window.addEventListener("dragover", (e) => {
+  // 기본 동작(파일을 창에서 열기)을 막아야 놓을 수 있다.
+  e.preventDefault();
+  if (e.dataTransfer) e.dataTransfer.dropEffect = S.root ? "copy" : "none";
+});
+window.addEventListener("dragleave", (e) => {
+  if (!hasFiles(e)) return;
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (!dragDepth) $("dropZone").hidden = true;
+});
+window.addEventListener("drop", async (e) => {
+  e.preventDefault();
+  dragDepth = 0;
+  $("dropZone").hidden = true;
+  if (!S.root) return toast("먼저 문서 폴더를 골라 주세요.");
+  const paths = api.pathsOf(e.dataTransfer ? e.dataTransfer.files : []);
+  if (!paths.length) return toast("파일을 읽을 수 없습니다. 탐색기에서 파일을 끌어다 놓아 주세요.");
+  toast(`${paths.length}개 넣는 중…`, 60000);
+  showImportResult(await api.importFiles(paths));
+});

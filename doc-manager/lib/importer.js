@@ -1,0 +1,173 @@
+// 끌어다 놓은 파일을 문서 폴더에 복사하고 분류한다.
+// 원본은 그대로 두고, 같은 이름이 있으면 덮어쓰지 않고 "이름 (2).docx" 로 저장한다.
+// 내용까지 똑같은 파일이 이미 폴더에 있으면 복사하지 않는다.
+const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
+const { extract, fileKind } = require("./extract");
+const { classify, CATEGORIES } = require("./classify");
+const indexer = require("./indexer");
+
+// 윈도우에서 폴더 이름으로 쓸 수 없는 글자를 뺀다.
+function safeName(s) {
+  return s.replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim().replace(/[. ]+$/, "") || "기타";
+}
+
+// 분류에 맞는 하위 폴더. 예: 국가과제/과제보고서, 대외/고객사·협력사 요청자료/현대모비스
+function folderFor(category, tags, partners) {
+  const c = CATEGORIES.find((x) => x.id === category) || CATEGORIES.find((x) => x.id === "other");
+  const parts = c.group ? [c.group, c.label] : [c.label];
+  if (category === "request") {
+    const names = new Set((partners || []).map((p) => (typeof p === "string" ? p : p.name)));
+    const partner = tags.find((t) => names.has(t));
+    if (partner) parts.push(partner);
+  }
+  return parts.map(safeName).join("/");
+}
+
+// 문서 폴더 안에 분류별 폴더를 만들어 둔다. 이미 있으면 그대로 두고, 파일은 옮기지 않는다.
+// 결과: 새로 만든 폴더 수
+function ensureCategoryFolders(root, partners) {
+  const dirs = CATEGORIES.map((c) => folderFor(c.id, [], []));
+  for (const p of partners || []) {
+    const name = typeof p === "string" ? p : p && p.name;
+    if (name && name.trim()) dirs.push(folderFor("request", [name.trim()], [name.trim()]));
+  }
+  let made = 0;
+  for (const d of dirs) {
+    const full = path.join(root, ...d.split("/"));
+    if (fs.existsSync(full)) continue;
+    try {
+      fs.mkdirSync(full, { recursive: true });
+      made++;
+    } catch {}
+  }
+  return made;
+}
+
+// 이 문서가 들어가야 할 분류 폴더 (문서 폴더 기준 상대 경로)
+function expectedFolder(category, tags, partners) {
+  return folderFor(category, tags || [], partners);
+}
+
+/**
+ * 문서를 분류 폴더로 옮긴다. 같은 이름이 있으면 "이름 (2)"로.
+ * 내가 고친 분류·태그·메모는 그대로 따라간다.
+ * 결과: 새 상대 경로
+ */
+async function moveToFolder(index, rel, folder) {
+  const root = index.root;
+  const entry = index.files[rel];
+  if (!entry) throw new Error("알 수 없는 파일");
+  const src = path.join(root, ...rel.split("/"));
+  const dir = path.join(root, ...folder.split("/"));
+  if (!isInside(root, path.join(dir, "x"))) throw new Error("문서 폴더 밖으로는 옮길 수 없습니다");
+  await fs.promises.mkdir(dir, { recursive: true });
+  const { dest, duplicate } = await destinationFor(src, dir);
+  if (duplicate) throw new Error("옮길 폴더에 같은 파일이 이미 있습니다");
+  await fs.promises.rename(src, dest);
+  const newRel = path.relative(root, dest).split(path.sep).join("/");
+  delete index.files[rel];
+  entry.rel = newRel;
+  index.files[newRel] = entry;
+  return newRel;
+}
+
+async function sameContent(a, b) {
+  const [sa, sb] = await Promise.all([fs.promises.stat(a), fs.promises.stat(b)]);
+  if (sa.size !== sb.size) return false;
+  const hash = async (f) => crypto.createHash("sha1").update(await fs.promises.readFile(f)).digest("hex");
+  return (await hash(a)) === (await hash(b));
+}
+
+// 같은 이름이 있으면 " (2)", " (3)" … 을 붙인다. 내용이 같은 파일이 있으면 그 경로를 돌려준다.
+async function destinationFor(src, dir) {
+  const ext = path.extname(src);
+  const stem = path.basename(src, ext);
+  for (let i = 1; i < 1000; i++) {
+    const name = i === 1 ? stem + ext : `${stem} (${i})${ext}`;
+    const dest = path.join(dir, name);
+    if (!fs.existsSync(dest)) return { dest, duplicate: false };
+    if (await sameContent(src, dest)) return { dest, duplicate: true };
+  }
+  throw new Error("같은 이름의 파일이 너무 많습니다");
+}
+
+// 놓은 것 중 폴더는 안의 문서 파일을 모두 꺼낸다.
+async function expand(paths) {
+  const files = [];
+  const skipped = [];
+  for (const p of paths) {
+    let st;
+    try {
+      st = await fs.promises.stat(p);
+    } catch {
+      skipped.push({ name: path.basename(p), reason: "파일을 찾을 수 없음" });
+      continue;
+    }
+    if (st.isDirectory()) {
+      for (const f of await indexer.walk(p)) files.push(f.full);
+    } else if (indexer.isTempName(path.basename(p))) {
+      skipped.push({ name: path.basename(p), reason: "임시 파일" });
+    } else if (!fileKind(p)) {
+      skipped.push({ name: path.basename(p), reason: "지원하지 않는 형식" });
+    } else files.push(p);
+  }
+  return { files, skipped };
+}
+
+function isInside(root, p) {
+  const rel = path.relative(root, p);
+  return !!rel && !rel.startsWith("..") && !path.isAbsolute(rel);
+}
+
+/**
+ * paths: 놓은 파일·폴더 경로
+ * opts: { layout: "category" | "root", options: 분류 옵션 }
+ * 결과: { imported: [{ rel, category, from }], existing: [{ rel, name }], skipped: [{ name, reason }] }
+ */
+async function importFiles(index, paths, opts = {}) {
+  const root = index.root;
+  const { files, skipped } = await expand(paths);
+  const imported = [];
+  const existing = [];
+  for (const src of files) {
+    const name = path.basename(src);
+    try {
+      // 이미 문서 폴더 안에 있는 파일은 복사하지 않고 그대로 보여 준다.
+      if (isInside(root, src)) {
+        const rel = path.relative(root, src).split(path.sep).join("/");
+        if (!index.files[rel]) await indexer.addFile(index, src, opts.options);
+        existing.push({ rel, name, reason: "이미 문서 폴더 안에 있음" });
+        continue;
+      }
+      let dir = root;
+      if (opts.layout !== "root") {
+        const x = await extract(src);
+        // 원래 있던 폴더 이름도 단서로 쓴다. (예: …/고객사/현대모비스/단가표.xlsx)
+        const from = path.dirname(src).split(path.sep).filter(Boolean).slice(-2).join("/");
+        const c = classify({ name: path.basename(src, path.extname(src)), dir: from, text: x.text, title: x.title }, opts.options);
+        dir = path.join(root, ...folderFor(c.category, c.tags, opts.options && opts.options.partners).split("/"));
+      }
+      await fs.promises.mkdir(dir, { recursive: true });
+      const { dest, duplicate } = await destinationFor(src, dir);
+      const rel = path.relative(root, dest).split(path.sep).join("/");
+      if (duplicate) {
+        if (!index.files[rel]) await indexer.addFile(index, dest, opts.options);
+        existing.push({ rel, name, reason: "같은 파일이 이미 있음" });
+        continue;
+      }
+      await fs.promises.copyFile(src, dest, fs.constants.COPYFILE_EXCL);
+      // 수정한 날짜는 원본 그대로 둔다.
+      const st = await fs.promises.stat(src);
+      await fs.promises.utimes(dest, st.atime, st.mtime);
+      const entry = await indexer.addFile(index, dest, opts.options);
+      imported.push({ rel, category: indexer.effective(entry).category, from: src });
+    } catch (e) {
+      skipped.push({ name, reason: String((e && e.message) || e).slice(0, 120) });
+    }
+  }
+  return { imported, existing, skipped };
+}
+
+module.exports = { importFiles, folderFor, safeName, ensureCategoryFolders, expectedFolder, moveToFolder };

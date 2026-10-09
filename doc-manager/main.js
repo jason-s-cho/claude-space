@@ -5,6 +5,8 @@ const indexer = require("./lib/indexer");
 const { CATEGORIES, KEYWORDS, KEYWORD_GROUPS } = require("./lib/classify");
 const { docFrequency, topKeywords } = require("./lib/keywords");
 const searchLib = require("./lib/search");
+const { importFiles, ensureCategoryFolders, expectedFolder, moveToFolder } = require("./lib/importer");
+const { SUPPORTED } = require("./lib/extract");
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -22,7 +24,7 @@ let lastFocusScan = 0;
 
 const userFile = (name) => path.join(app.getPath("userData"), name);
 
-const DEFAULT_SETTINGS = { root: "", partners: [], tagRules: [], keywordOverrides: {}, savedSearches: [], recentSearches: [] };
+const DEFAULT_SETTINGS = { root: "", partners: [], tagRules: [], keywordOverrides: {}, savedSearches: [], recentSearches: [], importLayout: "category" };
 
 function loadSettings() {
   try {
@@ -88,6 +90,8 @@ function docSummary(e) {
     note: e.note || "",
     starred: !!e.starred,
     keywords: keywordsOf(e.rel),
+    // 분류에 맞는 폴더. 지금 폴더와 다르면 화면에서 '옮기기' 버튼을 보여 준다.
+    expectedDir: settings.importLayout === "root" ? "" : expectedFolder(eff.category, eff.tags, settings.partners),
   };
 }
 
@@ -165,9 +169,18 @@ function startWatching() {
   }
 }
 
+// '분류별 하위 폴더' 방식이면 문서 폴더 안에 분류 폴더를 만들어 둔다.
+function prepareFolders() {
+  if (settings.root && settings.importLayout !== "root" && fs.existsSync(settings.root)) {
+    return ensureCategoryFolders(settings.root, settings.partners);
+  }
+  return 0;
+}
+
 function openRoot(root) {
   settings.root = root;
   saveSettings();
+  prepareFolders();
   index = root ? indexer.loadIndex(userFile("index.json"), root) : null;
   keywordCache = null;
   startWatching();
@@ -241,6 +254,43 @@ function registerIpc() {
     return true;
   });
 
+  // 끌어다 놓은 파일(또는 '문서 넣기'로 고른 파일)을 문서 폴더에 복사하고 분류한다.
+  async function doImport(paths) {
+    if (!index || !index.root) return { imported: [], existing: [], skipped: [], error: "먼저 문서 폴더를 골라 주세요." };
+    const r = await importFiles(index, paths, { layout: settings.importLayout, options: classifyOptions() });
+    persistIndex();
+    keywordCache = null;
+    send("state", state());
+    return r;
+  }
+
+  ipcMain.handle("import-files", (_e, paths) => doImport(Array.isArray(paths) ? paths.filter((p) => typeof p === "string" && p) : []));
+
+  ipcMain.handle("pick-and-import", async () => {
+    const r = await dialog.showOpenDialog(win, {
+      title: "문서 폴더에 넣을 파일 고르기",
+      properties: ["openFile", "multiSelections"],
+      filters: [{ name: "문서", extensions: Object.keys(SUPPORTED).map((x) => x.slice(1)) }],
+    });
+    if (r.canceled || !r.filePaths.length) return null;
+    return doImport(r.filePaths);
+  });
+
+  ipcMain.handle("move-to-category", async (_e, rel) => {
+    const e = index && index.files[rel];
+    if (!e) return { error: "알 수 없는 파일" };
+    const eff = indexer.effective(e);
+    try {
+      const newRel = await moveToFolder(index, rel, expectedFolder(eff.category, eff.tags, settings.partners));
+      persistIndex();
+      keywordCache = null;
+      send("state", state());
+      return { rel: newRel };
+    } catch (err) {
+      return { error: String((err && err.message) || err) };
+    }
+  });
+
   ipcMain.handle("rescan", () => {
     runScan();
   });
@@ -287,7 +337,9 @@ function registerIpc() {
     if (Array.isArray(next.partners)) settings.partners = next.partners;
     if (Array.isArray(next.tagRules)) settings.tagRules = next.tagRules;
     if (next.keywordOverrides && typeof next.keywordOverrides === "object") settings.keywordOverrides = next.keywordOverrides;
+    if (next.importLayout === "category" || next.importLayout === "root") settings.importLayout = next.importLayout;
     saveSettings();
+    prepareFolders();
     if (index) {
       indexer.reclassifyAll(index, classifyOptions());
       persistIndex();
@@ -380,6 +432,7 @@ app.whenReady().then(() => {
   registerIpc();
   createWindow();
   if (settings.root) {
+    prepareFolders();
     startWatching();
     lastFocusScan = Date.now();
     runScan();
