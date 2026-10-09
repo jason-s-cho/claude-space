@@ -761,6 +761,11 @@ function openSettings(tab = "general", group) {
   renderKwEditor();
   $("aboutVersion").textContent = S.appVersion || "";
   $("aboutRoot").textContent = S.root || "(아직 고르지 않음)";
+  $("aboutStore").textContent = !S.root
+    ? ""
+    : S.indexInFolder
+      ? "문서 폴더 안 .docmanager 폴더에 저장합니다. 직접 고친 분류·태그·메모와 과제·고객사·태그 규칙·분류 키워드가 폴더를 따라가므로, 폴더를 옮기거나 Google Drive 등으로 다른 PC에서 열어도 그대로입니다. (테마·최근 검색은 PC마다 따로)"
+      : "문서 폴더에 쓸 수 없어서 이 PC에 저장하고 있습니다. 다른 PC에서는 보이지 않습니다.";
   setSettingsTab(tab);
   $("settingsDlg").showModal();
 }

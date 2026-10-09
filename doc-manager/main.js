@@ -24,6 +24,22 @@ let watchTimer = null;
 let lastFocusScan = 0;
 
 const userFile = (name) => path.join(app.getPath("userData"), name);
+const store = require("./lib/store");
+
+// 색인 파일: 보통 문서 폴더 안의 .docmanager/index.json, 폴더에 쓸 수 없으면 앱 데이터 폴더
+let indexFile = null;
+let indexInFolder = false;
+// 다른 PC(클라우드 동기화)가 고친 것을 알아채기 위해 마지막으로 읽고 쓴 시각을 기억한다.
+let indexDiskMtime = 0;
+let folderSettingsMtime = 0;
+
+const mtimeOf = (file) => {
+  try {
+    return fs.statSync(file).mtimeMs;
+  } catch {
+    return 0;
+  }
+};
 
 const DEFAULT_SETTINGS = { root: "", partners: [], tagRules: [], keywordOverrides: {}, savedSearches: [], recentSearches: [], importLayout: "category", projects: [], techTags: true, theme: "system" };
 
@@ -37,9 +53,62 @@ function loadSettings() {
   }
 }
 
-function saveSettings() {
+// PC 설정은 앱 데이터 폴더에, 분류 규칙(과제·고객사·태그 규칙·분류 키워드·저장한 검색)은 문서 폴더에도 저장한다.
+function savePcSettings() {
   fs.mkdirSync(app.getPath("userData"), { recursive: true });
   fs.writeFileSync(userFile("settings.json"), JSON.stringify(settings, null, 2));
+}
+
+function saveSettings() {
+  savePcSettings();
+  if (settings.root && store.saveFolderSettings(settings.root, settings)) {
+    folderSettingsMtime = mtimeOf(store.paths(settings.root).settings);
+  }
+}
+
+// 문서 폴더의 분류 규칙을 읽어 지금 설정에 덮는다. 폴더에 아직 없으면 지금 설정을 폴더에 써 둔다.
+function loadFolderSettings(root) {
+  const { values, fromFolder } = store.loadFolderSettings(root, settings);
+  Object.assign(settings, values);
+  settings.keywordOverrides = migrateOverrides(settings.keywordOverrides);
+  if (fromFolder) folderSettingsMtime = mtimeOf(store.paths(root).settings);
+  else saveSettings();
+}
+
+// 문서 폴더를 연다: 예전 색인 옮기기 → 분류 규칙 읽기 → 색인 읽기
+function loadRoot(root) {
+  if (store.migrateLegacyIndex(root, userFile("index.json"))) console.log("색인을 문서 폴더로 옮김");
+  loadFolderSettings(root);
+  const loc = store.indexLocation(root, userFile("index.json"));
+  indexFile = loc.file;
+  indexInFolder = loc.inFolder;
+  index = indexer.loadIndex(indexFile, root, { anyRoot: indexInFolder });
+  indexDiskMtime = mtimeOf(indexFile);
+  if (indexer.upgradeIfNeeded(index, classifyOptions())) persistIndex();
+  keywordCache = versionCache = null;
+}
+
+// 다른 PC가 같은 문서 폴더의 색인이나 분류 규칙을 고쳤으면 다시 읽는다. (창으로 돌아올 때·다시 훑기 전에)
+function syncFromDisk() {
+  if (!index || !settings.root) return false;
+  let changed = false;
+  const sFile = store.paths(settings.root).settings;
+  const sMtime = mtimeOf(sFile);
+  if (sMtime && sMtime !== folderSettingsMtime) {
+    loadFolderSettings(settings.root);
+    changed = true;
+  }
+  const iMtime = mtimeOf(indexFile);
+  if (iMtime && iMtime !== indexDiskMtime) {
+    index = indexer.loadIndex(indexFile, settings.root, { anyRoot: indexInFolder });
+    indexDiskMtime = iMtime;
+    changed = true;
+  }
+  if (changed) {
+    indexer.reclassifyAll(index, classifyOptions());
+    keywordCache = versionCache = null;
+  }
+  return changed;
 }
 
 function classifyOptions() {
@@ -53,7 +122,13 @@ function classifyOptions() {
 }
 
 function persistIndex() {
-  if (index && index.root) indexer.saveIndex(userFile("index.json"), index);
+  if (!index || !index.root || !indexFile) return;
+  try {
+    indexer.saveIndex(indexFile, index);
+    indexDiskMtime = mtimeOf(indexFile);
+  } catch (e) {
+    send("scan-error", "색인을 저장하지 못했습니다: " + ((e && e.message) || e));
+  }
 }
 
 // 문서마다 핵심 키워드. 전체 문서와 비교해야 하므로 색인이 바뀔 때마다 다시 계산한다.
@@ -120,6 +195,7 @@ function state() {
     root: settings.root,
     settings,
     appVersion: app.getVersion(),
+    indexInFolder,
     platform: process.platform,
     categories: CATEGORIES,
     keywordGroups: KEYWORD_GROUPS,
@@ -145,7 +221,14 @@ async function runScan() {
     send("scan-error", "폴더를 찾을 수 없습니다: " + index.root);
     return;
   }
+  // 켤 때 없던 폴더가 다시 보이면(외장 드라이브 연결 등) 그 폴더의 색인부터 읽는다.
+  if (!indexFile) {
+    loadRoot(index.root);
+    prepareFolders();
+    startWatching();
+  }
   scanning = true;
+  syncFromDisk();
   send("state", state());
   try {
     let lastSend = 0;
@@ -157,8 +240,11 @@ async function runScan() {
         send("progress", p);
       }
     });
-    persistIndex();
-    if (r.added || r.updated || r.removed) keywordCache = versionCache = null;
+    // 바뀐 게 있을 때만 저장한다. (괜히 쓰면 클라우드 동기화가 계속 일어난다)
+    if (r.added || r.updated || r.removed) {
+      persistIndex();
+      keywordCache = versionCache = null;
+    }
     send("scan-done", { added: r.added, updated: r.updated, removed: r.removed });
   } catch (e) {
     send("scan-error", String((e && e.message) || e));
@@ -181,7 +267,9 @@ function startWatching() {
   }
   if (!settings.root) return;
   try {
-    watcher = fs.watch(settings.root, { recursive: true }, () => {
+    watcher = fs.watch(settings.root, { recursive: true }, (_event, filename) => {
+      // 이 앱이 .docmanager 에 쓴 것 때문에 다시 훑지 않는다
+      if (store.isOwnFile(filename)) return;
       clearTimeout(watchTimer);
       watchTimer = setTimeout(runScan, 2500);
     });
@@ -203,11 +291,11 @@ function prepareFolders() {
 
 function openRoot(root) {
   settings.root = root;
-  saveSettings();
+  // 새 폴더의 분류 규칙을 읽기 전이므로 PC 설정만 저장한다. (지금 규칙으로 그 폴더의 규칙을 덮어쓰지 않도록)
+  savePcSettings();
+  if (root) loadRoot(root);
+  else index = null;
   prepareFolders();
-  index = root ? indexer.loadIndex(userFile("index.json"), root) : null;
-  if (index && indexer.upgradeIfNeeded(index, classifyOptions())) persistIndex();
-  keywordCache = versionCache = null;
   startWatching();
   send("state", state());
   runScan();
@@ -483,10 +571,9 @@ app.whenReady().then(() => {
       } catch {}
     }
   });
-  if (settings.root) {
-    index = indexer.loadIndex(userFile("index.json"), settings.root);
-    if (indexer.upgradeIfNeeded(index, classifyOptions())) persistIndex();
-  }
+  if (settings.root && fs.existsSync(settings.root)) loadRoot(settings.root);
+  // 폴더가 없어졌으면(외장 드라이브를 뺐거나 이름이 바뀜) 빈 목록으로 열고 다시 훑을 때 알려 준다.
+  else if (settings.root) index = indexer.emptyIndex(settings.root);
   registerIpc();
   createWindow();
   if (settings.root) {

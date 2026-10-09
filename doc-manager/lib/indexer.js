@@ -14,10 +14,13 @@ function emptyIndex(root) {
   return { version: INDEX_VERSION, root, files: {}, classifierVersion: CLASSIFIER_VERSION };
 }
 
-function loadIndex(file, root) {
+// opts.anyRoot: 색인이 문서 폴더 안에 있을 때. 폴더를 옮겼거나 다른 PC(드라이브 문자가 다름)에서 열어도
+// 파일 경로는 폴더 기준 상대 경로이므로 그대로 쓴다.
+function loadIndex(file, root, opts = {}) {
   try {
     const data = JSON.parse(fs.readFileSync(file, "utf8"));
-    if (data && data.version === INDEX_VERSION && data.root === root && data.files) {
+    if (data && data.version === INDEX_VERSION && (data.root === root || opts.anyRoot) && data.files) {
+      data.root = root;
       // 키워드 기능이 생기기 전에 만든 색인: 파일을 다시 읽지 않고 저장된 본문으로 센다.
       for (const e of Object.values(data.files)) {
         if (!e.terms) e.terms = countTerms([e.title, e.text].join("\n"));
