@@ -108,6 +108,7 @@ function applyState(next) {
   S = next;
   catById = Object.fromEntries(S.categories.map((c) => [c.id, c]));
   byRel = new Map(S.docs.map((d) => [d.rel, d]));
+  rebuildDupMap();
   if (selected && !byRel.has(selected)) selected = "";
   document.body.classList.toggle("mac", S.platform === "darwin");
   $("searchKbd").textContent = S.platform === "darwin" ? "⌘ K" : "Ctrl K";
@@ -144,6 +145,13 @@ function renderStatus() {
   }
 }
 
+// ---------- 중복 파일 ----------
+let dupOf = new Map(); // rel → { rels, keep }
+function rebuildDupMap() {
+  dupOf = new Map();
+  for (const g of S.duplicates || []) for (const r of g.rels) dupOf.set(r, g);
+}
+
 // ---------- 걸러내기 ----------
 
 function matchesView(d, view) {
@@ -152,6 +160,7 @@ function matchesView(d, view) {
   if (view === "recent") return Date.now() - d.mtimeMs < 30 * DAY;
   if (view === "imported") return lastImported.has(d.rel);
   if (view === "misplaced") return d.misplaced;
+  if (view === "duplicates") return dupOf.has(d.rel);
   if (view.startsWith("group:")) return (catById[d.category] || {}).group === view.slice(6);
   if (view.startsWith("cat:")) return d.category === view.slice(4);
   return true;
@@ -200,6 +209,8 @@ function renderSide() {
   if (lastImported.size) h += navItem("imported", "방금 넣은 문서", count((d) => lastImported.has(d.rel)), { icon: "inbox" });
   const misplacedN = count((d) => d.misplaced);
   if (misplacedN || filter.view === "misplaced") h += navItem("misplaced", "제자리가 아닌 문서", misplacedN, { icon: "move" });
+  const dupN = count((d) => dupOf.has(d.rel));
+  if (dupN || filter.view === "duplicates") h += navItem("duplicates", "중복 파일", dupN, { icon: "copy" });
 
   const saved = S.settings.savedSearches || [];
   if (saved.length) {
@@ -292,6 +303,7 @@ function viewLabel(view) {
   if (view === "recent") return "최근 30일";
   if (view === "imported") return "방금 넣은 문서";
   if (view === "misplaced") return "제자리가 아닌 문서";
+  if (view === "duplicates") return "중복 파일";
   if (view.startsWith("group:")) return view.slice(6);
   if (view.startsWith("cat:")) return catLabel(view.slice(4));
   return "";
@@ -338,6 +350,8 @@ function renderList() {
   if (query) f += chip(`“${esc(query)}”`, 'data-clear="query"');
   if (filter.view === "misplaced" && visible.some((d) => d.misplaced))
     f += `<button class="btn sm primary" data-act="move-all" type="button" title="분류에 맞는 폴더로 한꺼번에 옮깁니다. 옮기기 전에 목록을 보여 드립니다.">${icon("move")}모두 제자리로 옮기기</button>`;
+  if (filter.view === "duplicates" && visible.some((d) => dupOf.has(d.rel)))
+    f += `<button class="btn sm primary" data-act="dedupe" type="button" title="내용이 같은 파일 중 하나만 남기고 나머지를 휴지통으로 보냅니다. 보내기 전에 목록을 보여 드립니다.">${icon("copy")}중복 정리</button>`;
   if (f) f += `<button class="btn sm ghost" data-act="save-search" type="button" title="지금 조건을 왼쪽 '저장한 검색'에 넣습니다">${icon("bookmark")}저장</button>`;
   $("activeFilters").innerHTML = f || '<span class="title">전체 문서</span>';
 
@@ -425,6 +439,15 @@ async function renderDetail() {
         return `<li class="${rel === d.rel ? "cur" : ""}"><button data-goto="${esc(rel)}" type="button" title="${esc(rel)}"><span class="tl-dot"></span><span class="tl-name">${esc(x.base)}</span><span class="tl-date">${fmtDate(x.mtimeMs)}</span></button></li>`;
       })
       .join("")}</ul></div>`;
+  }
+
+  const dup = dupOf.get(d.rel);
+  if (dup) {
+    const others = dup.rels.filter((r) => r !== d.rel);
+    banner += `<div class="banner">${icon("copy")}<div>내용이 똑같은 파일이 ${others.length}개 더 있습니다: ${others
+      .slice(0, 3)
+      .map((r) => `<button data-goto="${esc(r)}" type="button" title="${esc(r)}">${esc(r)}</button>`)
+      .join(", ")}${others.length > 3 ? " …" : ""} <button data-act="dedupe-one" type="button">중복 정리</button></div></div>`;
   }
 
   box.innerHTML = `
@@ -847,9 +870,11 @@ function openMoveDialog(list) {
   // 미분류 문서는 '미분류' 폴더로 모으는 것이 원하는 일이 아닐 수 있어 처음엔 빼 둔다.
   $("moveList").innerHTML = list
     .map((d) => {
-      const on = d.category !== "other";
+      const g = dupOf.get(d.rel);
+      const twinInPlace = g && g.rels.some((r) => r !== d.rel && byRel.has(r) && !byRel.get(r).misplaced);
+      const on = d.category !== "other" && !twinInPlace;
       return `<li><label class="check"><input type="checkbox" data-move="${esc(d.rel)}" ${on ? "checked" : ""}><span class="mv-name">${esc(d.base)}</span></label>
-        <div class="mv-path"><span>${esc(d.dir || "최상위 폴더")}</span>${icon("chevron", "mv-arrow")}<b>${esc(d.expectedDir)}</b></div></li>`;
+        <div class="mv-path"><span>${esc(d.dir || "최상위 폴더")}</span>${icon("chevron", "mv-arrow")}<b>${esc(d.expectedDir)}</b>${twinInPlace ? '<span class="mv-dup">같은 파일이 이미 제자리에 있음 → 중복 정리로</span>' : ""}</div></li>`;
     })
     .join("");
   updateMoveCount();
@@ -882,6 +907,72 @@ $("moveGo").onclick = async () => {
   renderAll(true);
   let msg = `${r.moved.length}개를 분류 폴더로 옮겼습니다. 태그·메모는 그대로 따라갔습니다.`;
   if (r.failed.length) msg += `\n옮기지 못한 ${r.failed.length}개: ` + r.failed.slice(0, 3).map((f) => `${f.rel.split("/").pop()} (${f.error})`).join(", ") + (r.failed.length > 3 ? " …" : "");
+  toast(msg, r.failed.length ? 9000 : 5000);
+};
+
+// ---- 중복 정리 ----
+let dupPlan = [];
+function openDupDialog(groups = S.duplicates || []) {
+  groups = groups.filter((g) => g.rels.filter((r) => byRel.has(r)).length > 1);
+  if (!groups.length) return toast("중복 파일이 없습니다.");
+  dupPlan = groups;
+  $("dupList").innerHTML = groups
+    .map((g, i) => {
+      const first = byRel.get(g.rels[0]);
+      const rows = g.rels
+        .filter((r) => byRel.has(r))
+        .map((r) => {
+          const x = byRel.get(r);
+          return `<label class="dup-row"><input type="radio" name="dup${i}" value="${esc(r)}" ${r === g.keep ? "checked" : ""}>
+            <span class="dup-file"><span class="mv-name">${esc(x.base)}</span><span class="dup-meta">${esc(x.dir || "최상위 폴더")} · ${fmtDate(x.mtimeMs)}${x.misplaced ? "" : " · 제자리"}${x.note || x.userTags.length ? " · 메모·태그 있음" : ""}</span></span>
+            <span class="dup-fate" data-fate></span></label>`;
+        })
+        .join("");
+      return `<li class="dup-group" data-i="${i}"><label class="check dup-head"><input type="checkbox" data-dup-on="${i}" checked><span><b>${esc(first.base)}</b> <small>${fmtSize(first.size)} · ${g.rels.length}개</small></span></label><div class="dup-rows">${rows}</div></li>`;
+    })
+    .join("");
+  updateDupView();
+  $("dupDlg").showModal();
+}
+function readDupPlan() {
+  const out = [];
+  dupPlan.forEach((g, i) => {
+    if (!document.querySelector(`[data-dup-on="${i}"]`).checked) return;
+    const keep = (document.querySelector(`input[name="dup${i}"]:checked`) || {}).value;
+    if (!keep) return;
+    out.push({ keep, remove: g.rels.filter((r) => r !== keep && byRel.has(r)) });
+  });
+  return out;
+}
+function updateDupView() {
+  dupPlan.forEach((g, i) => {
+    const on = document.querySelector(`[data-dup-on="${i}"]`).checked;
+    const li = document.querySelector(`.dup-group[data-i="${i}"]`);
+    li.classList.toggle("off", !on);
+    for (const row of li.querySelectorAll(".dup-row")) {
+      const keep = row.querySelector("input").checked;
+      row.querySelector("[data-fate]").textContent = !on ? "" : keep ? "남김" : "휴지통";
+      row.classList.toggle("keep", on && keep);
+      row.classList.toggle("drop", on && !keep);
+    }
+  });
+  const n = readDupPlan().reduce((a, p) => a + p.remove.length, 0);
+  $("dupGo").textContent = n ? `${n}개 휴지통으로` : "휴지통으로";
+  $("dupGo").disabled = !n;
+}
+$("dupList").addEventListener("change", updateDupView);
+$("dupCancel").onclick = () => $("dupDlg").close();
+$("dupGo").onclick = async () => {
+  const plan = readDupPlan();
+  $("dupGo").disabled = true;
+  $("dupGo").textContent = "정리하는 중…";
+  const r = await api.trashDuplicates(plan);
+  $("dupDlg").close();
+  for (const rel of r.trashed) lastImported.delete(rel);
+  if (r.trashed.includes(selected)) selected = (plan.find((p) => p.remove.includes(selected)) || {}).keep || "";
+  renderAll(true);
+  let msg = `사본 ${r.trashed.length}개를 휴지통으로 보냈습니다. 사본에 있던 태그·메모는 남긴 파일로 옮겼습니다.`;
+  if (r.failed.length) msg += `\n정리하지 못한 ${r.failed.length}개: ` + r.failed.slice(0, 3).map((f) => `${f.rel.split("/").pop()} (${f.error})`).join(", ") + (r.failed.length > 3 ? " …" : "");
   toast(msg, r.failed.length ? 9000 : 5000);
 };
 
@@ -1125,6 +1216,7 @@ $("activeFilters").addEventListener("click", (e) => {
   if (!b) return;
   if (b.dataset.act === "save-search") return saveCurrentSearch();
   if (b.dataset.act === "move-all") return openMoveDialog(visible.filter((d) => d.misplaced));
+  if (b.dataset.act === "dedupe") return openDupDialog();
   if (b.dataset.clear === "view") filter.view = "all";
   if (b.dataset.clear === "kind") filter.kind = "";
   if (b.dataset.clear === "project") filter.project = "";
@@ -1173,6 +1265,7 @@ $("detail").addEventListener("click", async (e) => {
     renderAll(true);
     return toast(`${folderOf(r.rel)} 폴더로 옮겼습니다.`);
   }
+  if (act === "dedupe-one") return openDupDialog([dupOf.get(d.rel)].filter(Boolean));
   if (act === "delete") {
     const r = await api.deleteDoc(d.rel);
     if (r.cancelled) return;

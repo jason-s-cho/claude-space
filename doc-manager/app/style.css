@@ -365,6 +365,22 @@ dialog[open] .move-form { animation: pop 0.16s var(--ease); }
 .mv-path { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding-left: 26px; font-size: 12px; color: var(--text-3); }
 .mv-path b { color: var(--accent-text); font-weight: 600; }
 .mv-arrow { width: 13px; height: 13px; flex: none; }
+.mv-dup { color: var(--warn-text); font-weight: 600; }
+.dup-group { padding: 10px 10px 6px; border-bottom: 1px solid var(--line); border-radius: 0; }
+.dup-group:last-child { border-bottom: 0; }
+.dup-group:hover { background: none; }
+.dup-head small { color: var(--text-3); font-weight: 500; }
+.dup-group.off .dup-rows { opacity: 0.45; }
+.dup-rows { display: grid; gap: 2px; padding: 6px 0 0 24px; }
+.dup-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 6px 8px; border-radius: 8px; cursor: pointer; }
+.dup-row input { accent-color: var(--accent); }
+.dup-row:hover { background: var(--surface-2); }
+.dup-file { display: grid; min-width: 0; }
+.dup-meta { font-size: 12px; color: var(--text-3); overflow-wrap: anywhere; }
+.dup-fate { font-size: 12px; font-weight: 650; padding: 1px 8px; border-radius: 999px; }
+.dup-row.keep .dup-fate { color: #1f8a4c; background: rgba(31, 138, 76, 0.1); }
+.dup-row.drop .dup-fate { color: #d14343; background: rgba(209, 67, 67, 0.1); }
+.dup-row.drop .mv-name { text-decoration: line-through; text-decoration-color: rgba(209, 67, 67, 0.5); }
 .settings-nav { grid-row: 1 / 3; background: var(--bg); border-right: 1px solid var(--line); padding: 18px 10px; display: flex; flex-direction: column; gap: 2px; }
 .settings-nav h2 { margin: 0 10px 12px; font-size: 16px; letter-spacing: -0.02em; }
 .settings-nav button { border: 0; background: none; text-align: left; height: 32px; padding: 0 10px; border-radius: 8px; color: var(--text-2); font-weight: 500; }

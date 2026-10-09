@@ -46,6 +46,7 @@ contextBridge.exposeInMainWorld("docs", {
   importFiles: (paths) => ipcRenderer.invoke("import-files", paths),
   pickAndImport: (kind) => ipcRenderer.invoke("pick-and-import", kind),
   onImportProgress: on("import-progress"),
+  trashDuplicates: (plan) => ipcRenderer.invoke("trash-duplicates", plan),
   moveMany: (rels) => ipcRenderer.invoke("move-many", rels),
   moveToCategory: (rel) => ipcRenderer.invoke("move-to-category", rel),
   deleteDoc: (rel) => ipcRenderer.invoke("delete-doc", rel),

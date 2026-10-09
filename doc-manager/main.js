@@ -27,6 +27,7 @@ const userFile = (name) => path.join(app.getPath("userData"), name);
 const store = require("./lib/store");
 const claudeConfig = require("./lib/claude-config");
 const knowledge = require("./lib/knowledge");
+const duplicates = require("./lib/duplicates");
 const { readLog } = require("./lib/library");
 
 // Claude 커넥터 실행 방법: 이 앱의 실행 파일을 Node 처럼 돌려 mcp/server.js 를 실행한다.
@@ -90,6 +91,7 @@ function loadFolderSettings(root) {
 
 // 문서 폴더를 연다: 예전 색인 옮기기 → 분류 규칙 읽기 → 색인 읽기
 function loadRoot(root) {
+  dupGroups = [];
   if (store.migrateLegacyIndex(root, userFile("index.json"))) console.log("색인을 문서 폴더로 옮김");
   loadFolderSettings(root);
   const loc = store.indexLocation(root, userFile("index.json"));
@@ -212,6 +214,36 @@ function docSummary(e) {
   };
 }
 
+// ---- 중복 파일 (내용이 완전히 같은 파일) ----
+let dupGroups = [];
+let dupBusy = false;
+function currentDupGroups() {
+  if (!index) return [];
+  return dupGroups.map((g) => g.filter((r) => index.files[r])).filter((g) => g.length > 1);
+}
+function inPlaceRel(rel) {
+  const e = index.files[rel];
+  return !!e && isInPlace(indexer.nameParts(rel).dir, expectedDirOf(e));
+}
+function versionRank(rel) {
+  const v = versionMap().get(rel);
+  const i = v ? v.order.indexOf(rel) : -1;
+  return i < 0 ? Infinity : i;
+}
+async function refreshDuplicates() {
+  if (!index || !index.root || dupBusy) return;
+  dupBusy = true;
+  try {
+    const r = await duplicates.findDuplicates(index);
+    if (r.hashed) persistIndex(); // 계산한 지문을 기억해 둔다
+    dupGroups = r.groups;
+    send("state", state());
+  } catch {
+  } finally {
+    dupBusy = false;
+  }
+}
+
 function state() {
   return {
     root: settings.root,
@@ -226,6 +258,7 @@ function state() {
     scanning,
     progress,
     docs: index ? Object.values(index.files).map(docSummary) : [],
+    duplicates: currentDupGroups().map((rels) => ({ rels, keep: duplicates.suggestKeep(index, rels, inPlaceRel, versionRank) })),
   };
 }
 
@@ -278,6 +311,8 @@ async function runScan() {
   if (scanAgain) {
     scanAgain = false;
     runScan();
+  } else {
+    refreshDuplicates();
   }
 }
 
@@ -551,6 +586,43 @@ function registerIpc() {
     } catch (err) {
       return { error: String((err && err.message) || err) };
     }
+  });
+
+  // 중복 정리: 묶음마다 남길 파일 하나를 두고 나머지를 휴지통으로. 지우기 직전에 내용이 정말 같은지 다시 확인한다.
+  ipcMain.handle("trash-duplicates", async (_e, plan) => {
+    const trashed = [], failed = [];
+    if (!index || !Array.isArray(plan)) return { trashed, failed };
+    const groups = currentDupGroups();
+    for (const { keep, remove } of plan) {
+      const g = groups.find((x) => x.includes(keep));
+      if (!g || !Array.isArray(remove)) continue;
+      let keepHash;
+      try {
+        keepHash = await duplicates.hashFile(fullPath(keep));
+      } catch (err) {
+        for (const r of remove) failed.push({ rel: r, error: "남길 파일을 읽을 수 없습니다" });
+        continue;
+      }
+      for (const rel of remove) {
+        try {
+          if (rel === keep || !g.includes(rel)) throw new Error("같은 묶음의 파일이 아닙니다");
+          const full = fullPath(rel);
+          if ((await duplicates.hashFile(full)) !== keepHash) throw new Error("내용이 달라졌습니다");
+          duplicates.mergeInto(index.files[keep], [index.files[rel]]);
+          await shell.trashItem(full);
+          delete index.files[rel];
+          trashed.push(rel);
+        } catch (err) {
+          failed.push({ rel, error: String((err && err.message) || err) });
+        }
+      }
+    }
+    if (trashed.length) {
+      persistIndex();
+      keywordCache = versionCache = null;
+      send("state", state());
+    }
+    return { trashed, failed };
   });
 
   // 제자리가 아닌 문서 여러 개를 한꺼번에 분류 폴더로 옮긴다.
