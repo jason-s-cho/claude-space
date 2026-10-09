@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, shell, ipcMain, dialog, nativeTheme } = require("electron");
+const { app, BrowserWindow, Menu, shell, ipcMain, dialog, nativeTheme, net } = require("electron");
 const fs = require("fs");
 const path = require("path");
 const indexer = require("./lib/indexer");
@@ -30,6 +30,7 @@ const claudeConfig = require("./lib/claude-config");
 const knowledge = require("./lib/knowledge");
 const duplicates = require("./lib/duplicates");
 const { convert, targetsFor } = require("./lib/convert");
+const updates = require("./lib/updates");
 const { readLog } = require("./lib/library");
 
 // Claude 커넥터 실행 방법: 이 앱의 실행 파일을 Node 처럼 돌려 mcp/server.js 를 실행한다.
@@ -58,7 +59,7 @@ const mtimeOf = (file) => {
   }
 };
 
-const DEFAULT_SETTINGS = { root: "", partners: [], tagRules: [], keywordOverrides: {}, savedSearches: [], recentSearches: [], importLayout: "category", projects: [], techTags: true, theme: "system", aiExcludeCategories: [] };
+const DEFAULT_SETTINGS = { root: "", partners: [], tagRules: [], keywordOverrides: {}, savedSearches: [], recentSearches: [], importLayout: "category", projects: [], techTags: true, theme: "system", aiExcludeCategories: [], checkUpdates: true };
 
 function loadSettings() {
   try {
@@ -629,6 +630,13 @@ function registerIpc() {
     }
   });
 
+  // ---- 새 버전 ----
+  ipcMain.handle("check-update", () => runUpdateCheck(true));
+  ipcMain.handle("open-update", (_e, url) => {
+    // 이 앱의 GitHub 릴리스 주소만 연다
+    if (typeof url === "string" && url.startsWith("https://github.com/jason-s-cho/claude-space/")) shell.openExternal(url);
+  });
+
   // 다른 형식으로 저장 (한글·워드 이용). 한 번에 하나씩.
   let convertQueue = Promise.resolve();
   ipcMain.handle("convert-doc", (_e, rel, to) => {
@@ -761,6 +769,7 @@ function registerIpc() {
     if (Array.isArray(next.projects)) settings.projects = next.projects;
     if (typeof next.techTags === "boolean") settings.techTags = next.techTags;
     if (Array.isArray(next.aiExcludeCategories)) settings.aiExcludeCategories = next.aiExcludeCategories.filter((x) => typeof x === "string");
+    if (typeof next.checkUpdates === "boolean") settings.checkUpdates = next.checkUpdates;
     if (["system", "light", "dark"].includes(next.theme)) {
       settings.theme = next.theme;
       applyTheme();
@@ -869,6 +878,22 @@ app.on("second-instance", () => {
   }
 });
 
+// GitHub 릴리스에서 새 버전 확인. 켠 뒤 잠시 있다가 한 번, 그 뒤로 6시간마다. (개발 중인 앱은 자동으로 확인하지 않는다)
+let lastUpdate = null;
+async function runUpdateCheck(manual) {
+  if (!manual && (!app.isPackaged || settings.checkUpdates === false)) return null;
+  const r = await updates.checkForUpdate(app.getVersion(), {
+    fetchJson: async (url) => {
+      const res = await net.fetch(url, { headers: { "User-Agent": "doc-manager", Accept: "application/vnd.github+json" } });
+      if (!res.ok) throw new Error(`GitHub 응답 ${res.status}`);
+      return res.json();
+    },
+  });
+  lastUpdate = r;
+  if (r.available) send("update-available", r);
+  return r;
+}
+
 app.whenReady().then(() => {
   if (process.platform === "win32") app.setAppUserModelId("com.jasonscho.docmanager");
   if (process.platform !== "darwin") Menu.setApplicationMenu(null);
@@ -892,6 +917,8 @@ app.whenReady().then(() => {
     lastFocusScan = Date.now();
     runScan();
   }
+  setTimeout(() => runUpdateCheck(false), 15000);
+  setInterval(() => runUpdateCheck(false), 6 * 3600 * 1000);
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

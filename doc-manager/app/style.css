@@ -535,3 +535,10 @@ dialog[open] .move-form { animation: pop 0.16s var(--ease); }
 .more-rows { list-style: none; padding: 10px 0 18px; text-align: center; }
 .more-rows button { border: 1px dashed var(--line); background: none; color: var(--text-3); font-size: 12.5px; padding: 6px 16px; border-radius: 999px; }
 .more-rows button:hover { color: var(--text); background: var(--surface-2); }
+.update-bar { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 60; display: flex; align-items: center; gap: 10px; max-width: calc(100vw - 32px); padding: 10px 10px 10px 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow-lg); }
+.update-bar[hidden] { display: none; }
+.update-bar > svg { width: 20px; height: 20px; color: var(--accent); flex: none; }
+.update-bar > div { display: grid; min-width: 0; }
+.update-bar small { color: var(--text-3); font-size: 11.5px; }
+.update-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+.about a { color: var(--accent-text); }

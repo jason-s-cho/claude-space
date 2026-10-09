@@ -264,7 +264,11 @@
           <dt>버전</dt><dd id="aboutVersion"></dd>
           <dt>문서 폴더</dt><dd id="aboutRoot"></dd>
           <dt>분류 정보</dt><dd id="aboutStore"></dd>
-          <dt>업데이트</dt><dd>새 설치 파일을 실행하면 이전 버전을 지우고 새 버전으로 바꿉니다. 문서 폴더의 파일과 이 앱에 저장된 분류·태그·메모·설정은 그대로 남습니다.</dd>
+          <dt>업데이트</dt><dd>
+            <div class="update-row"><button class="btn sm" id="checkUpdateBtn" type="button">새 버전 확인</button><span class="hint" id="updateState"></span></div>
+            <label class="check"><input type="checkbox" id="checkUpdatesInput"><span>새 버전이 나오면 알려 주기</span></label>
+            <small class="hint">새 버전은 <a href="#" id="releasesLink">GitHub 릴리스</a>에 올라옵니다. 받은 설치 파일을 실행하면 이전 버전을 지우고 새 버전으로 바꿉니다. 문서 폴더의 파일과 분류·태그·메모·설정은 그대로 남습니다.</small>
+          </dd>
           <dt>글꼴</dt><dd>Pretendard (SIL Open Font License 1.1)</dd>
         </dl>
       </div>
@@ -316,6 +320,14 @@
     </div>
   </div>
 </dialog>
+
+<div class="update-bar" id="updateBar" role="status" hidden>
+  <svg><use href="#i-download"/></svg>
+  <div><b id="updateTitle">새 버전이 나왔습니다</b><small id="updateSub"></small></div>
+  <button class="btn sm primary" id="updateGet" type="button">받기</button>
+  <button class="btn sm ghost" id="updateNotes" type="button">바뀐 점</button>
+  <button class="icon-btn" id="updateClose" type="button" aria-label="닫기" title="나중에"><svg><use href="#i-x"/></svg></button>
+</div>
 
 <div class="drop-zone" id="dropZone" hidden>
   <div class="drop-card">

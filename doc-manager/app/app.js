@@ -1197,6 +1197,7 @@ function openSettings(tab = "general", group) {
   $("kwGroups").innerHTML = S.keywordGroups.map((g) => `<button type="button" data-group="${g.key}">${esc(g.label)}</button>`).join("");
   renderKwEditor();
   $("aboutVersion").textContent = S.appVersion || "";
+  $("checkUpdatesInput").checked = S.settings.checkUpdates !== false;
   $("aboutRoot").textContent = S.root || "(아직 고르지 않음)";
   $("aboutStore").textContent = !S.root
     ? ""
@@ -1527,6 +1528,7 @@ $("settingsDlg").addEventListener("close", async () => {
   const checked = (name) => (document.querySelector(`input[name="${name}"]:checked`) || {}).value;
   await api.saveSettings({
     theme: checked("theme"),
+    checkUpdates: $("checkUpdatesInput").checked,
     importLayout: checked("importLayout"),
     techTags: $("techTagsInput").checked,
     projects: linesToNamed($("projectsInput").value),
@@ -1609,6 +1611,32 @@ window.addEventListener("drop", async (e) => {
 });
 
 api.onState(applyState);
+
+// ---- 새 버전 알림 ----
+let updateInfo = null;
+function showUpdate(r) {
+  updateInfo = r;
+  $("updateTitle").textContent = `새 버전 ${r.latest} 이 나왔습니다`;
+  $("updateSub").textContent = `지금 ${r.current} · 받은 설치 파일을 실행하면 문서와 설정은 그대로 두고 바꿉니다`;
+  $("updateBar").hidden = false;
+}
+api.onUpdateAvailable((r) => showUpdate(r));
+$("updateGet").onclick = () => updateInfo && api.openUpdate(updateInfo.url);
+$("updateNotes").onclick = () => updateInfo && api.openUpdate(updateInfo.page);
+$("updateClose").onclick = () => ($("updateBar").hidden = true);
+$("releasesLink").onclick = (e) => {
+  e.preventDefault();
+  api.openUpdate("https://github.com/jason-s-cho/claude-space/releases");
+};
+$("checkUpdateBtn").onclick = async () => {
+  $("updateState").textContent = "확인 중…";
+  const r = await api.checkUpdate();
+  if (r.error) $("updateState").textContent = "확인하지 못했습니다: " + r.error;
+  else if (r.available) {
+    $("updateState").textContent = `새 버전 ${r.latest} 이 있습니다.`;
+    showUpdate(r);
+  } else $("updateState").textContent = r.latest ? `최신 버전입니다 (${r.current}).` : "아직 올라온 릴리스가 없습니다.";
+};
 api.onProgress((p) => {
   S.progress = p;
   S.scanning = true;

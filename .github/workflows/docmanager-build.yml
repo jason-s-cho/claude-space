@@ -2,7 +2,9 @@ name: Doc manager build
 
 # doc-manager/ 가 바뀐 커밋을 푸시하거나, 수동 실행(Actions 탭 → Run workflow) 하거나,
 # docmanager-v* 태그를 푸시하면 문서 보관함의 Windows / macOS / Linux 설치 파일을 빌드한다.
-# 설치 파일은 실행 결과 화면 아래 Artifacts 에서 받는다. 태그로 실행하면 릴리스에도 올라간다.
+# 설치 파일은 실행 결과 화면 아래 Artifacts 에서 받는다.
+# 기본 브랜치에 들어온 커밋(PR 머지)과 docmanager-v* 태그는 GitHub 릴리스(docmanager-v0.2.빌드번호)에도 올라가고,
+# 설치된 앱은 그 릴리스를 보고 "새 버전이 나왔습니다" 알림을 띄운다.
 # (Run workflow 버튼은 이 파일이 기본 브랜치에 있어야 보인다.)
 on:
   workflow_dispatch:
@@ -55,7 +57,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    if: startsWith(github.ref, 'refs/tags/docmanager-v')
+    if: startsWith(github.ref, 'refs/tags/docmanager-v') || (github.event_name == 'push' && github.ref_name == github.event.repository.default_branch)
     needs: build
     runs-on: ubuntu-latest
     permissions:
@@ -69,8 +71,13 @@ jobs:
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: 0.2.${{ github.run_number }}
         run: |
-          gh release create "$GITHUB_REF_NAME" installers/* \
+          # 태그로 실행했으면 그 태그, 기본 브랜치 커밋이면 빌드 번호로 새 태그를 만든다 (앱 버전과 같은 번호)
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then TAG="$GITHUB_REF_NAME"; else TAG="docmanager-v$VERSION"; fi
+          gh release create "$TAG" installers/* \
             --repo "$GITHUB_REPOSITORY" \
-            --title "문서 보관함 $GITHUB_REF_NAME" \
-            --generate-notes
+            --target "$GITHUB_SHA" \
+            --title "문서 보관함 $VERSION" \
+            --generate-notes \
+            --latest
