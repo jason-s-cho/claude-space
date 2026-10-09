@@ -276,6 +276,20 @@
   </form>
 </dialog>
 
+<dialog id="moveDlg" class="move-dlg">
+  <div class="move-form">
+    <h2>제자리가 아닌 문서 옮기기</h2>
+    <p class="hint">분류에 맞는 폴더로 옮깁니다. 문서 폴더 안에서만 옮기고, 태그·메모·직접 고른 분류는 그대로 따라갑니다. 같은 이름이 있으면 "이름 (2)"로 저장합니다.
+      분류가 틀린 문서는 체크를 빼고, 문서 화면에서 분류를 고친 뒤 옮기세요. <b>미분류</b> 문서는 처음엔 빼 두었습니다.</p>
+    <label class="check move-all"><input type="checkbox" id="moveAll"><span>모두 선택</span></label>
+    <ul class="move-list" id="moveList"></ul>
+    <div class="settings-actions">
+      <button class="btn ghost" id="moveCancel" type="button">취소</button>
+      <button class="btn primary" id="moveGo" type="button">옮기기</button>
+    </div>
+  </div>
+</dialog>
+
 <div class="drop-zone" id="dropZone" hidden>
   <div class="drop-card">
     <div class="drop-icon"><svg><use href="#i-inbox"/></svg></div>

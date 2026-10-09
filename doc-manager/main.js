@@ -6,7 +6,7 @@ const { CATEGORIES, KEYWORDS, KEYWORD_GROUPS, TECH_TAGS, migrateOverrides } = re
 const { docFrequency, topKeywords } = require("./lib/keywords");
 const searchLib = require("./lib/search");
 const { groupVersions, nextVersionName, uniqueVersionName } = require("./lib/versions");
-const { importFiles, ensureCategoryFolders, expectedFolder, moveToFolder, removeLegacyFolders } = require("./lib/importer");
+const { importFiles, ensureCategoryFolders, expectedFolder, moveToFolder, moveManyToFolders, isInPlace, removeLegacyFolders } = require("./lib/importer");
 const { SUPPORTED } = require("./lib/extract");
 
 if (!app.requestSingleInstanceLock()) {
@@ -167,10 +167,18 @@ function versionMap() {
   return versionCache;
 }
 
+function expectedDirOf(e) {
+  if (settings.importLayout === "root") return "";
+  const eff = indexer.effective(e);
+  return expectedFolder(eff.category, eff.tags, settings.partners, settings.projects);
+}
+
 // 화면에 보내는 문서 정보. 본문 전체는 보내지 않고 앞부분만 보낸다.
 function docSummary(e) {
   const p = indexer.nameParts(e.rel);
   const eff = indexer.effective(e);
+  // 분류에 맞는 폴더. 지금 폴더가 그 폴더(또는 그 아래)가 아니면 화면에서 '옮기기'를 보여 준다.
+  const expectedDir = expectedDirOf(e);
   return {
     rel: e.rel,
     base: p.base,
@@ -199,8 +207,8 @@ function docSummary(e) {
     starred: !!e.starred,
     keywords: keywordsOf(e.rel),
     versions: versionMap().get(e.rel) || null, // { size, latest, order }
-    // 분류에 맞는 폴더. 지금 폴더와 다르면 화면에서 '옮기기' 버튼을 보여 준다.
-    expectedDir: settings.importLayout === "root" ? "" : expectedFolder(eff.category, eff.tags, settings.partners, settings.projects),
+    expectedDir,
+    misplaced: !isInPlace(p.dir, expectedDir),
   };
 }
 
@@ -543,6 +551,18 @@ function registerIpc() {
     } catch (err) {
       return { error: String((err && err.message) || err) };
     }
+  });
+
+  // 제자리가 아닌 문서 여러 개를 한꺼번에 분류 폴더로 옮긴다.
+  ipcMain.handle("move-many", async (_e, rels) => {
+    if (!index || !Array.isArray(rels)) return { moved: [], failed: [] };
+    const r = await moveManyToFolders(index, rels, expectedDirOf);
+    if (r.moved.length) {
+      persistIndex();
+      keywordCache = versionCache = null;
+      send("state", state());
+    }
+    return r;
   });
 
   ipcMain.handle("rescan", () => {

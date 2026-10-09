@@ -151,6 +151,7 @@ function matchesView(d, view) {
   if (view === "starred") return d.starred;
   if (view === "recent") return Date.now() - d.mtimeMs < 30 * DAY;
   if (view === "imported") return lastImported.has(d.rel);
+  if (view === "misplaced") return d.misplaced;
   if (view.startsWith("group:")) return (catById[d.category] || {}).group === view.slice(6);
   if (view.startsWith("cat:")) return d.category === view.slice(4);
   return true;
@@ -197,6 +198,8 @@ function renderSide() {
   h += navItem("starred", "즐겨찾기", count((d) => d.starred), { icon: "star" });
   h += navItem("recent", "최근 30일", count((d) => Date.now() - d.mtimeMs < 30 * DAY), { icon: "clock" });
   if (lastImported.size) h += navItem("imported", "방금 넣은 문서", count((d) => lastImported.has(d.rel)), { icon: "inbox" });
+  const misplacedN = count((d) => d.misplaced);
+  if (misplacedN || filter.view === "misplaced") h += navItem("misplaced", "제자리가 아닌 문서", misplacedN, { icon: "move" });
 
   const saved = S.settings.savedSearches || [];
   if (saved.length) {
@@ -288,6 +291,7 @@ function viewLabel(view) {
   if (view === "starred") return "즐겨찾기";
   if (view === "recent") return "최근 30일";
   if (view === "imported") return "방금 넣은 문서";
+  if (view === "misplaced") return "제자리가 아닌 문서";
   if (view.startsWith("group:")) return view.slice(6);
   if (view.startsWith("cat:")) return catLabel(view.slice(4));
   return "";
@@ -332,6 +336,8 @@ function renderList() {
   if (filter.kind) f += chip(KIND_LABEL[filter.kind], 'data-clear="kind"');
   for (const t of filter.tags) f += chip("#" + esc(t), `data-clear-tag="${esc(t)}"`);
   if (query) f += chip(`“${esc(query)}”`, 'data-clear="query"');
+  if (filter.view === "misplaced" && visible.some((d) => d.misplaced))
+    f += `<button class="btn sm primary" data-act="move-all" type="button" title="분류에 맞는 폴더로 한꺼번에 옮깁니다. 옮기기 전에 목록을 보여 드립니다.">${icon("move")}모두 제자리로 옮기기</button>`;
   if (f) f += `<button class="btn sm ghost" data-act="save-search" type="button" title="지금 조건을 왼쪽 '저장한 검색'에 넣습니다">${icon("bookmark")}저장</button>`;
   $("activeFilters").innerHTML = f || '<span class="title">전체 문서</span>';
 
@@ -435,7 +441,7 @@ async function renderDetail() {
       <h4>${icon("folder")}분류</h4>
       <select class="select" id="catSelect">${opts}</select>
       <div class="reason">${reason}</div>
-      ${d.expectedDir && d.dir !== d.expectedDir
+      ${d.misplaced
         ? `<div class="move-hint"><span>분류 폴더와 다른 곳에 있습니다.</span><button class="btn sm" data-act="move" type="button" title="문서 폴더 안에서 옮깁니다. 태그·메모는 그대로 따라갑니다.">${icon("move")}${esc(d.expectedDir)} 폴더로 옮기기</button></div>`
         : ""}
     </div>
@@ -835,6 +841,50 @@ $("claudeTestBtn").onclick = async () => {
     btn.textContent = "연결 테스트";
   }
 };
+// ---- 제자리가 아닌 문서 모두 옮기기 ----
+function openMoveDialog(list) {
+  if (!list.length) return toast("옮길 문서가 없습니다.");
+  // 미분류 문서는 '미분류' 폴더로 모으는 것이 원하는 일이 아닐 수 있어 처음엔 빼 둔다.
+  $("moveList").innerHTML = list
+    .map((d) => {
+      const on = d.category !== "other";
+      return `<li><label class="check"><input type="checkbox" data-move="${esc(d.rel)}" ${on ? "checked" : ""}><span class="mv-name">${esc(d.base)}</span></label>
+        <div class="mv-path"><span>${esc(d.dir || "최상위 폴더")}</span>${icon("chevron", "mv-arrow")}<b>${esc(d.expectedDir)}</b></div></li>`;
+    })
+    .join("");
+  updateMoveCount();
+  $("moveDlg").showModal();
+}
+function updateMoveCount() {
+  const boxes = [...document.querySelectorAll("#moveList [data-move]")];
+  const n = boxes.filter((b) => b.checked).length;
+  $("moveGo").textContent = n ? `${n}개 옮기기` : "옮기기";
+  $("moveGo").disabled = !n;
+  $("moveAll").checked = n === boxes.length;
+  $("moveAll").indeterminate = n > 0 && n < boxes.length;
+}
+$("moveList").addEventListener("change", updateMoveCount);
+$("moveAll").onchange = () => {
+  for (const b of document.querySelectorAll("#moveList [data-move]")) b.checked = $("moveAll").checked;
+  updateMoveCount();
+};
+$("moveCancel").onclick = () => $("moveDlg").close();
+$("moveGo").onclick = async () => {
+  const rels = [...document.querySelectorAll("#moveList [data-move]")].filter((b) => b.checked).map((b) => b.dataset.move);
+  $("moveGo").disabled = true;
+  $("moveGo").textContent = "옮기는 중…";
+  const r = await api.moveMany(rels);
+  $("moveDlg").close();
+  for (const m of r.moved) {
+    if (lastImported.delete(m.from)) lastImported.add(m.to);
+    if (selected === m.from) selected = m.to;
+  }
+  renderAll(true);
+  let msg = `${r.moved.length}개를 분류 폴더로 옮겼습니다. 태그·메모는 그대로 따라갔습니다.`;
+  if (r.failed.length) msg += `\n옮기지 못한 ${r.failed.length}개: ` + r.failed.slice(0, 3).map((f) => `${f.rel.split("/").pop()} (${f.error})`).join(", ") + (r.failed.length > 3 ? " …" : "");
+  toast(msg, r.failed.length ? 9000 : 5000);
+};
+
 // ---- 회사 지식 카드 ----
 async function renderKnowledge() {
   const k = await api.knowledgeGet();
@@ -1074,6 +1124,7 @@ $("activeFilters").addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (!b) return;
   if (b.dataset.act === "save-search") return saveCurrentSearch();
+  if (b.dataset.act === "move-all") return openMoveDialog(visible.filter((d) => d.misplaced));
   if (b.dataset.clear === "view") filter.view = "all";
   if (b.dataset.clear === "kind") filter.kind = "";
   if (b.dataset.clear === "project") filter.project = "";

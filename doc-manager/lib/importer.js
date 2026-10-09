@@ -94,6 +94,37 @@ function expectedFolder(category, tags, partners, projects) {
   return folderFor(category, tags || [], partners, projects);
 }
 
+// 지금 폴더가 분류 폴더이거나 그 아래 폴더면 제자리다 (분류 폴더 안에서 직접 나눠 둔 하위 폴더는 존중한다).
+function isInPlace(dir, expected) {
+  if (!expected) return true;
+  return dir === expected || dir.startsWith(expected + "/");
+}
+
+/**
+ * 여러 문서를 각자의 분류 폴더로 옮긴다. 하나가 실패해도 나머지는 계속한다.
+ * folderOf(entry): 그 문서의 분류 폴더
+ * 결과: { moved: [{ from, to }], failed: [{ rel, error }] }
+ */
+async function moveManyToFolders(index, rels, folderOf) {
+  const moved = [], failed = [];
+  for (const rel of rels) {
+    const entry = index.files[rel];
+    if (!entry) {
+      failed.push({ rel, error: "알 수 없는 파일" });
+      continue;
+    }
+    const folder = folderOf(entry);
+    const dir = rel.split("/").slice(0, -1).join("/");
+    if (isInPlace(dir, folder)) continue;
+    try {
+      moved.push({ from: rel, to: await moveToFolder(index, rel, folder) });
+    } catch (e) {
+      failed.push({ rel, error: String((e && e.message) || e) });
+    }
+  }
+  return { moved, failed };
+}
+
 /**
  * 문서를 분류 폴더로 옮긴다. 같은 이름이 있으면 "이름 (2)"로.
  * 내가 고친 분류·태그·메모는 그대로 따라간다.
@@ -220,4 +251,4 @@ async function importFiles(index, paths, opts = {}) {
   return { imported, existing, skipped };
 }
 
-module.exports = { removeLegacyFolders, importFiles, folderFor, safeName, ensureCategoryFolders, expectedFolder, moveToFolder };
+module.exports = { isInPlace, moveManyToFolders, removeLegacyFolders, importFiles, folderFor, safeName, ensureCategoryFolders, expectedFolder, moveToFolder };

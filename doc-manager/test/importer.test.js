@@ -115,3 +115,29 @@ test("예전 버전이 만든 빈 분류 폴더만 지운다", async () => {
   assert.ok(fs.existsSync(path.join(root, "홍보"))); // 새 버전도 쓰는 폴더는 남김
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+test("제자리 판정과 여러 개 한꺼번에 옮기기", async () => {
+  const { isInPlace, moveManyToFolders } = require("../lib/importer");
+  assert.ok(isInPlace("구매·견적", "구매·견적"));
+  assert.ok(isInPlace("구매·견적/2026 중앙대", "구매·견적")); // 직접 나눈 하위 폴더는 제자리
+  assert.ok(!isInPlace("홍보/홈페이지", "구매·견적"));
+  assert.ok(!isInPlace("구매·견적2", "구매·견적"));
+  assert.ok(isInPlace("아무 곳", ""));
+
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "docmgr-mm-"));
+  fs.mkdirSync(path.join(root, "홍보", "홈페이지"), { recursive: true });
+  fs.mkdirSync(path.join(root, "구매·견적"), { recursive: true });
+  fs.writeFileSync(path.join(root, "홍보", "홈페이지", "전자세금계산서_A.pdf"), "a");
+  fs.writeFileSync(path.join(root, "홍보", "홈페이지", "전자세금계산서_B.pdf"), "b");
+  fs.writeFileSync(path.join(root, "구매·견적", "전자세금계산서_B.pdf"), "b"); // 같은 내용이 이미 있음
+  const index = { root, files: {} };
+  for (const rel of ["홍보/홈페이지/전자세금계산서_A.pdf", "홍보/홈페이지/전자세금계산서_B.pdf", "구매·견적/전자세금계산서_B.pdf"])
+    index.files[rel] = { rel, note: rel.endsWith("A.pdf") ? "메모" : "" };
+  const r = await moveManyToFolders(index, Object.keys(index.files).concat(["없는/파일.pdf"]), () => "구매·견적");
+  assert.deepStrictEqual(r.moved, [{ from: "홍보/홈페이지/전자세금계산서_A.pdf", to: "구매·견적/전자세금계산서_A.pdf" }]);
+  assert.strictEqual(r.failed.length, 2); // 같은 파일이 이미 있는 것, 없는 파일
+  assert.strictEqual(index.files["구매·견적/전자세금계산서_A.pdf"].note, "메모");
+  assert.ok(fs.existsSync(path.join(root, "구매·견적", "전자세금계산서_A.pdf")));
+  assert.ok(fs.existsSync(path.join(root, "홍보", "홈페이지", "전자세금계산서_B.pdf"))); // 지우지 않는다
+  fs.rmSync(root, { recursive: true, force: true });
+});
