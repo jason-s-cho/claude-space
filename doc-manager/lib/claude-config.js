@@ -20,9 +20,10 @@ function configPaths(env = process.env, platform = process.platform, home = os.h
       }
     } catch {}
   } else if (platform === "darwin") {
-    out.push(path.join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json"));
+    // 맥·리눅스 경로는 어디서 만들든 '/' 로 (윈도우에서 시험할 때도 같은 결과)
+    out.push(path.posix.join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json"));
   } else {
-    out.push(path.join(env.XDG_CONFIG_HOME || path.join(home, ".config"), "Claude", "claude_desktop_config.json"));
+    out.push(path.posix.join(env.XDG_CONFIG_HOME || path.posix.join(home, ".config"), "Claude", "claude_desktop_config.json"));
   }
   return out;
 }
