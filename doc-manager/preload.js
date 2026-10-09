@@ -47,6 +47,7 @@ contextBridge.exposeInMainWorld("docs", {
   pickAndImport: (kind) => ipcRenderer.invoke("pick-and-import", kind),
   onImportProgress: on("import-progress"),
   moveToCategory: (rel) => ipcRenderer.invoke("move-to-category", rel),
+  deleteDoc: (rel) => ipcRenderer.invoke("delete-doc", rel),
   newVersion: (rel) => ipcRenderer.invoke("new-version", rel),
   claudeStatus: () => ipcRenderer.invoke("claude-status"),
   claudeConnect: () => ipcRenderer.invoke("claude-connect"),

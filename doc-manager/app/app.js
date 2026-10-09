@@ -429,6 +429,7 @@ async function renderDetail() {
       <button class="btn" data-act="new-version" type="button" title="${v && v.latest !== d.rel ? "이 (이전) 버전을 복사해서" : "이 문서를 복사해서"} 다음 버전 이름으로 저장하고 엽니다. 원본은 그대로 남습니다.">${icon("layers")}새 버전으로 고치기</button>
       <button class="icon-btn" data-act="reveal" type="button" title="폴더에서 보기" aria-label="폴더에서 보기">${icon("folder-open")}</button>
       <button class="icon-btn${d.starred ? " on" : ""}" data-act="star" type="button" title="${d.starred ? "즐겨찾기 해제" : "즐겨찾기"}" aria-label="즐겨찾기">${d.starred ? '<svg style="fill:currentColor"><use href="#i-star"/></svg>' : icon("star")}</button>
+      <button class="icon-btn danger" data-act="delete" type="button" title="지우기 (휴지통으로)" aria-label="지우기">${icon("trash")}</button>
     </div>
     <div class="card">
       <h4>${icon("folder")}분류</h4>
@@ -1120,6 +1121,15 @@ $("detail").addEventListener("click", async (e) => {
     selected = r.rel;
     renderAll(true);
     return toast(`${folderOf(r.rel)} 폴더로 옮겼습니다.`);
+  }
+  if (act === "delete") {
+    const r = await api.deleteDoc(d.rel);
+    if (r.cancelled) return;
+    if (r.error) return toast("지우지 못했습니다: " + r.error, 6000);
+    lastImported.delete(d.rel);
+    selected = "";
+    renderAll(true);
+    return toast(`'${d.rel.split("/").pop()}'을(를) 휴지통으로 옮겼습니다.`);
   }
   if (act === "new-version") {
     b.disabled = true;

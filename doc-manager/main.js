@@ -427,6 +427,33 @@ function registerIpc() {
 
   // 새 버전으로 고치기: 같은 폴더에 다음 버전 이름으로 복사해서 연다. 원본은 건드리지 않는다.
   // 분류·태그는 이어받고, 메모·즐겨찾기는 그 버전에만 해당하므로 넘기지 않는다.
+  // 문서 지우기: 한 번 더 묻고 휴지통으로 보낸다 (휴지통에서 되살릴 수 있다). Claude 커넥터에는 이 기능이 없다.
+  ipcMain.handle("delete-doc", async (_e, rel) => {
+    try {
+      const full = fullPath(rel);
+      const name = path.basename(full);
+      const r = await dialog.showMessageBox(win, {
+        type: "warning",
+        buttons: ["휴지통으로 보내기", "취소"],
+        defaultId: 1,
+        cancelId: 1,
+        noLink: true,
+        title: "문서 지우기",
+        message: `'${name}'을(를) 지울까요?`,
+        detail: `${path.dirname(rel) === "." ? "문서 폴더" : path.dirname(rel)} 폴더에서 휴지통으로 옮깁니다. 휴지통에서 되살릴 수 있지만, 이 앱에서 붙인 태그·메모·직접 고른 분류는 사라집니다.`,
+      });
+      if (r.response !== 0) return { cancelled: true };
+      await shell.trashItem(full);
+      delete index.files[rel];
+      persistIndex();
+      keywordCache = versionCache = null;
+      send("state", state());
+      return { deleted: rel };
+    } catch (err) {
+      return { error: String((err && err.message) || err) };
+    }
+  });
+
   ipcMain.handle("new-version", async (_e, rel) => {
     const e = index && index.files[rel];
     if (!e) return { error: "알 수 없는 파일" };
