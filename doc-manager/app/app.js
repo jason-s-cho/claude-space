@@ -779,6 +779,7 @@ const TOOL_LABEL = {
   library_overview: "둘러보기", search_documents: "검색", read_document: "읽기", list_versions: "버전 기록",
   find_related_documents: "관련 문서", save_new_version: "새 버전 저장", prepare_new_version: "새 버전 복사본",
   get_knowledge: "지식 카드 읽기", save_knowledge_card: "지식 카드 저장",
+  inspect_form: "양식 보기", fill_form: "양식 채우기",
 };
 
 async function renderClaudeTab() {

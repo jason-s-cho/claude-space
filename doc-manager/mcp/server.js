@@ -41,6 +41,7 @@ const INSTRUCTIONS = `이 서버는 사용자가 직접 작성한 업무 문서(
 - 기존 파일은 절대 고칠 수 없습니다. 고친 결과는 항상 새 버전으로 저장합니다:
   · 파일을 직접 만들 수 있으면(예: docx/pptx 를 생성) save_new_version 에 base64 로 보냅니다.
   · 로컬 파일을 직접 편집할 수 있는 환경(Claude Code)이면 prepare_new_version 으로 복사본 경로를 받아 그 파일을 편집합니다.
+- 기관 양식(워드 .docx, 한글 .hwpx)을 채울 때는 파일을 새로 만들지 말고 inspect_form 으로 칸 번호(p3, t1.r2.c3 …)와 표 제목을 확인한 뒤 fill_form 으로 글자만 채우세요. 서식·표·칸 크기가 그대로 유지되어 바로 제출할 수 있는 파일이 됩니다. 한글 .hwp 는 사용자에게 한글에서 .hwpx 로 저장해 달라고 하세요.
 - 'AI제외' 태그나 사용자가 제외한 분류의 문서는 보이지 않습니다. 사용자가 그런 문서를 찾으면 제외 설정 때문일 수 있다고 알려 주세요.`;
 
 const server = new McpServer({ name: "doc-manager", title: "문서 보관함", version: pkg.version }, { instructions: INSTRUCTIONS });
@@ -163,6 +164,50 @@ tool(
   },
   async ({ path: rel }) => lib.prepareNewVersion(rel),
   (a, r) => ({ path: a.path, new_path: r ? r.new_path : undefined })
+);
+
+tool(
+  "inspect_form",
+  {
+    title: "양식 칸 보기",
+    description:
+      "워드(.docx)·한글(.hwpx) 양식을 칸 목록으로 보여 줍니다. 표 밖 문단은 p1, p2 …, 표 칸은 t1.r2.c3(1번째 표 2행 3열) 형식의 id 이고, " +
+      "칸마다 지금 글자(text), 빈 칸 여부(empty), 문단 스타일(style, 예: 개요 1·Heading1), 표 칸이면 같은 행 왼쪽 제목(row_label)·맨 앞 열(row_header)·같은 열 맨 위 제목(column_label)을 줍니다. " +
+      "'(입력)', '여기에 작성', '○○○' 같은 안내 문구나 빈 칸이 채울 곳입니다. 칸이 많으면 next_offset 으로 이어 봅니다. 긴 본문 전체는 read_document 로 읽으세요. " +
+      "한글 .hwp·옛 워드 .doc 은 지원하지 않습니다(사용자에게 .hwpx/.docx 로 저장해 달라고 하세요).",
+    inputSchema: {
+      path: pathArg.describe("양식 문서 경로 (search_documents 결과의 path, 또는 fill_form 이 돌려준 new_path)"),
+      offset: z.number().int().min(0).optional().describe("이어 볼 위치 (이전 결과의 next_offset)"),
+    },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ path: rel, offset }) => lib.inspectForm(rel, { offset: offset || 0 }),
+  (a) => ({ path: a.path, offset: a.offset || 0 })
+);
+
+tool(
+  "fill_form",
+  {
+    title: "양식 채우기",
+    description:
+      "inspect_form 의 칸 id 대로 글자를 바꿔 새 파일로 저장합니다. 글꼴·크기·표·칸 크기·문단 모양·누름틀은 그대로 두고 글자만 바꾸므로 기관 양식을 그대로 제출용으로 만들 수 있습니다. " +
+      "원본은 절대 바뀌지 않습니다. text 의 줄바꿈(\\n)은 같은 모양의 문단을 더 만듭니다. 회색·기울임 안내 문구 자리는 보통 글자 모양으로 바꿔 씁니다. " +
+      "한 번에 모든 칸을 채우세요 (줄을 늘리면 뒤쪽 문단 번호가 바뀌므로, 새 파일을 다시 고치려면 inspect_form 을 새 경로로 다시 부릅니다). " +
+      "없는 칸 번호가 하나라도 있으면 아무것도 저장하지 않습니다.",
+    inputSchema: {
+      path: pathArg.describe("채울 양식 문서 경로"),
+      fills: z
+        .array(z.object({ id: z.string().describe("칸 id (예: p12, t1.r2.c3)"), text: z.string().describe("넣을 글자. 빈 문자열이면 칸을 비웁니다") }))
+        .min(1)
+        .max(3000)
+        .describe("바꿀 칸 목록"),
+      new_name: z.string().optional().describe("새 파일 이름 (예: 2027_소부장_수요조사서_엠씨케이테크.hwpx). 원본과 같은 폴더에 저장. 빼면 다음 버전 이름(…_v2)"),
+      change_summary: z.string().optional().describe("무엇을 채웠는지 한두 문장 (기록에 남습니다)"),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+  },
+  async ({ path: rel, fills, new_name }) => lib.fillForm(rel, fills, { newName: new_name }),
+  (a, r) => ({ path: a.path, new_path: r ? r.new_path : undefined, filled: a.fills ? a.fills.length : 0, change_summary: a.change_summary })
 );
 
 tool(

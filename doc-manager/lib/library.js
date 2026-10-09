@@ -14,6 +14,7 @@ const { extract, SUPPORTED } = require("./extract");
 const { CATEGORIES, migrateOverrides } = require("./classify");
 const { docFrequency, topKeywords } = require("./keywords");
 const knowledge = require("./knowledge");
+const forms = require("./forms");
 const { groupVersions, nextVersionName, uniqueVersionName } = require("./versions");
 
 const AI_EXCLUDE_TAG = "AI제외";
@@ -277,6 +278,64 @@ class Library {
     const t = this.newVersionTarget(v, ext);
     await fs.promises.writeFile(t.full, buf, { flag: "wx" }); // 'wx': 이미 있으면 실패 → 덮어쓰기 없음
     return { source: v.rel, new_path: t.rel, bytes: buf.length };
+  }
+
+  // ---- 양식 채우기 ----
+
+  // 양식 파일: 색인에 있는 문서이거나, 방금 이 커넥터가 만든 파일(앱이 아직 색인하지 않았을 수 있다)
+  formSource(rel) {
+    rel = String(rel || "").replace(/\\/g, "/");
+    let v;
+    try {
+      v = this.visible(rel);
+    } catch (e) {
+      if (/AI 제외/.test(e.message) || !this.createdByConnector(rel)) throw e;
+      v = { rel, versions: null };
+    }
+    const full = path.join(this.root(), ...v.rel.split("/"));
+    if (!fs.existsSync(full)) throw new Error("파일이 없습니다: " + v.rel);
+    return { v, full, ext: path.extname(v.rel).toLowerCase() };
+  }
+
+  createdByConnector(rel) {
+    try {
+      const log = fs.readFileSync(path.join(store.paths(this.root()).dir, "ai-log.jsonl"), "utf8");
+      return log.split("\n").some((l) => l.includes('"new_path"') && l.includes(JSON.stringify(rel)));
+    } catch {
+      return false;
+    }
+  }
+
+  async inspectForm(rel, { offset = 0 } = {}) {
+    const { v, full, ext } = this.formSource(rel);
+    const r = await forms.inspectForm(await fs.promises.readFile(full), ext, { offset });
+    return { path: v.rel, ...r };
+  }
+
+  // 양식을 채워 새 파일로 저장한다. new_name 을 주면 그 이름으로 (같은 폴더, 같은 확장자), 아니면 다음 버전 이름으로.
+  async fillForm(rel, fills, { newName } = {}) {
+    const { v, full, ext } = this.formSource(rel);
+    const r = await forms.fillForm(await fs.promises.readFile(full), ext, fills);
+    const root = this.root();
+    let t;
+    if (newName) {
+      let name = path.basename(String(newName).trim()).replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_");
+      if (!name || name.startsWith(".")) throw new Error("새 파일 이름이 올바르지 않습니다");
+      const e = path.extname(name).toLowerCase();
+      if (!e) name += ext;
+      else if (e !== ext) throw new Error(`새 파일도 원본과 같은 형식(${ext})이어야 합니다`);
+      const dir = path.dirname(full);
+      t = { full: path.join(dir, name), rel: path.relative(root, path.join(dir, name)).split(path.sep).join("/") };
+      if (fs.existsSync(t.full)) throw new Error(`같은 이름의 파일이 이미 있습니다: ${t.rel} (다른 이름을 주거나 new_name 을 빼면 다음 버전 이름으로 저장합니다)`);
+    } else t = this.newVersionTarget(v);
+    await fs.promises.writeFile(t.full, r.buffer, { flag: "wx" }); // 덮어쓰기 없음
+    return {
+      source: v.rel,
+      new_path: t.rel,
+      filled: r.filled,
+      restyled_from_guide_text: r.restyled.length ? r.restyled : undefined,
+      note_for_ai: "원본은 그대로입니다. 새 파일을 다시 고치려면 inspect_form 을 새 파일 경로로 다시 불러 칸 번호를 확인하세요 (줄을 늘리면 뒤쪽 문단 번호가 바뀝니다).",
+    };
   }
 
   // ---- 기록 ----

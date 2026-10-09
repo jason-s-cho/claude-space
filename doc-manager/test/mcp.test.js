@@ -58,7 +58,7 @@ test("Claude 커넥터: 둘러보기·검색·읽기·버전·관련 문서·새
   const { client, call } = await connect(ud);
   try {
     const tools = (await client.listTools()).tools.map((t) => t.name).sort();
-    assert.deepStrictEqual(tools, ["find_related_documents", "get_knowledge", "library_overview", "list_versions", "prepare_new_version", "read_document", "save_knowledge_card", "save_new_version", "search_documents"]);
+    assert.deepStrictEqual(tools, ["fill_form", "find_related_documents", "get_knowledge", "inspect_form", "library_overview", "list_versions", "prepare_new_version", "read_document", "save_knowledge_card", "save_new_version", "search_documents"]);
     const prompts = (await client.listPrompts()).prompts.map((p) => p.name);
     assert.deepStrictEqual(prompts, ["build_knowledge_card"]);
     const pr = await client.getPrompt({ name: "build_knowledge_card" });
@@ -129,12 +129,28 @@ test("Claude 커넥터: 둘러보기·검색·읽기·버전·관련 문서·새
     assert.ok(fs.existsSync(prep.absolute_path));
     assert.match(prep.new_path, /최종보고서_v2\.docx$/);
 
+    // 양식 채우기: 칸 보기 → 채우기 → 새 파일(아직 색인 전)도 다시 볼 수 있다
+    const report = "국가과제·지원사업/5 보고서/최종보고서.docx";
+    const form = (await call("inspect_form", { path: report })).data;
+    assert.deepStrictEqual(form.slots.map((x) => x.id), ["p1", "p2", "p3"]);
+    const filled = (await call("fill_form", { path: report, fills: [{ id: "p3", text: "그래핀 스텔스 패널 성과\n시제품 3종" }], new_name: "2026 최종보고서_채움", change_summary: "성과 채움" })).data;
+    assert.strictEqual(filled.new_path, "국가과제·지원사업/5 보고서/2026 최종보고서_채움.docx");
+    assert.ok(fs.existsSync(path.join(root, ...filled.new_path.split("/"))));
+    const again = (await call("inspect_form", { path: filled.new_path })).data;
+    assert.deepStrictEqual(again.slots.map((x) => x.text), ["최종보고서", "주관기관 정부출연금", "그래핀 스텔스 패널 성과", "시제품 3종"]);
+    assert.match((await call("fill_form", { path: report, fills: [{ id: "p1", text: "x" }], new_name: "2026 최종보고서_채움.docx" })).text, /이미 있습니다/);
+    assert.match((await call("fill_form", { path: report, fills: [{ id: "p1", text: "x" }], new_name: "다른형식.hwpx" })).text, /같은 형식/);
+    assert.match((await call("inspect_form", { path: "구매·견적/장비 견적.docx" })).text, /AI 제외/);
+    const v2 = (await call("fill_form", { path: report, fills: [{ id: "p1", text: "최종보고서(수정)" }] })).data;
+    assert.match(v2.new_path, /최종보고서_v\d+\.docx$/);
+
     // 기록
     const log = fs.readFileSync(path.join(root, ".docmanager", "ai-log.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
     assert.ok(log.some((l) => l.tool === "search_documents" && l.query === "그래핀"));
     assert.ok(log.some((l) => l.tool === "save_new_version" && l.change_summary === "시장 규모 갱신" && l.new_path === saved.new_path));
     assert.ok(log.some((l) => l.tool === "read_document" && l.error));
     assert.ok(log.some((l) => l.tool === "save_knowledge_card" && l.change_summary === "처음 작성"));
+    assert.ok(log.some((l) => l.tool === "fill_form" && l.change_summary === "성과 채움" && l.filled === 1));
   } finally {
     await client.close();
     for (const d of [root, ud]) fs.rmSync(d, { recursive: true, force: true });
