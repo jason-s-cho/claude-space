@@ -1,10 +1,14 @@
 name: Doc manager build
 
-# 수동 실행(Actions 탭 → Run workflow) 하거나, docmanager-v* 태그를 푸시하면
-# 문서 보관함의 Windows / macOS / Linux 설치 파일을 빌드한다. 태그로 실행하면 릴리스에도 올라간다.
+# doc-manager/ 가 바뀐 커밋을 푸시하거나, 수동 실행(Actions 탭 → Run workflow) 하거나,
+# docmanager-v* 태그를 푸시하면 문서 보관함의 Windows / macOS / Linux 설치 파일을 빌드한다.
+# 설치 파일은 실행 결과 화면 아래 Artifacts 에서 받는다. 태그로 실행하면 릴리스에도 올라간다.
+# (Run workflow 버튼은 이 파일이 기본 브랜치에 있어야 보인다.)
 on:
   workflow_dispatch:
   push:
+    branches: [main, "claude/**"]
+    paths: ["doc-manager/**", ".github/workflows/docmanager-build.yml"]
     tags:
       - "docmanager-v*"
 
