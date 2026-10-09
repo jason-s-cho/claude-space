@@ -49,6 +49,7 @@ contextBridge.exposeInMainWorld("docs", {
   trashDuplicates: (plan) => ipcRenderer.invoke("trash-duplicates", plan),
   moveMany: (rels) => ipcRenderer.invoke("move-many", rels),
   moveToCategory: (rel) => ipcRenderer.invoke("move-to-category", rel),
+  compareDocs: (a, b) => ipcRenderer.invoke("compare-docs", a, b),
   convertDoc: (rel, to) => ipcRenderer.invoke("convert-doc", rel, to),
   deleteDoc: (rel) => ipcRenderer.invoke("delete-doc", rel),
   newVersion: (rel) => ipcRenderer.invoke("new-version", rel),

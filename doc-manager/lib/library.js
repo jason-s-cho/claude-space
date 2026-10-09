@@ -16,6 +16,7 @@ const { docFrequency, topKeywords } = require("./keywords");
 const knowledge = require("./knowledge");
 const forms = require("./forms");
 const convertLib = require("./convert");
+const { compareTexts } = require("./diff");
 const { groupVersions, nextVersionName, uniqueVersionName } = require("./versions");
 
 const AI_EXCLUDE_TAG = "AI제외";
@@ -363,6 +364,37 @@ class Library {
       new_path: newRel,
       converted_with: r.app,
       note_for_ai: /\.(hwpx|docx)$/i.test(newRel) ? "이 새 파일로 inspect_form → fill_form 을 쓰면 됩니다. 원본은 그대로입니다." : "원본은 그대로입니다.",
+    };
+  }
+
+  // 두 문서(보통 같은 문서의 두 버전)에서 바뀐 곳. 먼저 고친 쪽을 이전으로 놓는다.
+  async compareVersions(relA, relB, { limit = 120 } = {}) {
+    const a = this.formSource(relA), b = this.formSource(relB);
+    const time = (x) => fs.statSync(x.full).mtimeMs;
+    const [older, newer] = time(a) <= time(b) ? [a, b] : [b, a];
+    const read = async (x) => {
+      const t = await extract(x.full, { maxText: READ_MAX });
+      if (t.protected) throw new Error(`${x.v.rel}: 암호·배포용 문서라 본문을 다 읽을 수 없습니다`);
+      return t.text || "";
+    };
+    const r = compareTexts(await read(older), await read(newer));
+    const cut = (s) => (s && s.length > 800 ? s.slice(0, 800) + "…" : s);
+    const changes = r.blocks
+      .filter((x) => x.t !== "eq")
+      .map((x) =>
+        x.t === "mod"
+          ? { type: "고침", before: cut(x.a), after: cut(x.b) }
+          : x.t === "ins"
+            ? { type: "추가", after: cut(x.b) }
+            : { type: "삭제", before: cut(x.a) }
+      );
+    return {
+      older: older.v.rel,
+      newer: newer.v.rel,
+      stats: { 고친_문단: r.stats.changed, 추가: r.stats.added, 삭제: r.stats.removed, 같음: r.stats.same },
+      changed_numbers: r.numbers.length ? r.numbers : undefined,
+      changes: changes.slice(0, limit),
+      more_changes: changes.length > limit ? changes.length - limit : undefined,
     };
   }
 

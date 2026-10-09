@@ -7,7 +7,8 @@ const { docFrequency, topKeywords } = require("./lib/keywords");
 const searchLib = require("./lib/search");
 const { groupVersions, nextVersionName, uniqueVersionName } = require("./lib/versions");
 const { importFiles, ensureCategoryFolders, expectedFolder, moveToFolder, moveManyToFolders, isInPlace, removeLegacyFolders } = require("./lib/importer");
-const { SUPPORTED } = require("./lib/extract");
+const { SUPPORTED, extract } = require("./lib/extract");
+const { compareTexts } = require("./lib/diff");
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -664,6 +665,22 @@ function registerIpc() {
   });
 
   ipcMain.handle("search", (_e, q) => search(q));
+
+  // 두 문서(보통 같은 문서의 두 버전) 본문 비교. 앞이 이전, 뒤가 나중.
+  ipcMain.handle("compare-docs", async (_e, relA, relB) => {
+    try {
+      const read = async (rel) => {
+        const x = await extract(fullPath(rel), { maxText: 400000 });
+        if (x.protected) throw new Error(`${rel.split("/").pop()}: 암호·배포용 문서라 본문을 다 읽을 수 없습니다`);
+        return x.text || "";
+      };
+      const [ta, tb] = await Promise.all([read(relA), read(relB)]);
+      if (!ta.trim() && !tb.trim()) throw new Error("두 문서 모두 본문 글자를 읽을 수 없습니다 (스캔 PDF·옛 형식 등)");
+      return compareTexts(ta, tb);
+    } catch (err) {
+      return { error: String((err && err.message) || err) };
+    }
+  });
 
   ipcMain.handle("get-text", (_e, rel) => (index && index.files[rel] ? index.files[rel].text || "" : ""));
 

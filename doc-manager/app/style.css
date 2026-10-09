@@ -365,6 +365,38 @@ dialog[open] .move-form { animation: pop 0.16s var(--ease); }
 .mv-path { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding-left: 26px; font-size: 12px; color: var(--text-3); }
 .mv-path b { color: var(--accent-text); font-weight: 600; }
 .mv-arrow { width: 13px; height: 13px; flex: none; }
+.timeline li { display: flex; align-items: center; gap: 2px; }
+.timeline li > button[data-goto] { flex: 1; min-width: 0; }
+.timeline li .tl-cmp { display: block; width: auto; flex: none; border: 0; background: none; color: var(--accent-text); font-size: 11.5px; font-weight: 600; padding: 4px 8px; border-radius: 6px; opacity: 0.55; }
+.timeline li:hover .tl-cmp, .timeline li .tl-cmp:focus-visible { opacity: 1; }
+.timeline li .tl-cmp:hover { background: var(--accent-soft); }
+.cmp-form { width: min(980px, calc(100vw - 32px)); height: min(760px, calc(100vh - 48px)); max-height: none; grid-template-rows: auto auto auto minmax(0, 1fr) auto; }
+.cmp-head { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 10px; padding: 4px 22px 10px; }
+.cmp-side { display: grid; min-width: 0; padding: 8px 12px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--line); }
+.cmp-side small { font-size: 11px; color: var(--text-3); font-weight: 600; }
+.cmp-side b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.cmp-side span { font-size: 11.5px; color: var(--text-3); }
+.cmp-side.new { border-color: color-mix(in srgb, var(--accent) 40%, var(--line)); }
+.cmp-arrow { width: 16px; height: 16px; color: var(--text-3); }
+.cmp-stats { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 0 22px 10px; border-bottom: 1px solid var(--line); }
+.cs { font-size: 12px; font-weight: 600; padding: 2px 10px; border-radius: 999px; background: var(--surface-3); color: var(--text-2); }
+.cs.mod { background: rgba(214, 158, 46, 0.16); color: #9a6a00; }
+.cs.ins { background: rgba(31, 138, 76, 0.12); color: #1f8a4c; }
+.cs.del { background: rgba(209, 67, 67, 0.12); color: #c03a3a; }
+.cmp-numbers { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; font-size: 12.5px; padding: 8px 10px; border-radius: 8px; background: rgba(214, 158, 46, 0.1); }
+.cmp-numbers svg { width: 15px; height: 15px; color: #9a6a00; }
+.cmp-numbers span { font-variant-numeric: tabular-nums; }
+.cmp-body { overflow-y: auto; padding: 10px 22px 16px; font-size: 13.5px; line-height: 1.7; }
+.cb { margin: 0; padding: 3px 10px; border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cb.eq { color: var(--text-2); }
+.cb.mod { background: rgba(214, 158, 46, 0.08); border-left: 3px solid rgba(214, 158, 46, 0.7); }
+.cb.ins { background: rgba(31, 138, 76, 0.07); border-left: 3px solid rgba(31, 138, 76, 0.6); }
+.cb.del { background: rgba(209, 67, 67, 0.06); border-left: 3px solid rgba(209, 67, 67, 0.55); }
+.cmp-body ins, .cmp-numbers ins, .cmp-legend ins { text-decoration: none; background: rgba(31, 138, 76, 0.2); color: inherit; border-radius: 3px; padding: 0 1px; }
+.cmp-body del, .cmp-numbers del, .cmp-legend del { background: rgba(209, 67, 67, 0.18); color: #b03030; border-radius: 3px; padding: 0 1px; }
+.cb-fold { display: block; width: 100%; margin: 4px 0; border: 1px dashed var(--line); background: none; color: var(--text-3); font-size: 12px; padding: 4px; border-radius: 6px; }
+.cb-fold:hover { background: var(--surface-2); color: var(--text); }
+.cmp-legend { margin-right: auto; }
 .convert-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: -4px 0 14px; font-size: 12px; color: var(--text-3); }
 .convert-row span { margin-right: 2px; }
 .mv-dup { color: var(--warn-text); font-weight: 600; }
@@ -498,3 +530,4 @@ dialog[open] .move-form { animation: pop 0.16s var(--ease); }
 .ai-log .empty-log { display: block; color: var(--text-3); padding: 12px; }
 .ai-toggle { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 12.5px; color: var(--text-2); cursor: pointer; }
 .ai-toggle input { accent-color: var(--accent); }
+.cmp-form .settings-actions { align-items: center; }

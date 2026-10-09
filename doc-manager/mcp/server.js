@@ -37,6 +37,7 @@ const INSTRUCTIONS = `이 서버는 사용자가 직접 작성한 업무 문서(
 - 문서를 새로 쓰거나 고치기 전에는 get_knowledge 로 '회사 지식 카드'(회사 개요·기술·성능 수치·과제 이력·고객사·자주 쓰는 표현)를 먼저 읽고, 그 사실과 표현을 우선 쓰세요.
 - 먼저 library_overview 로 분류·과제·태그를 보고, search_documents 로 찾은 뒤 read_document 로 본문을 읽으세요. 긴 문서는 next_offset 으로 이어 읽습니다.
 - 기본 검색 결과는 각 문서의 최신 버전만 보여 줍니다. 이전 버전이 필요하면 list_versions 를 쓰세요.
+- 새 버전을 저장했으면 compare_versions 로 원본과 바뀐 곳(특히 바뀐 숫자)을 확인해 사용자에게 짧게 알려 주세요.
 - 새 문서나 계획서를 쓸 때는 find_related_documents 로 재사용할 만한 이전 자료(같은 과제·기술·키워드)를 찾으세요.
 - 기존 파일은 절대 고칠 수 없습니다. 고친 결과는 항상 새 버전으로 저장합니다:
   · 파일을 직접 만들 수 있으면(예: docx/pptx 를 생성) save_new_version 에 base64 로 보냅니다.
@@ -228,6 +229,20 @@ tool(
   },
   async ({ path: rel, fills, table_rows, new_name }) => lib.fillForm(rel, fills || [], { newName: new_name, tableRows: table_rows || [] }),
   (a, r) => ({ path: a.path, new_path: r ? r.new_path : undefined, filled: a.fills ? a.fills.length : 0, rows_added: r ? r.rows_added : undefined, change_summary: a.change_summary })
+);
+
+tool(
+  "compare_versions",
+  {
+    title: "바뀐 곳 비교",
+    description:
+      "두 문서(보통 list_versions 로 찾은 같은 문서의 두 버전)의 본문을 문단 단위로 비교해 고친·추가·삭제된 문단과 바뀐 숫자를 보여 줍니다. 먼저 고친 쪽을 이전(older)으로 놓습니다. " +
+      "'이번 버전에서 뭐가 바뀌었어?', '수치가 바뀐 곳 확인해 줘', 새 버전을 저장한 뒤 바뀐 곳을 사용자에게 요약할 때 씁니다. 서식·그림은 비교하지 않습니다.",
+    inputSchema: { path_a: pathArg, path_b: pathArg },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ path_a, path_b }) => lib.compareVersions(path_a, path_b),
+  (a, r) => ({ path: a.path_a, path_b: a.path_b, changes: r ? r.changes.length : undefined })
 );
 
 tool(

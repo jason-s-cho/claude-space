@@ -430,13 +430,15 @@ async function renderDetail() {
   if (v) {
     const latest = byRel.get(v.latest);
     if (v.latest !== d.rel && latest) {
-      banner = `<div class="banner">${icon("info")}<div>더 최신 버전이 있습니다: <b>${esc(latest.base)}</b> (${fmtDate(latest.mtimeMs)}) <button data-goto="${esc(latest.rel)}" type="button">보기</button></div></div>`;
+      banner = `<div class="banner">${icon("info")}<div>더 최신 버전이 있습니다: <b>${esc(latest.base)}</b> (${fmtDate(latest.mtimeMs)}) <button data-goto="${esc(latest.rel)}" type="button">보기</button> <button data-compare="${esc(latest.rel)}" type="button">바뀐 곳 비교</button></div></div>`;
     }
     timeline = `<div class="card"><h4>${icon("layers")}버전 기록<small>${v.size}개</small></h4><ul class="timeline">${v.order
       .filter((rel) => byRel.has(rel))
       .map((rel) => {
         const x = byRel.get(rel);
-        return `<li class="${rel === d.rel ? "cur" : ""}"><button data-goto="${esc(rel)}" type="button" title="${esc(rel)}"><span class="tl-dot"></span><span class="tl-name">${esc(x.base)}</span><span class="tl-date">${fmtDate(x.mtimeMs)}</span></button></li>`;
+        return `<li class="${rel === d.rel ? "cur" : ""}"><button data-goto="${esc(rel)}" type="button" title="${esc(rel)}"><span class="tl-dot"></span><span class="tl-name">${esc(x.base)}</span><span class="tl-date">${fmtDate(x.mtimeMs)}</span></button>${
+          rel === d.rel ? "" : `<button class="tl-cmp" data-compare="${esc(rel)}" type="button" title="지금 문서와 바뀐 곳 비교">비교</button>`
+        }</li>`;
       })
       .join("")}</ul></div>`;
   }
@@ -784,7 +786,7 @@ const TOOL_LABEL = {
   library_overview: "둘러보기", search_documents: "검색", read_document: "읽기", list_versions: "버전 기록",
   find_related_documents: "관련 문서", save_new_version: "새 버전 저장", prepare_new_version: "새 버전 복사본",
   get_knowledge: "지식 카드 읽기", save_knowledge_card: "지식 카드 저장",
-  inspect_form: "양식 보기", fill_form: "양식 채우기", convert_document: "형식 바꾸기",
+  inspect_form: "양식 보기", fill_form: "양식 채우기", convert_document: "형식 바꾸기", compare_versions: "바뀐 곳 비교",
 };
 
 async function renderClaudeTab() {
@@ -915,6 +917,69 @@ $("moveGo").onclick = async () => {
   if (r.failed.length) msg += `\n옮기지 못한 ${r.failed.length}개: ` + r.failed.slice(0, 3).map((f) => `${f.rel.split("/").pop()} (${f.error})`).join(", ") + (r.failed.length > 3 ? " …" : "");
   toast(msg, r.failed.length ? 9000 : 5000);
 };
+
+// ---- 버전 비교 ----
+// relX, relY 중 먼저 고친 것을 '이전', 나중 것을 '나중'으로 놓고 비교한다
+async function openCompare(relX, relY) {
+  const x = byRel.get(relX), y = byRel.get(relY);
+  if (!x || !y) return;
+  const [a, b] = x.mtimeMs <= y.mtimeMs ? [x, y] : [y, x];
+  $("cmpHead").innerHTML = `<div class="cmp-side old"><small>이전</small><b title="${esc(a.rel)}">${esc(a.base)}</b><span>${fmtDate(a.mtimeMs)}</span></div>${icon("chevron", "cmp-arrow")}<div class="cmp-side new"><small>나중</small><b title="${esc(b.rel)}">${esc(b.base)}</b><span>${fmtDate(b.mtimeMs)}</span></div>`;
+  $("cmpStats").innerHTML = "";
+  $("cmpBody").innerHTML = '<p class="hint">두 문서를 읽고 비교하는 중…</p>';
+  $("cmpDlg").showModal();
+  const r = await api.compareDocs(a.rel, b.rel);
+  if (r.error) {
+    $("cmpBody").innerHTML = `<p class="state-warn">${esc(r.error)}</p>`;
+    return;
+  }
+  const st = r.stats;
+  $("cmpStats").innerHTML =
+    (st.changed + st.added + st.removed
+      ? `<span class="cs mod">고친 문단 ${st.changed}</span><span class="cs ins">추가 ${st.added}</span><span class="cs del">삭제 ${st.removed}</span><span class="cs">같음 ${st.same}</span>`
+      : '<span class="cs">본문 글자는 똑같습니다 (서식·그림만 다를 수 있음)</span>') +
+    (r.numbers.length
+      ? `<div class="cmp-numbers">${icon("info")}<b>바뀐 숫자</b> ${r.numbers
+          .slice(0, 12)
+          .map((n) => `<span><del>${esc(n.before)}</del>→<ins>${esc(n.after)}</ins></span>`)
+          .join("")}${r.numbers.length > 12 ? ` <small>외 ${r.numbers.length - 12}곳</small>` : ""}</div>`
+      : "");
+  // 같은 문단이 길게 이어지면 앞뒤 하나씩만 보이고 접는다
+  const html = [];
+  const bl = r.blocks;
+  for (let i = 0; i < bl.length; ) {
+    if (bl[i].t !== "eq") {
+      const x = bl[i];
+      if (x.t === "mod") html.push(`<p class="cb mod">${x.inline.map((s) => (s.t === "eq" ? esc(s.s) : `<${s.t}>${esc(s.s)}</${s.t}>`)).join("")}</p>`);
+      else if (x.t === "ins") html.push(`<p class="cb ins"><ins>${esc(x.b)}</ins></p>`);
+      else html.push(`<p class="cb del"><del>${esc(x.a)}</del></p>`);
+      i++;
+      continue;
+    }
+    let j = i;
+    while (j < bl.length && bl[j].t === "eq") j++;
+    const run = bl.slice(i, j);
+    const keepHead = i === 0 ? 0 : 1, keepTail = j === bl.length ? 0 : 1;
+    if (run.length > keepHead + keepTail + 1) {
+      run.slice(0, keepHead).forEach((e) => html.push(`<p class="cb eq">${esc(e.b)}</p>`));
+      const hidden = run.slice(keepHead, run.length - keepTail);
+      html.push(`<button class="cb-fold" type="button" data-fold="${esc(hidden.map((e) => e.b).join("\n"))}">… 같은 문단 ${hidden.length}개 …</button>`);
+      run.slice(run.length - keepTail).forEach((e) => html.push(`<p class="cb eq">${esc(e.b)}</p>`));
+    } else run.forEach((e) => html.push(`<p class="cb eq">${esc(e.b)}</p>`));
+    i = j;
+  }
+  $("cmpBody").innerHTML = html.join("");
+  const first = $("cmpBody").querySelector(".cb.mod, .cb.ins, .cb.del");
+  if (first) first.scrollIntoView({ block: "center" });
+}
+$("cmpBody").addEventListener("click", (e) => {
+  const b = e.target.closest(".cb-fold");
+  if (!b) return;
+  const frag = b.dataset.fold.split("\n").map((t) => `<p class="cb eq">${esc(t)}</p>`).join("");
+  b.insertAdjacentHTML("afterend", frag);
+  b.remove();
+});
+$("cmpClose").onclick = () => $("cmpDlg").close();
 
 // ---- 다른 형식으로 저장 (한글·워드) ----
 const CONVERT_LABEL = { ".hwpx": "한글 표준(hwpx)", ".docx": "워드(docx)", ".pdf": "PDF" };
@@ -1283,6 +1348,7 @@ $("detail").addEventListener("click", async (e) => {
   const act = b.dataset.act;
   if (act === "open") return openDoc(d.rel);
   if (act === "reveal") return api.showInFolder(d.rel);
+  if (b.dataset.compare) return openCompare(b.dataset.compare, d.rel);
   if (b.dataset.goto) return goto(b.dataset.goto);
   if (act === "move") {
     const r = await api.moveToCategory(d.rel);
