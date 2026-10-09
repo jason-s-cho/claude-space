@@ -105,3 +105,14 @@ test("기술 분야 태그 (끌 수 있음)", () => {
   assert.ok(!classify({ name: "그래핀 소재" }, { techTags: false }).tags.includes("그래핀"));
   assert.ok(!classify({ name: "수정사업계획서" }).tags.includes("수정본"));
 });
+
+test("고객사를 등록해도 견적·거래명세표·세금계산서는 구매·견적에 남고 고객사 태그만 붙는다", () => {
+  const partners = [{ name: "중앙대학교", aliases: ["중앙대"] }];
+  for (const name of ["260126_견적서_중앙대학교(GOPET 12L).pdf", "20260223 거래명세표-중앙대학교(GoPET 12L).xlsx", "260223_전자세금계산서_중앙대학교.pdf", "가격증빙자료_260123.hwp"]) {
+    const r = classify({ rel: name, name, text: "" }, { partners });
+    assert.strictEqual(r.category, "purchase", name);
+  }
+  const r = classify({ rel: "x/260223_전자세금계산서_중앙대학교.pdf", name: "260223_전자세금계산서_중앙대학교.pdf", text: "" }, { partners });
+  assert.ok(r.tags.includes("중앙대학교"));
+  assert.strictEqual(classify({ rel: "중앙대학교 요청사항 회신.docx", name: "중앙대학교 요청사항 회신.docx", text: "" }, { partners }).category, "request");
+});
