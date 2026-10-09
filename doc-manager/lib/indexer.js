@@ -8,6 +8,10 @@ const { classify, RENAMED, CLASSIFIER_VERSION } = require("./classify");
 const { countTerms } = require("./keywords");
 
 const INDEX_VERSION = 1;
+// 본문 읽는 방법이 좋아지면 올린다. 이보다 낮은 버전으로 읽은 파일은 한 번 다시 읽는다.
+//   2: .hwp 본문 읽기
+const EXTRACT_VERSION = 2;
+const REREAD_EXTS = { 2: [".hwp"] };
 const SKIP_DIRS = new Set(["node_modules", ".git", "$RECYCLE.BIN", "System Volume Information", ".Trash"]);
 
 function emptyIndex(root) {
@@ -26,6 +30,11 @@ function loadIndex(file, root, opts = {}) {
         if (!e.terms) e.terms = countTerms([e.title, e.text].join("\n"));
         // 이름이 바뀐 분류 (예: 수요조사서 → 공고·수요조사)
         if (e.userCategory && RENAMED[e.userCategory]) e.userCategory = RENAMED[e.userCategory];
+        // 예전에 본문을 못 읽었던 형식(.hwp 등)은 다음에 훑을 때 다시 읽게 한다. (직접 고친 내용은 그대로)
+        const ext = path.extname(e.rel).toLowerCase();
+        for (let v = (e.extractVersion || 1) + 1; v <= EXTRACT_VERSION; v++) {
+          if ((REREAD_EXTS[v] || []).includes(ext)) e.mtimeMs = -1;
+        }
       }
       return data;
     }
@@ -113,6 +122,8 @@ async function buildEntry(f) {
     text: x.text,
     terms: countTerms([x.title, x.text].join("\n")),
     error: x.error,
+    protectedText: !!x.protected, // 암호·배포용 문서라 앞부분(미리보기)만 읽음
+    extractVersion: EXTRACT_VERSION,
     indexedAt: Date.now(),
   };
 }

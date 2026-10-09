@@ -5,7 +5,7 @@ const indexer = require("./lib/indexer");
 const { CATEGORIES, KEYWORDS, KEYWORD_GROUPS, TECH_TAGS, migrateOverrides } = require("./lib/classify");
 const { docFrequency, topKeywords } = require("./lib/keywords");
 const searchLib = require("./lib/search");
-const { groupVersions } = require("./lib/versions");
+const { groupVersions, nextVersionName, uniqueVersionName } = require("./lib/versions");
 const { importFiles, ensureCategoryFolders, expectedFolder, moveToFolder, removeLegacyFolders } = require("./lib/importer");
 const { SUPPORTED } = require("./lib/extract");
 
@@ -173,6 +173,7 @@ function docSummary(e) {
     author: e.author,
     error: e.error,
     hasText: !!e.text,
+    protectedText: !!e.protectedText,
     category: eff.category,
     autoCategory: e.autoCategory,
     userCategory: e.userCategory || "",
@@ -368,25 +369,74 @@ function registerIpc() {
   });
 
   // 끌어다 놓은 파일(또는 '문서 넣기'로 고른 파일)을 문서 폴더에 복사하고 분류한다.
-  async function doImport(paths) {
-    if (!index || !index.root) return { imported: [], existing: [], skipped: [], error: "먼저 문서 폴더를 골라 주세요." };
-    const r = await importFiles(index, paths, { layout: settings.importLayout, options: classifyOptions() });
-    persistIndex();
-    keywordCache = versionCache = null;
-    send("state", state());
-    return r;
+  // 넣는 도중에 또 넣으면 앞의 것이 끝난 뒤 이어서 한다.
+  let importChain = Promise.resolve();
+  function doImport(paths) {
+    const run = async () => {
+      if (!index || !index.root) return { imported: [], existing: [], skipped: [], error: "먼저 문서 폴더를 골라 주세요." };
+      let lastSend = 0;
+      const r = await importFiles(index, paths, {
+        layout: settings.importLayout,
+        options: classifyOptions(),
+        onProgress: (p) => {
+          const now = Date.now();
+          if (now - lastSend > 120 || p.done === p.total) {
+            lastSend = now;
+            send("import-progress", p);
+          }
+        },
+      });
+      persistIndex();
+      keywordCache = versionCache = null;
+      send("state", state());
+      return r;
+    };
+    const job = importChain.then(run, run);
+    importChain = job.catch(() => {});
+    return job;
   }
 
   ipcMain.handle("import-files", (_e, paths) => doImport(Array.isArray(paths) ? paths.filter((p) => typeof p === "string" && p) : []));
 
-  ipcMain.handle("pick-and-import", async () => {
-    const r = await dialog.showOpenDialog(win, {
-      title: "문서 폴더에 넣을 파일 고르기",
-      properties: ["openFile", "multiSelections"],
-      filters: [{ name: "문서", extensions: Object.keys(SUPPORTED).map((x) => x.slice(1)) }],
-    });
+  // kind: "files"(여러 개 고르기) | "folder"(폴더째, 안의 문서 모두)
+  ipcMain.handle("pick-and-import", async (_e, kind) => {
+    const folder = kind === "folder";
+    const r = await dialog.showOpenDialog(win, folder
+      ? { title: "문서 폴더에 넣을 폴더 고르기 (안의 문서를 모두 넣습니다)", properties: ["openDirectory", "multiSelections"] }
+      : {
+          title: "문서 폴더에 넣을 파일 고르기 (Ctrl·Shift 로 여러 개)",
+          properties: ["openFile", "multiSelections"],
+          filters: [{ name: "문서", extensions: Object.keys(SUPPORTED).map((x) => x.slice(1)) }],
+        });
     if (r.canceled || !r.filePaths.length) return null;
     return doImport(r.filePaths);
+  });
+
+  // 새 버전으로 고치기: 같은 폴더에 다음 버전 이름으로 복사해서 연다. 원본은 건드리지 않는다.
+  // 분류·태그는 이어받고, 메모·즐겨찾기는 그 버전에만 해당하므로 넘기지 않는다.
+  ipcMain.handle("new-version", async (_e, rel) => {
+    const e = index && index.files[rel];
+    if (!e) return { error: "알 수 없는 파일" };
+    try {
+      const src = fullPath(rel);
+      const dir = path.dirname(src);
+      const v = versionMap().get(rel);
+      const siblings = v ? v.order.map((r) => r.split("/").pop()) : [];
+      const name = uniqueVersionName(nextVersionName(path.basename(src), siblings), (n) => fs.existsSync(path.join(dir, n)));
+      const dest = path.join(dir, name);
+      await fs.promises.copyFile(src, dest, fs.constants.COPYFILE_EXCL);
+      const now = new Date();
+      await fs.promises.utimes(dest, now, now); // 윈도우는 복사해도 원래 수정 시각이 남으므로 지금으로
+      const entry = await indexer.addFile(index, dest, classifyOptions());
+      for (const k of ["userCategory", "userTags", "hiddenTags"]) if (e[k] !== undefined) entry[k] = JSON.parse(JSON.stringify(e[k]));
+      persistIndex();
+      keywordCache = versionCache = null;
+      send("state", state());
+      const err = await shell.openPath(dest);
+      return { rel: entry.rel, openError: err || "" };
+    } catch (err) {
+      return { error: String((err && err.message) || err) };
+    }
   });
 
   ipcMain.handle("move-to-category", async (_e, rel) => {

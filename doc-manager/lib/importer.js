@@ -167,7 +167,7 @@ function isInside(root, p) {
 
 /**
  * paths: 놓은 파일·폴더 경로
- * opts: { layout: "category" | "root", options: 분류 옵션 }
+ * opts: { layout: "category" | "root", options: 분류 옵션, onProgress({ done, total, current }) }
  * 결과: { imported: [{ rel, category, from }], existing: [{ rel, name }], skipped: [{ name, reason }] }
  */
 async function importFiles(index, paths, opts = {}) {
@@ -175,8 +175,13 @@ async function importFiles(index, paths, opts = {}) {
   const { files, skipped } = await expand(paths);
   const imported = [];
   const existing = [];
-  for (const src of files) {
+  const progress = (done, current) => opts.onProgress && opts.onProgress({ done, total: files.length, current });
+  for (let i = 0; i < files.length; i++) {
+    const src = files[i];
     const name = path.basename(src);
+    progress(i, name);
+    // 많이 넣을 때 화면이 멈추지 않도록 가끔 쉰다
+    if (i && i % 5 === 0) await new Promise((r) => setImmediate(r));
     try {
       // 이미 문서 폴더 안에 있는 파일은 복사하지 않고 그대로 보여 준다.
       if (isInside(root, src)) {
@@ -211,6 +216,7 @@ async function importFiles(index, paths, opts = {}) {
       skipped.push({ name, reason: String((e && e.message) || e).slice(0, 120) });
     }
   }
+  progress(files.length, "");
   return { imported, existing, skipped };
 }
 

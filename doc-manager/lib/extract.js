@@ -1,10 +1,11 @@
 // 문서 파일에서 검색·분류용 텍스트를 뽑아낸다.
-// docx / pptx / xlsx / hwpx 는 zip 안의 XML 이라 jszip 으로 직접 읽고,
+// docx / pptx / xlsx / hwpx 는 zip 안의 XML 이라 jszip 으로 직접 읽고, .hwp 는 lib/hwp.js 로 읽는다.
 // pdf 는 pdf.js, 옛 .doc 은 word-extractor 를 쓴다.
-// .ppt / .xls / .hwp 같은 옛 바이너리 형식은 본문을 읽지 않고 파일 이름만으로 분류한다.
+// .ppt / .xls 같은 옛 바이너리 형식은 본문을 읽지 않고 파일 이름만으로 분류한다.
 const fs = require("fs");
 const path = require("path");
 const JSZip = require("jszip");
+const { extractHwp } = require("./hwp");
 
 const MAX_TEXT = 30000; // 문서 하나당 보관할 최대 글자 수
 
@@ -169,13 +170,14 @@ async function extract(filePath) {
   try {
     let r = {};
     if (ext === ".doc") r = await extractDoc(filePath);
-    else if ([".ppt", ".xls", ".hwp"].includes(ext)) r = {};
+    else if ([".ppt", ".xls"].includes(ext)) r = {};
     else {
       const buf = await fs.promises.readFile(filePath);
       if (ext === ".docx") r = await extractDocx(buf);
       else if (ext === ".pptx") r = await extractPptx(buf);
       else if (ext === ".xlsx") r = await extractXlsx(buf);
       else if (ext === ".hwpx") r = await extractHwpx(buf);
+      else if (ext === ".hwp") r = extractHwp(buf);
       else if (ext === ".pdf") r = await extractPdf(buf);
     }
     Object.assign(result, r);

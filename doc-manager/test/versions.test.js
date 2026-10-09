@@ -31,3 +31,28 @@ test("묶음과 최신본", () => {
   assert.ok(!g.has("보고서_v1.docx")); // 너무 흔한 이름은 묶지 않음
   assert.ok(!g.has("혼자.docx"));
 });
+
+test("새 버전 이름: 번호 · 날짜 · 없으면 _v2", () => {
+  const { nextVersionName } = require("../lib/versions");
+  const now = new Date(2026, 9, 9);
+  assert.strictEqual(nextVersionName("보고서_v01.docx", [], now), "보고서_v02.docx");
+  assert.strictEqual(nextVersionName("보고서_v01.docx", ["보고서_v05.docx"], now), "보고서_v06.docx"); // 묶음에서 가장 큰 번호 다음
+  assert.strictEqual(nextVersionName("보고서 ver.2.docx", [], now), "보고서 ver.3.docx");
+  assert.strictEqual(nextVersionName("엠씨케이테크_IR_260406.pptx", [], now), "엠씨케이테크_IR_261009.pptx");
+  assert.strictEqual(nextVersionName("메모_20250508.docx", [], now), "메모_20261009.docx");
+  assert.strictEqual(nextVersionName("IR_261009.pptx", [], now), "IR_261009_v2.pptx"); // 이미 오늘 날짜
+  assert.strictEqual(nextVersionName("회사소개서_국문.pptx", [], now), "회사소개서_국문_v2.pptx");
+  assert.strictEqual(nextVersionName("엠씨케이테크_IR (2).pptx", ["엠씨케이테크_IR_v3.pptx"], now), "엠씨케이테크_IR_v4.pptx");
+  assert.strictEqual(nextVersionName("계획서 - 복사본.hwp", [], now), "계획서_v2.hwp");
+  assert.strictEqual(nextVersionName("2025 기술수요 조사.docx", [], now), "2025 기술수요 조사_v2.docx"); // 연도는 날짜가 아님
+});
+
+test("새 버전 이름이 겹치면 번호만 올린다 (날짜는 그대로)", () => {
+  const { uniqueVersionName, familyKey } = require("../lib/versions");
+  const taken = new Set(["IR_261009.pptx", "IR_261009_v2.pptx"]);
+  assert.strictEqual(uniqueVersionName("IR_261009.pptx", (n) => taken.has(n)), "IR_261009_v3.pptx");
+  assert.strictEqual(uniqueVersionName("새것.docx", () => false), "새것.docx");
+  // 새로 만든 이름도 같은 묶음으로 들어간다
+  assert.strictEqual(familyKey("회사소개서_국문_v2.pptx"), familyKey("회사소개서_국문.pptx"));
+  assert.strictEqual(familyKey("엠씨케이테크_IR_261009.pptx"), familyKey("엠씨케이테크_IR_260406.pptx"));
+});

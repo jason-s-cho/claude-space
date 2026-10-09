@@ -426,7 +426,8 @@ async function renderDetail() {
     ${banner}
     <div class="d-actions">
       <button class="btn primary" data-act="open" type="button">${icon("external")}열기</button>
-      <button class="btn" data-act="reveal" type="button">${icon("folder-open")}폴더에서 보기</button>
+      <button class="btn" data-act="new-version" type="button" title="${v && v.latest !== d.rel ? "이 (이전) 버전을 복사해서" : "이 문서를 복사해서"} 다음 버전 이름으로 저장하고 엽니다. 원본은 그대로 남습니다.">${icon("layers")}새 버전으로 고치기</button>
+      <button class="icon-btn" data-act="reveal" type="button" title="폴더에서 보기" aria-label="폴더에서 보기">${icon("folder-open")}</button>
       <button class="icon-btn${d.starred ? " on" : ""}" data-act="star" type="button" title="${d.starred ? "즐겨찾기 해제" : "즐겨찾기"}" aria-label="즐겨찾기">${d.starred ? '<svg style="fill:currentColor"><use href="#i-star"/></svg>' : icon("star")}</button>
     </div>
     <div class="card">
@@ -461,7 +462,8 @@ async function renderDetail() {
     <div class="card">
       <h4>${icon("files")}본문 미리보기</h4>
       ${d.error ? `<p class="warn">본문을 읽지 못했습니다 (암호가 걸렸거나 손상된 파일일 수 있습니다). 파일 이름으로만 분류했습니다.</p>` : ""}
-      ${d.hasText ? '<pre class="preview" id="preview">불러오는 중…</pre>' : !d.error ? `<div class="muted small">${["ppt", "xls", "hwp"].includes(d.ext) ? "옛 형식(." + esc(d.ext) + ")은 본문을 읽지 않고 파일 이름으로만 분류합니다. ." + esc(d.ext) + "x 로 저장하면 본문까지 읽습니다." : "본문 글자가 없습니다. (스캔한 PDF 등)"}</div>` : ""}
+      ${d.protectedText ? `<p class="warn">암호가 걸렸거나 배포용으로 저장된 한글 문서라 앞부분(약 1쪽)만 읽었습니다. 일반 문서로 다시 저장하면 전체를 읽습니다.</p>` : ""}
+      ${d.hasText ? '<pre class="preview" id="preview">불러오는 중…</pre>' : !d.error ? `<div class="muted small">${["ppt", "xls"].includes(d.ext) ? "옛 형식(." + esc(d.ext) + ")은 본문을 읽지 않고 파일 이름으로만 분류합니다. ." + esc(d.ext) + "x 로 저장하면 본문까지 읽습니다." : "본문 글자가 없습니다. (스캔한 PDF, 그림만 있는 문서 등)"}</div>` : ""}
     </div>`;
 
   if (d.hasText) {
@@ -813,7 +815,43 @@ $("folderBtn").onclick = () => api.chooseFolder();
 $("rescanBtn").onclick = () => api.rescan();
 $("rootPath").onclick = () => api.openRoot();
 $("settingsBtn").onclick = () => openSettings();
-$("addBtn").onclick = async () => showImportResult(await api.pickAndImport());
+// 문서 넣기: 단추는 파일 고르기, ▾ 메뉴에서 폴더째 넣기
+async function pickAndImport(kind) {
+  closeAddMenu();
+  showImportResult(await api.pickAndImport(kind));
+}
+function closeAddMenu() {
+  $("addMenu").hidden = true;
+  $("addMenuBtn").setAttribute("aria-expanded", "false");
+}
+$("addBtn").onclick = () => pickAndImport("files");
+$("addMenuBtn").onclick = (e) => {
+  e.stopPropagation();
+  const open = $("addMenu").hidden;
+  $("addMenu").hidden = !open;
+  $("addMenuBtn").setAttribute("aria-expanded", String(open));
+};
+$("addMenu").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-pick]");
+  if (b) pickAndImport(b.dataset.pick);
+});
+document.addEventListener("click", (e) => {
+  if (!$("addMenu").hidden && !e.target.closest("#addSplit")) closeAddMenu();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !$("addMenu").hidden) closeAddMenu();
+});
+
+// 여러 개를 넣는 동안 진행 상황
+function showProgress(p) {
+  if (!p || !p.total || p.done >= p.total) return;
+  const t = $("toast");
+  const pct = Math.round((p.done / p.total) * 100);
+  t.innerHTML = `<div class="prog"><div class="prog-top"><span>문서 넣는 중</span><span>${p.done + 1} / ${p.total}</span></div><div class="prog-name">${esc(p.current)}</div><div class="bar"><i style="width:${pct}%"></i></div></div>`;
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (t.hidden = true), 60000);
+}
 $("sort").onchange = renderList;
 $("groupToggle").onchange = (e) => {
   groupVersions = e.target.checked;
@@ -940,6 +978,14 @@ $("detail").addEventListener("click", async (e) => {
     selected = r.rel;
     renderAll(true);
     return toast(`${folderOf(r.rel)} 폴더로 옮겼습니다.`);
+  }
+  if (act === "new-version") {
+    b.disabled = true;
+    const r = await api.newVersion(d.rel);
+    b.disabled = false;
+    if (r.error) return toast("새 버전을 만들지 못했습니다: " + r.error);
+    goto(r.rel);
+    return toast(`새 버전 '${r.rel.split("/").pop()}'을(를) 만들고 열었습니다.\n원본은 그대로 남아 있고, 버전 기록에 함께 묶입니다.` + (r.openError ? `\n(파일을 열지 못했습니다: ${r.openError})` : ""), 6000);
   }
   if (act === "star") await patchDoc(d.rel, { starred: !d.starred });
   if (act === "reset-cat") await patchDoc(d.rel, { userCategory: "" });
@@ -1094,9 +1140,12 @@ window.addEventListener("drop", async (e) => {
   dragDepth = 0;
   $("dropZone").hidden = true;
   if (!S.root) return toast("먼저 문서 폴더를 골라 주세요.");
-  const paths = api.pathsOf(e.dataTransfer ? e.dataTransfer.files : []);
-  if (!paths.length) return toast("파일을 읽을 수 없습니다. 탐색기에서 파일을 끌어다 놓아 주세요.");
-  toast(`${paths.length}개 넣는 중…`, 60000);
+  const paths = api.droppedPaths();
+  if (!paths.length) {
+    // 메일 첨부·웹 페이지처럼 디스크에 파일이 없는 곳에서 끌어온 경우
+    return toast("놓은 것에서 파일을 찾지 못했습니다.\n탐색기(Finder)의 파일이나 폴더를 끌어다 놓거나, '문서 넣기'로 골라 주세요.", 6000);
+  }
+  toast(`넣을 문서를 찾는 중… (${paths.length}개 항목)`, 60000);
   showImportResult(await api.importFiles(paths));
 });
 
@@ -1114,5 +1163,6 @@ api.onScanDone((r) => {
   if (parts.length) toast(parts.join(" · ") + " 반영했습니다.");
 });
 api.onScanError((msg) => toast(msg));
+api.onImportProgress(showProgress);
 
 api.getState().then(applyState);
