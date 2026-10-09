@@ -125,7 +125,8 @@ MIGRATIONS = [
     ("mine", "ALTER TABLE papers ADD COLUMN mine INTEGER"),
     ("rename_pending", "ALTER TABLE papers ADD COLUMN rename_pending INTEGER DEFAULT 0"),
     ("read_status", "ALTER TABLE papers ADD COLUMN read_status TEXT DEFAULT ''"),  # '' 안 읽음, reading, read
-    ("rating", "ALTER TABLE papers ADD COLUMN rating INTEGER DEFAULT 0"),  # 0~5  # 파일이 열려 있어 이름을 못 바꿈  # 1 내 저작, 0 아님, NULL 이름으로 자동 판단
+    ("rating", "ALTER TABLE papers ADD COLUMN rating INTEGER DEFAULT 0"),  # 0~5
+    ("file_mtime", "ALTER TABLE papers ADD COLUMN file_mtime REAL"),  # 정리 자료를 마지막으로 읽었을 때 파일 수정 시각  # 파일이 열려 있어 이름을 못 바꿈  # 1 내 저작, 0 아님, NULL 이름으로 자동 판단
 ]
 READ_STATUSES = ("", "reading", "read")
 SUPP_SUFFIX = " - Supplementary"
@@ -530,7 +531,39 @@ class Library:
                  rec["publisher"], rec["doi"], rec["arxiv_id"], rec["url"], "", rec["type"], "", "",
                  rec["source"], 0, text, now, now, "note", parent["id"], rec["isbn"], rec["edition"]))
             pid = cur.lastrowid
+            try:
+                c.execute("UPDATE papers SET file_mtime=? WHERE id=?", (target.stat().st_mtime, pid))
+            except OSError:
+                pass
         return "added", self.get(pid)
+
+    def refresh_notes(self, log=None):
+        """붙여 둔 정리 자료 중 나중에 고친 파일의 내용을 다시 읽어 검색에 반영한다. 다시 읽은 개수."""
+        with self.connect() as c:
+            rows = c.execute("SELECT id, parent_id, file_name, file_mtime, fulltext FROM papers WHERE kind='note'").fetchall()
+        n = 0
+        for r in rows:
+            path = self.root / r["file_name"]
+            try:
+                mtime = path.stat().st_mtime
+            except OSError:
+                continue
+            if r["file_mtime"] is not None and abs(mtime - r["file_mtime"]) < 1:
+                continue
+            text = md.extract_any_text(path)
+            if not text and r["fulltext"]:
+                continue  # 저장하는 중이라 못 읽었을 수 있다: 다음에 다시
+            with self.lock, self.connect() as c:
+                c.execute("UPDATE papers SET fulltext=?, file_mtime=?, updated_at=? WHERE id=?",
+                          (text, mtime, time.time(), r["id"]))
+                try:  # 내용이 바뀌었으니 중복 확인용 해시도 새로
+                    c.execute("UPDATE papers SET sha256=? WHERE id=?", (f"{sha256_file(path)}#note{r['parent_id']}", r["id"]))
+                except (sqlite3.IntegrityError, OSError):
+                    pass
+            if r["file_mtime"] is not None:
+                n += 1
+                (log or (lambda *a: None))(f"정리 자료를 다시 읽었습니다: {r['file_name']}")
+        return n
 
     @staticmethod
     def _note_name(base, original_name, ext):
@@ -1535,13 +1568,14 @@ class Library:
             else:
                 dups += 1
         reclassified = self.reclassify()
+        notes_updated = self.refresh_notes(log)
         with self.lock, self.connect() as c:
             for r in c.execute("SELECT id, file_name FROM papers WHERE file_name <> ''").fetchall():
                 if not (self.root / r["file_name"]).exists():
                     c.execute("DELETE FROM papers WHERE id=?", (r["id"],))
                     removed += 1
         return {"added": added, "relinked": moved, "duplicates": dups, "removed": removed, "failed": failed,
-                "supplements": reclassified}
+                "supplements": reclassified, "notes_updated": notes_updated}
 
     def reclassify(self):
         """이전에 본문으로 들어간 보충자료를 찾아 본문 논문에 묶는다. 묶은 개수를 돌려준다."""

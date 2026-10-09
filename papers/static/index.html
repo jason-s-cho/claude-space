@@ -2018,6 +2018,7 @@ $("#rescanBtn").addEventListener("click", async () => {
     const parts = [];
     if (r.added.length) parts.push(`새로 등록 ${r.added.length}편`);
     if (r.supplements) parts.push(`보충자료 ${r.supplements}개 묶음`);
+    if (r.notes_updated) parts.push(`고친 정리 자료 ${r.notes_updated}개 다시 읽음`);
     if (r.relinked) parts.push(`이름 바뀐 파일 ${r.relinked}개 연결`);
     if (r.duplicates) parts.push(`중복 ${r.duplicates}개 건너뜀`);
     if (r.removed) parts.push(`사라진 파일 ${r.removed}개 정리`);

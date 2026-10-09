@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import metadata as md  # noqa: E402
 from library import BLOCKED_EXTS, Library, is_video, parse_my_names  # noqa: E402
 
-APP_VERSION = "1.6.0"
+APP_VERSION = "1.6.1"
 HERE = Path(__file__).resolve().parent
 # 설치판(PyInstaller)으로 묶였을 때는 화면 파일이 압축 해제 폴더에 있다
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", HERE))
@@ -928,6 +928,11 @@ def main():
                     log(f"백업했습니다: {name}")
             except Exception as e:
                 log("백업 실패:", e)
+            try:
+                # 고쳐 둔 정리 자료(PPT·Word 등)의 내용을 검색에 반영 (켤 때, 그리고 1분마다 수정 시각만 확인)
+                state["lib"].refresh_notes(log)
+            except Exception as e:
+                log("정리 자료 다시 읽기 실패:", e)
             try:
                 n = state["lib"].retry_renames()
                 if n:
