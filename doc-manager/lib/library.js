@@ -15,6 +15,7 @@ const { CATEGORIES, migrateOverrides } = require("./classify");
 const { docFrequency, topKeywords } = require("./keywords");
 const knowledge = require("./knowledge");
 const forms = require("./forms");
+const convertLib = require("./convert");
 const { groupVersions, nextVersionName, uniqueVersionName } = require("./versions");
 
 const AI_EXCLUDE_TAG = "AI제외";
@@ -306,8 +307,20 @@ class Library {
     }
   }
 
+  // .hwp / .doc 양식이면 convert_document 로 먼저 바꾸라고 알려 준다
+  formOnly(ext) {
+    if (ext === ".hwp" || ext === ".doc") {
+      const to = ext === ".hwp" ? ".hwpx" : ".docx";
+      throw new Error(
+        `${ext} 양식은 바로 채울 수 없습니다. convert_document 로 ${to} 사본을 만든 뒤(이 PC의 ${ext === ".hwp" ? "한글" : "워드"}이 필요) 그 파일로 inspect_form 을 다시 부르세요. ` +
+          `안 되면 사용자에게 ${ext === ".hwp" ? "한글" : "워드"}에서 '다른 이름으로 저장 → ${to}' 를 부탁하세요.`
+      );
+    }
+  }
+
   async inspectForm(rel, { offset = 0 } = {}) {
     const { v, full, ext } = this.formSource(rel);
+    this.formOnly(ext);
     const r = await forms.inspectForm(await fs.promises.readFile(full), ext, { offset });
     return { path: v.rel, ...r };
   }
@@ -315,6 +328,7 @@ class Library {
   // 양식을 채워 새 파일로 저장한다. new_name 을 주면 그 이름으로 (같은 폴더, 같은 확장자), 아니면 다음 버전 이름으로.
   async fillForm(rel, fills, { newName, tableRows } = {}) {
     const { v, full, ext } = this.formSource(rel);
+    this.formOnly(ext);
     const r = await forms.fillForm(await fs.promises.readFile(full), ext, fills, { tableRows });
     const root = this.root();
     let t;
@@ -336,6 +350,19 @@ class Library {
       rows_added: r.rows_added || undefined,
       restyled_from_guide_text: r.restyled.length ? r.restyled : undefined,
       note_for_ai: "원본은 그대로입니다. 새 파일을 다시 고치려면 inspect_form 을 새 파일 경로로 다시 불러 칸 번호를 확인하세요 (줄을 늘리면 뒤쪽 문단 번호가 바뀝니다).",
+    };
+  }
+
+  // 이 PC의 한글·워드로 다른 형식 사본을 만든다 (.hwp→.hwpx, .doc→.docx, →.pdf)
+  async convertDocument(rel, to, opts) {
+    const { v, full } = this.formSource(rel);
+    const r = await convertLib.convert(full, to, opts);
+    const newRel = path.relative(this.root(), r.output).split(path.sep).join("/");
+    return {
+      source: v.rel,
+      new_path: newRel,
+      converted_with: r.app,
+      note_for_ai: /\.(hwpx|docx)$/i.test(newRel) ? "이 새 파일로 inspect_form → fill_form 을 쓰면 됩니다. 원본은 그대로입니다." : "원본은 그대로입니다.",
     };
   }
 

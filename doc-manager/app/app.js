@@ -460,6 +460,11 @@ async function renderDetail() {
       <button class="icon-btn${d.starred ? " on" : ""}" data-act="star" type="button" title="${d.starred ? "즐겨찾기 해제" : "즐겨찾기"}" aria-label="즐겨찾기">${d.starred ? '<svg style="fill:currentColor"><use href="#i-star"/></svg>' : icon("star")}</button>
       <button class="icon-btn danger" data-act="delete" type="button" title="지우기 (휴지통으로)" aria-label="지우기">${icon("trash")}</button>
     </div>
+    ${d.convertTo && d.convertTo.length
+      ? `<div class="convert-row"><span>다른 형식으로 저장</span>${d.convertTo
+          .map((to) => `<button class="btn sm" data-convert="${to}" type="button" title="${esc(CONVERT_HINT[to] || "")}">${esc(CONVERT_LABEL[to] || to)}</button>`)
+          .join("")}</div>`
+      : ""}
     <div class="card">
       <h4>${icon("folder")}분류</h4>
       <select class="select" id="catSelect">${opts}</select>
@@ -779,7 +784,7 @@ const TOOL_LABEL = {
   library_overview: "둘러보기", search_documents: "검색", read_document: "읽기", list_versions: "버전 기록",
   find_related_documents: "관련 문서", save_new_version: "새 버전 저장", prepare_new_version: "새 버전 복사본",
   get_knowledge: "지식 카드 읽기", save_knowledge_card: "지식 카드 저장",
-  inspect_form: "양식 보기", fill_form: "양식 채우기",
+  inspect_form: "양식 보기", fill_form: "양식 채우기", convert_document: "형식 바꾸기",
 };
 
 async function renderClaudeTab() {
@@ -910,6 +915,27 @@ $("moveGo").onclick = async () => {
   if (r.failed.length) msg += `\n옮기지 못한 ${r.failed.length}개: ` + r.failed.slice(0, 3).map((f) => `${f.rel.split("/").pop()} (${f.error})`).join(", ") + (r.failed.length > 3 ? " …" : "");
   toast(msg, r.failed.length ? 9000 : 5000);
 };
+
+// ---- 다른 형식으로 저장 (한글·워드) ----
+const CONVERT_LABEL = { ".hwpx": "한글 표준(hwpx)", ".docx": "워드(docx)", ".pdf": "PDF" };
+const CONVERT_HINT = {
+  ".hwpx": "한글로 hwpx 사본을 만듭니다. Claude 가 양식을 채울 수 있는 형식입니다.",
+  ".docx": "워드로 docx 사본을 만듭니다. Claude 가 양식을 채울 수 있는 형식입니다.",
+  ".pdf": "제출용 PDF 를 만듭니다.",
+};
+async function convertDoc(d, to, btn) {
+  const app = d.ext === "hwp" || d.ext === "hwpx" ? "한글" : "워드";
+  btn.disabled = true;
+  const label = btn.textContent;
+  btn.textContent = "변환 중…";
+  toast(`${app}로 ${CONVERT_LABEL[to] || to} 파일을 만드는 중입니다.` + (app === "한글" ? "\n한글에서 '접근 허용' 창이 뜨면 [모두 허용]이나 [접근 허용]을 눌러 주세요." : ""), 60000);
+  const r = await api.convertDoc(d.rel, to);
+  btn.disabled = false;
+  btn.textContent = label;
+  if (r.error) return toast("변환하지 못했습니다: " + r.error, 9000);
+  goto(r.rel);
+  toast(`'${r.rel.split("/").pop()}'을(를) 만들었습니다. 원본은 그대로 있습니다.`, 5000);
+}
 
 // ---- 중복 정리 ----
 let dupPlan = [];
@@ -1266,6 +1292,7 @@ $("detail").addEventListener("click", async (e) => {
     renderAll(true);
     return toast(`${folderOf(r.rel)} 폴더로 옮겼습니다.`);
   }
+  if (b.dataset.convert) return convertDoc(d, b.dataset.convert, b);
   if (act === "dedupe-one") return openDupDialog([dupOf.get(d.rel)].filter(Boolean));
   if (act === "delete") {
     const r = await api.deleteDoc(d.rel);

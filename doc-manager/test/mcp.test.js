@@ -58,7 +58,7 @@ test("Claude 커넥터: 둘러보기·검색·읽기·버전·관련 문서·새
   const { client, call } = await connect(ud);
   try {
     const tools = (await client.listTools()).tools.map((t) => t.name).sort();
-    assert.deepStrictEqual(tools, ["fill_form", "find_related_documents", "get_knowledge", "inspect_form", "library_overview", "list_versions", "prepare_new_version", "read_document", "save_knowledge_card", "save_new_version", "search_documents"]);
+    assert.deepStrictEqual(tools, ["convert_document", "fill_form", "find_related_documents", "get_knowledge", "inspect_form", "library_overview", "list_versions", "prepare_new_version", "read_document", "save_knowledge_card", "save_new_version", "search_documents"]);
     const prompts = (await client.listPrompts()).prompts.map((p) => p.name);
     assert.deepStrictEqual(prompts, ["build_knowledge_card"]);
     const pr = await client.getPrompt({ name: "build_knowledge_card" });
@@ -144,6 +144,9 @@ test("Claude 커넥터: 둘러보기·검색·읽기·버전·관련 문서·새
     // check·table_rows 도 받는다 (이 문서엔 네모·표가 없어서 알맞은 오류)
     assert.match((await call("fill_form", { path: report, fills: [{ id: "p1", check: "해당" }] })).text, /네모/);
     assert.match((await call("fill_form", { path: report, table_rows: [{ table: "t1", template_row: 2, rows: [["a"]] }] })).text, /없는 표/);
+    // 형식 바꾸기: 이 시험 환경(리눅스·한글 없음)에서는 윈도우 전용이라고 알려 준다. 지원하지 않는 조합도 알려 준다.
+    if (process.platform !== "win32") assert.match((await call("convert_document", { path: report, to: "pdf" })).text, /윈도우/);
+    assert.match((await call("convert_document", { path: report, to: "hwpx" })).text, /\.pdf 로만/);
     const v2 = (await call("fill_form", { path: report, fills: [{ id: "p1", text: "최종보고서(수정)" }] })).data;
     assert.match(v2.new_path, /최종보고서_v\d+\.docx$/);
 

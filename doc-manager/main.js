@@ -28,6 +28,7 @@ const store = require("./lib/store");
 const claudeConfig = require("./lib/claude-config");
 const knowledge = require("./lib/knowledge");
 const duplicates = require("./lib/duplicates");
+const { convert, targetsFor } = require("./lib/convert");
 const { readLog } = require("./lib/library");
 
 // Claude 커넥터 실행 방법: 이 앱의 실행 파일을 Node 처럼 돌려 mcp/server.js 를 실행한다.
@@ -210,6 +211,8 @@ function docSummary(e) {
     keywords: keywordsOf(e.rel),
     versions: versionMap().get(e.rel) || null, // { size, latest, order }
     expectedDir,
+    // 이 PC의 한글·워드로 바꿀 수 있는 형식 (윈도우에서만)
+    convertTo: process.platform === "win32" ? targetsFor("." + p.ext) : [],
     misplaced: !isInPlace(p.dir, expectedDir),
   };
 }
@@ -586,6 +589,25 @@ function registerIpc() {
     } catch (err) {
       return { error: String((err && err.message) || err) };
     }
+  });
+
+  // 다른 형식으로 저장 (한글·워드 이용). 한 번에 하나씩.
+  let convertQueue = Promise.resolve();
+  ipcMain.handle("convert-doc", (_e, rel, to) => {
+    const job = convertQueue.then(async () => {
+      try {
+        const r = await convert(fullPath(rel), to);
+        const entry = await indexer.addFile(index, r.output, classifyOptions());
+        persistIndex();
+        keywordCache = versionCache = null;
+        send("state", state());
+        return { rel: entry.rel, app: r.app };
+      } catch (err) {
+        return { error: String((err && err.message) || err) };
+      }
+    });
+    convertQueue = job.catch(() => {});
+    return job;
   });
 
   // 중복 정리: 묶음마다 남길 파일 하나를 두고 나머지를 휴지통으로. 지우기 직전에 내용이 정말 같은지 다시 확인한다.

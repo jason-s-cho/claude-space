@@ -41,7 +41,7 @@ const INSTRUCTIONS = `이 서버는 사용자가 직접 작성한 업무 문서(
 - 기존 파일은 절대 고칠 수 없습니다. 고친 결과는 항상 새 버전으로 저장합니다:
   · 파일을 직접 만들 수 있으면(예: docx/pptx 를 생성) save_new_version 에 base64 로 보냅니다.
   · 로컬 파일을 직접 편집할 수 있는 환경(Claude Code)이면 prepare_new_version 으로 복사본 경로를 받아 그 파일을 편집합니다.
-- 기관 양식(워드 .docx, 한글 .hwpx)을 채울 때는 파일을 새로 만들지 말고 inspect_form 으로 칸 번호(p3, t1.r2.c3 …)와 표 제목을 확인한 뒤 fill_form 으로 글자만 채우세요. 서식·표·칸 크기가 그대로 유지되어 바로 제출할 수 있는 파일이 됩니다. 한글 .hwp 는 사용자에게 한글에서 .hwpx 로 저장해 달라고 하세요.
+- 기관 양식(워드 .docx, 한글 .hwpx)을 채울 때는 파일을 새로 만들지 말고 inspect_form 으로 칸 번호(p3, t1.r2.c3 …)와 표 제목을 확인한 뒤 fill_form 으로 글자만 채우세요. 서식·표·칸 크기가 그대로 유지되어 바로 제출할 수 있는 파일이 됩니다. 한글 .hwp·워드 .doc 양식은 convert_document 로 .hwpx/.docx 사본을 먼저 만드세요. 제출용 PDF 도 convert_document 로 만듭니다.
 - 'AI제외' 태그나 사용자가 제외한 분류의 문서는 보이지 않습니다. 사용자가 그런 문서를 찾으면 제외 설정 때문일 수 있다고 알려 주세요.`;
 
 const server = new McpServer({ name: "doc-manager", title: "문서 보관함", version: pkg.version }, { instructions: INSTRUCTIONS });
@@ -228,6 +228,24 @@ tool(
   },
   async ({ path: rel, fills, table_rows, new_name }) => lib.fillForm(rel, fills || [], { newName: new_name, tableRows: table_rows || [] }),
   (a, r) => ({ path: a.path, new_path: r ? r.new_path : undefined, filled: a.fills ? a.fills.length : 0, rows_added: r ? r.rows_added : undefined, change_summary: a.change_summary })
+);
+
+tool(
+  "convert_document",
+  {
+    title: "다른 형식으로 저장",
+    description:
+      "사용자 PC에 설치된 한글·워드로 문서를 다른 형식의 새 파일로 저장합니다 (원본은 그대로, 같은 폴더). " +
+      "한글 .hwp → .hwpx(양식 채우기용) 또는 .pdf, 한글 .hwpx → .pdf, 워드 .doc → .docx 또는 .pdf, 워드 .docx → .pdf. " +
+      "한글은 '파일 접근 허용' 창을 띄울 수 있으니, 오래 걸리면 사용자에게 허용을 눌러 달라고 알려 주세요. 윈도우에서만 됩니다.",
+    inputSchema: {
+      path: pathArg.describe("바꿀 문서 경로 (search_documents 의 path, 또는 fill_form 이 돌려준 new_path)"),
+      to: z.enum(["hwpx", "docx", "pdf"]).describe("만들 형식"),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+  },
+  async ({ path: rel, to }) => lib.convertDocument(rel, to),
+  (a, r) => ({ path: a.path, to: a.to, new_path: r ? r.new_path : undefined })
 );
 
 tool(
