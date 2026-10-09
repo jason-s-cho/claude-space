@@ -1,0 +1,158 @@
+// Claude 데스크톱 앱 설정(claude_desktop_config.json)에 문서 보관함 커넥터를 넣고 빼기.
+// 다른 커넥터 설정은 건드리지 않고 "doc-manager" 항목만 바꾼다. 바꾸기 전에 원래 파일을 .bak 으로 남긴다.
+// 설정 파일이 깨져 있으면(JSON 이 아님) 덮어쓰지 않고 오류를 알린다.
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+
+const SERVER_KEY = "doc-manager";
+
+// 설정 파일 위치. 윈도우 스토어판(MSIX) Claude 는 별도 위치를 쓰므로 있으면 함께 고친다.
+function configPaths(env = process.env, platform = process.platform, home = os.homedir()) {
+  const out = [];
+  if (platform === "win32") {
+    const appData = env.APPDATA || path.join(home, "AppData", "Roaming");
+    out.push(path.join(appData, "Claude", "claude_desktop_config.json"));
+    const pkgs = path.join(env.LOCALAPPDATA || path.join(home, "AppData", "Local"), "Packages");
+    try {
+      for (const d of fs.readdirSync(pkgs)) {
+        if (/^(AnthropicPBC\.)?Claude_/i.test(d)) out.push(path.join(pkgs, d, "LocalCache", "Roaming", "Claude", "claude_desktop_config.json"));
+      }
+    } catch {}
+  } else if (platform === "darwin") {
+    // 맥·리눅스 경로는 어디서 만들든 '/' 로 (윈도우에서 시험할 때도 같은 결과)
+    out.push(path.posix.join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json"));
+  } else {
+    out.push(path.posix.join(env.XDG_CONFIG_HOME || path.posix.join(home, ".config"), "Claude", "claude_desktop_config.json"));
+  }
+  return out;
+}
+
+function readConfig(file) {
+  if (!fs.existsSync(file)) return {};
+  const raw = fs.readFileSync(file, "utf8").replace(/^﻿/, "");
+  if (!raw.trim()) return {};
+  try {
+    const data = JSON.parse(raw);
+    if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error();
+    return data;
+  } catch {
+    throw new Error(`Claude 설정 파일이 올바른 JSON 이 아니라서 고치지 않았습니다: ${file}`);
+  }
+}
+
+function writeConfig(file, data) {
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  if (fs.existsSync(file)) fs.copyFileSync(file, file + ".bak");
+  const tmp = file + ".tmp";
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
+  fs.renameSync(tmp, file);
+}
+
+// 지금 연결 상태: 파일마다 { path, exists, connected, matches(지금 실행 파일을 가리키는지), error }
+function status(entry, paths = configPaths()) {
+  return paths.map((p) => {
+    try {
+      const cfg = readConfig(p);
+      const cur = cfg.mcpServers && cfg.mcpServers[SERVER_KEY];
+      return {
+        path: p,
+        exists: fs.existsSync(p),
+        connected: !!cur,
+        matches: !!cur && cur.command === entry.command && JSON.stringify(cur.args) === JSON.stringify(entry.args),
+      };
+    } catch (e) {
+      return { path: p, exists: true, connected: false, matches: false, error: e.message };
+    }
+  });
+}
+
+function connect(entry, paths = configPaths()) {
+  const done = [];
+  for (const p of paths) {
+    const cfg = readConfig(p); // 깨진 파일이면 여기서 멈춘다
+    cfg.mcpServers = { ...(cfg.mcpServers || {}), [SERVER_KEY]: entry };
+    writeConfig(p, cfg);
+    done.push(p);
+  }
+  return done;
+}
+
+function disconnect(paths = configPaths()) {
+  const done = [];
+  for (const p of paths) {
+    if (!fs.existsSync(p)) continue;
+    const cfg = readConfig(p);
+    if (!cfg.mcpServers || !cfg.mcpServers[SERVER_KEY]) continue;
+    delete cfg.mcpServers[SERVER_KEY];
+    writeConfig(p, cfg);
+    done.push(p);
+  }
+  return done;
+}
+
+// Claude Code 용 명령 (터미널에 붙여 넣기)
+function claudeCodeCommand(entry) {
+  const q = (s) => `"${String(s).replace(/"/g, '\\"')}"`;
+  const envs = Object.entries(entry.env || {}).map(([k, v]) => `-e ${k}=${q(v)}`).join(" ");
+  return `claude mcp add ${SERVER_KEY} --scope user ${envs} -- ${q(entry.command)} ${entry.args.map(q).join(" ")}`;
+}
+
+// 연결 테스트: Claude 가 하는 것과 똑같이 커넥터를 실행해서 도구 목록과 보관함 요약을 받아 본다.
+// 결과: { ok, tools, documents, error, stderr, ms }
+async function selfTest(entry, { timeoutMs = 20000 } = {}) {
+  const { Client } = require("@modelcontextprotocol/sdk/client/index.js");
+  const { StdioClientTransport } = require("@modelcontextprotocol/sdk/client/stdio.js");
+  const started = Date.now();
+  const transport = new StdioClientTransport({ command: entry.command, args: entry.args, env: { ...process.env, ...(entry.env || {}) }, stderr: "pipe" });
+  let stderr = "";
+  if (transport.stderr) transport.stderr.on("data", (d) => (stderr = (stderr + d).slice(-2000)));
+  const client = new Client({ name: "doc-manager-self-test", version: "1.0.0" });
+  let timer;
+  const timeout = new Promise((_, rej) => (timer = setTimeout(() => rej(new Error(`${timeoutMs / 1000}초 안에 응답이 없습니다`)), timeoutMs)));
+  try {
+    const run = (async () => {
+      await client.connect(transport);
+      const { tools } = await client.listTools();
+      const r = await client.callTool({ name: "library_overview", arguments: {} });
+      const text = (r.content && r.content[0] && r.content[0].text) || "";
+      if (r.isError) throw new Error(text);
+      let documents;
+      try {
+        documents = JSON.parse(text).documents;
+      } catch {}
+      return { tools: tools.map((t) => t.name), documents };
+    })();
+    const res = await Promise.race([run, timeout]);
+    return { ok: true, ...res, ms: Date.now() - started };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e), stderr: stderr.trim(), ms: Date.now() - started };
+  } finally {
+    clearTimeout(timer);
+    try {
+      await client.close();
+    } catch {}
+  }
+}
+
+// Claude 데스크톱이 이 커넥터를 실행하며 남긴 기록(logs/mcp-server-doc-manager.log)의 끝부분.
+// 파일이 없으면 Claude 가 이 설정 파일을 읽지 않았거나(다른 설치 위치·모드) 아직 다시 켜지 않은 것이다.
+function claudeLogs(paths = configPaths(), lines = 12) {
+  return paths.map((p) => {
+    const file = path.join(path.dirname(p), "logs", `mcp-server-${SERVER_KEY}.log`);
+    try {
+      const st = fs.statSync(file);
+      const fd = fs.openSync(file, "r");
+      const size = Math.min(st.size, 64 * 1024); // 끝부분만
+      const buf = Buffer.alloc(size);
+      fs.readSync(fd, buf, 0, size, st.size - size);
+      fs.closeSync(fd);
+      const tail = buf.toString("utf8").split(/\r?\n/).filter(Boolean).slice(-lines).join("\n");
+      return { file, exists: true, modified: st.mtime.toISOString(), tail };
+    } catch {
+      return { file, exists: false };
+    }
+  });
+}
+
+module.exports = { SERVER_KEY, configPaths, status, connect, disconnect, claudeCodeCommand, readConfig, selfTest, claudeLogs };

@@ -6,7 +6,7 @@ const { CATEGORIES, KEYWORDS, KEYWORD_GROUPS, TECH_TAGS, migrateOverrides } = re
 const { docFrequency, topKeywords } = require("./lib/keywords");
 const searchLib = require("./lib/search");
 const { groupVersions, nextVersionName, uniqueVersionName } = require("./lib/versions");
-const { importFiles, ensureCategoryFolders, expectedFolder, moveToFolder, removeLegacyFolders } = require("./lib/importer");
+const { importFiles, ensureCategoryFolders, expectedFolder, moveToFolder, moveManyToFolders, isInPlace, removeLegacyFolders } = require("./lib/importer");
 const { SUPPORTED } = require("./lib/extract");
 
 if (!app.requestSingleInstanceLock()) {
@@ -25,6 +25,20 @@ let lastFocusScan = 0;
 
 const userFile = (name) => path.join(app.getPath("userData"), name);
 const store = require("./lib/store");
+const claudeConfig = require("./lib/claude-config");
+const knowledge = require("./lib/knowledge");
+const duplicates = require("./lib/duplicates");
+const { readLog } = require("./lib/library");
+
+// Claude 커넥터 실행 방법: 이 앱의 실행 파일을 Node 처럼 돌려 mcp/server.js 를 실행한다.
+// (따로 Node 를 설치할 필요가 없다. 설치판에서는 app.asar 안의 파일을 그대로 읽는다)
+function mcpEntry() {
+  return {
+    command: process.execPath,
+    args: [path.join(app.getAppPath(), "mcp", "server.js")],
+    env: { ELECTRON_RUN_AS_NODE: "1", DOCMANAGER_USERDATA: app.getPath("userData") },
+  };
+}
 
 // 색인 파일: 보통 문서 폴더 안의 .docmanager/index.json, 폴더에 쓸 수 없으면 앱 데이터 폴더
 let indexFile = null;
@@ -41,7 +55,7 @@ const mtimeOf = (file) => {
   }
 };
 
-const DEFAULT_SETTINGS = { root: "", partners: [], tagRules: [], keywordOverrides: {}, savedSearches: [], recentSearches: [], importLayout: "category", projects: [], techTags: true, theme: "system" };
+const DEFAULT_SETTINGS = { root: "", partners: [], tagRules: [], keywordOverrides: {}, savedSearches: [], recentSearches: [], importLayout: "category", projects: [], techTags: true, theme: "system", aiExcludeCategories: [] };
 
 function loadSettings() {
   try {
@@ -77,6 +91,7 @@ function loadFolderSettings(root) {
 
 // 문서 폴더를 연다: 예전 색인 옮기기 → 분류 규칙 읽기 → 색인 읽기
 function loadRoot(root) {
+  dupGroups = [];
   if (store.migrateLegacyIndex(root, userFile("index.json"))) console.log("색인을 문서 폴더로 옮김");
   loadFolderSettings(root);
   const loc = store.indexLocation(root, userFile("index.json"));
@@ -154,10 +169,18 @@ function versionMap() {
   return versionCache;
 }
 
+function expectedDirOf(e) {
+  if (settings.importLayout === "root") return "";
+  const eff = indexer.effective(e);
+  return expectedFolder(eff.category, eff.tags, settings.partners, settings.projects);
+}
+
 // 화면에 보내는 문서 정보. 본문 전체는 보내지 않고 앞부분만 보낸다.
 function docSummary(e) {
   const p = indexer.nameParts(e.rel);
   const eff = indexer.effective(e);
+  // 분류에 맞는 폴더. 지금 폴더가 그 폴더(또는 그 아래)가 아니면 화면에서 '옮기기'를 보여 준다.
+  const expectedDir = expectedDirOf(e);
   return {
     rel: e.rel,
     base: p.base,
@@ -186,9 +209,39 @@ function docSummary(e) {
     starred: !!e.starred,
     keywords: keywordsOf(e.rel),
     versions: versionMap().get(e.rel) || null, // { size, latest, order }
-    // 분류에 맞는 폴더. 지금 폴더와 다르면 화면에서 '옮기기' 버튼을 보여 준다.
-    expectedDir: settings.importLayout === "root" ? "" : expectedFolder(eff.category, eff.tags, settings.partners, settings.projects),
+    expectedDir,
+    misplaced: !isInPlace(p.dir, expectedDir),
   };
+}
+
+// ---- 중복 파일 (내용이 완전히 같은 파일) ----
+let dupGroups = [];
+let dupBusy = false;
+function currentDupGroups() {
+  if (!index) return [];
+  return dupGroups.map((g) => g.filter((r) => index.files[r])).filter((g) => g.length > 1);
+}
+function inPlaceRel(rel) {
+  const e = index.files[rel];
+  return !!e && isInPlace(indexer.nameParts(rel).dir, expectedDirOf(e));
+}
+function versionRank(rel) {
+  const v = versionMap().get(rel);
+  const i = v ? v.order.indexOf(rel) : -1;
+  return i < 0 ? Infinity : i;
+}
+async function refreshDuplicates() {
+  if (!index || !index.root || dupBusy) return;
+  dupBusy = true;
+  try {
+    const r = await duplicates.findDuplicates(index);
+    if (r.hashed) persistIndex(); // 계산한 지문을 기억해 둔다
+    dupGroups = r.groups;
+    send("state", state());
+  } catch {
+  } finally {
+    dupBusy = false;
+  }
 }
 
 function state() {
@@ -205,6 +258,7 @@ function state() {
     scanning,
     progress,
     docs: index ? Object.values(index.files).map(docSummary) : [],
+    duplicates: currentDupGroups().map((rels) => ({ rels, keep: duplicates.suggestKeep(index, rels, inPlaceRel, versionRank) })),
   };
 }
 
@@ -257,6 +311,8 @@ async function runScan() {
   if (scanAgain) {
     scanAgain = false;
     runScan();
+  } else {
+    refreshDuplicates();
   }
 }
 
@@ -414,6 +470,33 @@ function registerIpc() {
 
   // 새 버전으로 고치기: 같은 폴더에 다음 버전 이름으로 복사해서 연다. 원본은 건드리지 않는다.
   // 분류·태그는 이어받고, 메모·즐겨찾기는 그 버전에만 해당하므로 넘기지 않는다.
+  // 문서 지우기: 한 번 더 묻고 휴지통으로 보낸다 (휴지통에서 되살릴 수 있다). Claude 커넥터에는 이 기능이 없다.
+  ipcMain.handle("delete-doc", async (_e, rel) => {
+    try {
+      const full = fullPath(rel);
+      const name = path.basename(full);
+      const r = await dialog.showMessageBox(win, {
+        type: "warning",
+        buttons: ["휴지통으로 보내기", "취소"],
+        defaultId: 1,
+        cancelId: 1,
+        noLink: true,
+        title: "문서 지우기",
+        message: `'${name}'을(를) 지울까요?`,
+        detail: `${path.dirname(rel) === "." ? "문서 폴더" : path.dirname(rel)} 폴더에서 휴지통으로 옮깁니다. 휴지통에서 되살릴 수 있지만, 이 앱에서 붙인 태그·메모·직접 고른 분류는 사라집니다.`,
+      });
+      if (r.response !== 0) return { cancelled: true };
+      await shell.trashItem(full);
+      delete index.files[rel];
+      persistIndex();
+      keywordCache = versionCache = null;
+      send("state", state());
+      return { deleted: rel };
+    } catch (err) {
+      return { error: String((err && err.message) || err) };
+    }
+  });
+
   ipcMain.handle("new-version", async (_e, rel) => {
     const e = index && index.files[rel];
     if (!e) return { error: "알 수 없는 파일" };
@@ -439,6 +522,57 @@ function registerIpc() {
     }
   });
 
+  // ---- Claude 연결 ----
+  ipcMain.handle("claude-status", () => {
+    const entry = mcpEntry();
+    return { targets: claudeConfig.status(entry), claudeCode: claudeConfig.claudeCodeCommand(entry) };
+  });
+  ipcMain.handle("claude-connect", () => {
+    try {
+      return { done: claudeConfig.connect(mcpEntry()) };
+    } catch (e) {
+      return { error: String((e && e.message) || e) };
+    }
+  });
+  ipcMain.handle("claude-disconnect", () => {
+    try {
+      return { done: claudeConfig.disconnect() };
+    } catch (e) {
+      return { error: String((e && e.message) || e) };
+    }
+  });
+  ipcMain.handle("claude-test", async () => {
+    const entry = mcpEntry();
+    const test = await claudeConfig.selfTest(entry);
+    return { test, logs: claudeConfig.claudeLogs(), targets: claudeConfig.status(entry) };
+  });
+  // ---- 회사 지식 카드 ----
+  ipcMain.handle("knowledge-get", () => {
+    if (!settings.root) return { error: "문서 폴더를 먼저 골라 주세요." };
+    const k = knowledge.read(settings.root);
+    return { ...k, template: knowledge.TEMPLATE, rel: `${knowledge.DIR_NAME}/${knowledge.CARD_NAME}` };
+  });
+  ipcMain.handle("knowledge-save", (_e, content) => {
+    try {
+      if (!settings.root) throw new Error("문서 폴더를 먼저 골라 주세요.");
+      return knowledge.save(settings.root, content);
+    } catch (e) {
+      return { error: String((e && e.message) || e) };
+    }
+  });
+  ipcMain.handle("knowledge-open", async () => {
+    try {
+      if (!settings.root) throw new Error("문서 폴더를 먼저 골라 주세요.");
+      const k = knowledge.read(settings.root);
+      if (!k.exists) knowledge.save(settings.root, knowledge.TEMPLATE);
+      shell.showItemInFolder(k.path);
+      return {};
+    } catch (e) {
+      return { error: String((e && e.message) || e) };
+    }
+  });
+  ipcMain.handle("ai-log", () => (settings.root ? readLog(settings.root, 40) : []));
+
   ipcMain.handle("move-to-category", async (_e, rel) => {
     const e = index && index.files[rel];
     if (!e) return { error: "알 수 없는 파일" };
@@ -452,6 +586,55 @@ function registerIpc() {
     } catch (err) {
       return { error: String((err && err.message) || err) };
     }
+  });
+
+  // 중복 정리: 묶음마다 남길 파일 하나를 두고 나머지를 휴지통으로. 지우기 직전에 내용이 정말 같은지 다시 확인한다.
+  ipcMain.handle("trash-duplicates", async (_e, plan) => {
+    const trashed = [], failed = [];
+    if (!index || !Array.isArray(plan)) return { trashed, failed };
+    const groups = currentDupGroups();
+    for (const { keep, remove } of plan) {
+      const g = groups.find((x) => x.includes(keep));
+      if (!g || !Array.isArray(remove)) continue;
+      let keepHash;
+      try {
+        keepHash = await duplicates.hashFile(fullPath(keep));
+      } catch (err) {
+        for (const r of remove) failed.push({ rel: r, error: "남길 파일을 읽을 수 없습니다" });
+        continue;
+      }
+      for (const rel of remove) {
+        try {
+          if (rel === keep || !g.includes(rel)) throw new Error("같은 묶음의 파일이 아닙니다");
+          const full = fullPath(rel);
+          if ((await duplicates.hashFile(full)) !== keepHash) throw new Error("내용이 달라졌습니다");
+          duplicates.mergeInto(index.files[keep], [index.files[rel]]);
+          await shell.trashItem(full);
+          delete index.files[rel];
+          trashed.push(rel);
+        } catch (err) {
+          failed.push({ rel, error: String((err && err.message) || err) });
+        }
+      }
+    }
+    if (trashed.length) {
+      persistIndex();
+      keywordCache = versionCache = null;
+      send("state", state());
+    }
+    return { trashed, failed };
+  });
+
+  // 제자리가 아닌 문서 여러 개를 한꺼번에 분류 폴더로 옮긴다.
+  ipcMain.handle("move-many", async (_e, rels) => {
+    if (!index || !Array.isArray(rels)) return { moved: [], failed: [] };
+    const r = await moveManyToFolders(index, rels, expectedDirOf);
+    if (r.moved.length) {
+      persistIndex();
+      keywordCache = versionCache = null;
+      send("state", state());
+    }
+    return r;
   });
 
   ipcMain.handle("rescan", () => {
@@ -501,6 +684,7 @@ function registerIpc() {
     if (Array.isArray(next.tagRules)) settings.tagRules = next.tagRules;
     if (Array.isArray(next.projects)) settings.projects = next.projects;
     if (typeof next.techTags === "boolean") settings.techTags = next.techTags;
+    if (Array.isArray(next.aiExcludeCategories)) settings.aiExcludeCategories = next.aiExcludeCategories.filter((x) => typeof x === "string");
     if (["system", "light", "dark"].includes(next.theme)) {
       settings.theme = next.theme;
       applyTheme();

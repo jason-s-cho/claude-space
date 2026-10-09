@@ -108,6 +108,7 @@ function applyState(next) {
   S = next;
   catById = Object.fromEntries(S.categories.map((c) => [c.id, c]));
   byRel = new Map(S.docs.map((d) => [d.rel, d]));
+  rebuildDupMap();
   if (selected && !byRel.has(selected)) selected = "";
   document.body.classList.toggle("mac", S.platform === "darwin");
   $("searchKbd").textContent = S.platform === "darwin" ? "⌘ K" : "Ctrl K";
@@ -144,6 +145,13 @@ function renderStatus() {
   }
 }
 
+// ---------- 중복 파일 ----------
+let dupOf = new Map(); // rel → { rels, keep }
+function rebuildDupMap() {
+  dupOf = new Map();
+  for (const g of S.duplicates || []) for (const r of g.rels) dupOf.set(r, g);
+}
+
 // ---------- 걸러내기 ----------
 
 function matchesView(d, view) {
@@ -151,6 +159,8 @@ function matchesView(d, view) {
   if (view === "starred") return d.starred;
   if (view === "recent") return Date.now() - d.mtimeMs < 30 * DAY;
   if (view === "imported") return lastImported.has(d.rel);
+  if (view === "misplaced") return d.misplaced;
+  if (view === "duplicates") return dupOf.has(d.rel);
   if (view.startsWith("group:")) return (catById[d.category] || {}).group === view.slice(6);
   if (view.startsWith("cat:")) return d.category === view.slice(4);
   return true;
@@ -197,6 +207,10 @@ function renderSide() {
   h += navItem("starred", "즐겨찾기", count((d) => d.starred), { icon: "star" });
   h += navItem("recent", "최근 30일", count((d) => Date.now() - d.mtimeMs < 30 * DAY), { icon: "clock" });
   if (lastImported.size) h += navItem("imported", "방금 넣은 문서", count((d) => lastImported.has(d.rel)), { icon: "inbox" });
+  const misplacedN = count((d) => d.misplaced);
+  if (misplacedN || filter.view === "misplaced") h += navItem("misplaced", "제자리가 아닌 문서", misplacedN, { icon: "move" });
+  const dupN = count((d) => dupOf.has(d.rel));
+  if (dupN || filter.view === "duplicates") h += navItem("duplicates", "중복 파일", dupN, { icon: "copy" });
 
   const saved = S.settings.savedSearches || [];
   if (saved.length) {
@@ -288,6 +302,8 @@ function viewLabel(view) {
   if (view === "starred") return "즐겨찾기";
   if (view === "recent") return "최근 30일";
   if (view === "imported") return "방금 넣은 문서";
+  if (view === "misplaced") return "제자리가 아닌 문서";
+  if (view === "duplicates") return "중복 파일";
   if (view.startsWith("group:")) return view.slice(6);
   if (view.startsWith("cat:")) return catLabel(view.slice(4));
   return "";
@@ -332,6 +348,10 @@ function renderList() {
   if (filter.kind) f += chip(KIND_LABEL[filter.kind], 'data-clear="kind"');
   for (const t of filter.tags) f += chip("#" + esc(t), `data-clear-tag="${esc(t)}"`);
   if (query) f += chip(`“${esc(query)}”`, 'data-clear="query"');
+  if (filter.view === "misplaced" && visible.some((d) => d.misplaced))
+    f += `<button class="btn sm primary" data-act="move-all" type="button" title="분류에 맞는 폴더로 한꺼번에 옮깁니다. 옮기기 전에 목록을 보여 드립니다.">${icon("move")}모두 제자리로 옮기기</button>`;
+  if (filter.view === "duplicates" && visible.some((d) => dupOf.has(d.rel)))
+    f += `<button class="btn sm primary" data-act="dedupe" type="button" title="내용이 같은 파일 중 하나만 남기고 나머지를 휴지통으로 보냅니다. 보내기 전에 목록을 보여 드립니다.">${icon("copy")}중복 정리</button>`;
   if (f) f += `<button class="btn sm ghost" data-act="save-search" type="button" title="지금 조건을 왼쪽 '저장한 검색'에 넣습니다">${icon("bookmark")}저장</button>`;
   $("activeFilters").innerHTML = f || '<span class="title">전체 문서</span>';
 
@@ -421,6 +441,15 @@ async function renderDetail() {
       .join("")}</ul></div>`;
   }
 
+  const dup = dupOf.get(d.rel);
+  if (dup) {
+    const others = dup.rels.filter((r) => r !== d.rel);
+    banner += `<div class="banner">${icon("copy")}<div>내용이 똑같은 파일이 ${others.length}개 더 있습니다: ${others
+      .slice(0, 3)
+      .map((r) => `<button data-goto="${esc(r)}" type="button" title="${esc(r)}">${esc(r)}</button>`)
+      .join(", ")}${others.length > 3 ? " …" : ""} <button data-act="dedupe-one" type="button">중복 정리</button></div></div>`;
+  }
+
   box.innerHTML = `
     <div class="d-head">${fileIcon(d)}<div><h2>${esc(d.base)}</h2><div class="d-path">${esc(d.dir ? d.dir + "/" : "최상위 폴더")}</div></div></div>
     ${banner}
@@ -429,12 +458,13 @@ async function renderDetail() {
       <button class="btn" data-act="new-version" type="button" title="${v && v.latest !== d.rel ? "이 (이전) 버전을 복사해서" : "이 문서를 복사해서"} 다음 버전 이름으로 저장하고 엽니다. 원본은 그대로 남습니다.">${icon("layers")}새 버전으로 고치기</button>
       <button class="icon-btn" data-act="reveal" type="button" title="폴더에서 보기" aria-label="폴더에서 보기">${icon("folder-open")}</button>
       <button class="icon-btn${d.starred ? " on" : ""}" data-act="star" type="button" title="${d.starred ? "즐겨찾기 해제" : "즐겨찾기"}" aria-label="즐겨찾기">${d.starred ? '<svg style="fill:currentColor"><use href="#i-star"/></svg>' : icon("star")}</button>
+      <button class="icon-btn danger" data-act="delete" type="button" title="지우기 (휴지통으로)" aria-label="지우기">${icon("trash")}</button>
     </div>
     <div class="card">
       <h4>${icon("folder")}분류</h4>
       <select class="select" id="catSelect">${opts}</select>
       <div class="reason">${reason}</div>
-      ${d.expectedDir && d.dir !== d.expectedDir
+      ${d.misplaced
         ? `<div class="move-hint"><span>분류 폴더와 다른 곳에 있습니다.</span><button class="btn sm" data-act="move" type="button" title="문서 폴더 안에서 옮깁니다. 태그·메모는 그대로 따라갑니다.">${icon("move")}${esc(d.expectedDir)} 폴더로 옮기기</button></div>`
         : ""}
     </div>
@@ -444,6 +474,7 @@ async function renderDetail() {
       <div class="tag-edit">${tagChips}<input class="tag-input" id="tagInput" placeholder="+ 태그" list="allTags"></div>
       <datalist id="allTags">${allTags().map((t) => `<option value="${esc(t)}">`).join("")}</datalist>
       ${hiddenTags}
+      <label class="ai-toggle" title="켜면 Claude 커넥터가 이 문서를 검색하거나 읽을 수 없습니다 ('AI제외' 태그)"><input type="checkbox" id="aiExcludeToggle" ${d.tags.includes("AI제외") ? "checked" : ""}>${icon("shield")}Claude 에 보내지 않기</label>
     </div>
     <div class="card">
       <h4>${icon("sparkle")}핵심 키워드<small>누르면 검색 · ＋는 태그로</small></h4>
@@ -743,12 +774,265 @@ function kwRestore(k) {
   renderKwEditor();
 }
 
+// ---- Claude 연결 탭 ----
+const TOOL_LABEL = {
+  library_overview: "둘러보기", search_documents: "검색", read_document: "읽기", list_versions: "버전 기록",
+  find_related_documents: "관련 문서", save_new_version: "새 버전 저장", prepare_new_version: "새 버전 복사본",
+  get_knowledge: "지식 카드 읽기", save_knowledge_card: "지식 카드 저장",
+};
+
+async function renderClaudeTab() {
+  const st = await api.claudeStatus();
+  const main = st.targets[0] || {};
+  const anyBad = st.targets.find((t) => t.error);
+  const connected = st.targets.some((t) => t.connected);
+  const stale = st.targets.some((t) => t.connected && !t.matches);
+  $("claudeState").innerHTML = anyBad
+    ? `<span class="state-warn">${esc(anyBad.error)}</span>`
+    : connected
+      ? stale
+        ? `<span class="state-warn">연결되어 있지만 예전 위치를 가리킵니다. '다시 연결'을 눌러 주세요.</span>`
+        : `<span class="state-on">연결됨</span> · Claude 앱을 다시 켜면 '문서 보관함' 도구가 보입니다.`
+      : `연결되어 있지 않습니다. <span class="muted">(${esc(main.path || "")})</span>`;
+  $("claudeConnectBtn").textContent = connected ? "다시 연결" : "연결";
+  $("claudeDisconnectBtn").hidden = !connected;
+  $("claudeCodeCmd").textContent = st.claudeCode;
+  renderKnowledge();
+  // 제외할 분류
+  const excluded = new Set(S.settings.aiExcludeCategories || []);
+  $("aiExcludeList").innerHTML = S.categories
+    .map((c) => `<label class="check"><input type="checkbox" data-aiex="${c.id}" ${excluded.has(c.id) ? "checked" : ""}><span>${esc(catLabel(c.id))}</span></label>`)
+    .join("");
+  // 기록
+  const log = await api.aiLog();
+  const time = (iso) => {
+    const d = new Date(iso);
+    const p = (n) => String(n).padStart(2, "0");
+    return `${p(d.getMonth() + 1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  };
+  $("aiLogList").innerHTML = log.length
+    ? log
+        .map((l) => {
+          const what = l.error ? `<span class="err">${esc(l.error)}</span>` : esc(l.new_path ? `${l.path} → ${l.new_path}${l.change_summary ? " (" + l.change_summary + ")" : ""}` : l.query !== undefined ? `“${l.query}”` : l.path || "");
+          return `<li><span class="t">${time(l.time)}</span><span class="k">${esc(TOOL_LABEL[l.tool] || l.tool)}</span><span class="d" title="${esc(l.path || l.query || "")}">${what}</span></li>`;
+        })
+        .join("")
+    : '<li><span class="empty-log">아직 Claude 가 이 보관함을 쓴 기록이 없습니다.</span></li>';
+}
+
+$("claudeConnectBtn").onclick = async () => {
+  const r = await api.claudeConnect();
+  if (r.error) toast(r.error, 7000);
+  else toast("Claude 데스크톱 설정에 문서 보관함을 넣었습니다.\nClaude 앱을 완전히 종료했다가 다시 켜 주세요.", 7000);
+  renderClaudeTab();
+};
+$("claudeDisconnectBtn").onclick = async () => {
+  const r = await api.claudeDisconnect();
+  if (r.error) toast(r.error, 7000);
+  else toast("Claude 연결을 해제했습니다. Claude 앱을 다시 켜면 적용됩니다.");
+  renderClaudeTab();
+};
+$("claudeTestBtn").onclick = async () => {
+  const btn = $("claudeTestBtn");
+  const box = $("claudeTestResult");
+  btn.disabled = true;
+  btn.textContent = "테스트 중…";
+  box.hidden = false;
+  box.innerHTML = '<p class="hint">커넥터를 Claude 와 같은 방법으로 실행해 보는 중…</p>';
+  try {
+    const { test, logs, targets } = await api.claudeTest();
+    const rows = [];
+    rows.push(
+      test.ok
+        ? `<p><span class="state-on">✔ 커넥터 정상</span> · 도구 ${test.tools.length}개, 보이는 문서 ${test.documents ?? "?"}개 (${(test.ms / 1000).toFixed(1)}초)</p>`
+        : `<p><span class="state-warn">✖ 커넥터를 실행하지 못했습니다</span>: ${esc(test.error)}</p>${test.stderr ? `<pre>${esc(test.stderr)}</pre>` : ""}`
+    );
+    targets.forEach((t, i) => {
+      const lg = logs[i] || {};
+      rows.push(`<p class="hint"><b>Claude 설정</b> ${t.connected ? "✔ 들어 있음" : "✖ 없음"} — <code>${esc(t.path)}</code></p>`);
+      rows.push(
+        lg.exists
+          ? `<p class="hint"><b>Claude 가 커넥터를 실행한 기록</b> (마지막 ${esc(new Date(lg.modified).toLocaleString())}) — <code>${esc(lg.file)}</code></p><pre>${esc(lg.tail)}</pre>`
+          : `<p class="hint"><b>Claude 가 커넥터를 실행한 기록 없음</b> — Claude 앱이 이 설정을 아직 읽지 않았습니다. Claude 를 트레이 아이콘에서 완전히 종료한 뒤 다시 켜 보세요. 그래도 없으면 Claude 가 다른 위치의 설정을 쓰는 설치판일 수 있습니다.</p>`
+      );
+    });
+    box.innerHTML = rows.join("");
+  } catch (e) {
+    box.innerHTML = `<p class="state-warn">${esc(String(e))}</p>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "연결 테스트";
+  }
+};
+// ---- 제자리가 아닌 문서 모두 옮기기 ----
+function openMoveDialog(list) {
+  if (!list.length) return toast("옮길 문서가 없습니다.");
+  // 미분류 문서는 '미분류' 폴더로 모으는 것이 원하는 일이 아닐 수 있어 처음엔 빼 둔다.
+  $("moveList").innerHTML = list
+    .map((d) => {
+      const g = dupOf.get(d.rel);
+      const twinInPlace = g && g.rels.some((r) => r !== d.rel && byRel.has(r) && !byRel.get(r).misplaced);
+      const on = d.category !== "other" && !twinInPlace;
+      return `<li><label class="check"><input type="checkbox" data-move="${esc(d.rel)}" ${on ? "checked" : ""}><span class="mv-name">${esc(d.base)}</span></label>
+        <div class="mv-path"><span>${esc(d.dir || "최상위 폴더")}</span>${icon("chevron", "mv-arrow")}<b>${esc(d.expectedDir)}</b>${twinInPlace ? '<span class="mv-dup">같은 파일이 이미 제자리에 있음 → 중복 정리로</span>' : ""}</div></li>`;
+    })
+    .join("");
+  updateMoveCount();
+  $("moveDlg").showModal();
+}
+function updateMoveCount() {
+  const boxes = [...document.querySelectorAll("#moveList [data-move]")];
+  const n = boxes.filter((b) => b.checked).length;
+  $("moveGo").textContent = n ? `${n}개 옮기기` : "옮기기";
+  $("moveGo").disabled = !n;
+  $("moveAll").checked = n === boxes.length;
+  $("moveAll").indeterminate = n > 0 && n < boxes.length;
+}
+$("moveList").addEventListener("change", updateMoveCount);
+$("moveAll").onchange = () => {
+  for (const b of document.querySelectorAll("#moveList [data-move]")) b.checked = $("moveAll").checked;
+  updateMoveCount();
+};
+$("moveCancel").onclick = () => $("moveDlg").close();
+$("moveGo").onclick = async () => {
+  const rels = [...document.querySelectorAll("#moveList [data-move]")].filter((b) => b.checked).map((b) => b.dataset.move);
+  $("moveGo").disabled = true;
+  $("moveGo").textContent = "옮기는 중…";
+  const r = await api.moveMany(rels);
+  $("moveDlg").close();
+  for (const m of r.moved) {
+    if (lastImported.delete(m.from)) lastImported.add(m.to);
+    if (selected === m.from) selected = m.to;
+  }
+  renderAll(true);
+  let msg = `${r.moved.length}개를 분류 폴더로 옮겼습니다. 태그·메모는 그대로 따라갔습니다.`;
+  if (r.failed.length) msg += `\n옮기지 못한 ${r.failed.length}개: ` + r.failed.slice(0, 3).map((f) => `${f.rel.split("/").pop()} (${f.error})`).join(", ") + (r.failed.length > 3 ? " …" : "");
+  toast(msg, r.failed.length ? 9000 : 5000);
+};
+
+// ---- 중복 정리 ----
+let dupPlan = [];
+function openDupDialog(groups = S.duplicates || []) {
+  groups = groups.filter((g) => g.rels.filter((r) => byRel.has(r)).length > 1);
+  if (!groups.length) return toast("중복 파일이 없습니다.");
+  dupPlan = groups;
+  $("dupList").innerHTML = groups
+    .map((g, i) => {
+      const first = byRel.get(g.rels[0]);
+      const rows = g.rels
+        .filter((r) => byRel.has(r))
+        .map((r) => {
+          const x = byRel.get(r);
+          return `<label class="dup-row"><input type="radio" name="dup${i}" value="${esc(r)}" ${r === g.keep ? "checked" : ""}>
+            <span class="dup-file"><span class="mv-name">${esc(x.base)}</span><span class="dup-meta">${esc(x.dir || "최상위 폴더")} · ${fmtDate(x.mtimeMs)}${x.misplaced ? "" : " · 제자리"}${x.note || x.userTags.length ? " · 메모·태그 있음" : ""}</span></span>
+            <span class="dup-fate" data-fate></span></label>`;
+        })
+        .join("");
+      return `<li class="dup-group" data-i="${i}"><label class="check dup-head"><input type="checkbox" data-dup-on="${i}" checked><span><b>${esc(first.base)}</b> <small>${fmtSize(first.size)} · ${g.rels.length}개</small></span></label><div class="dup-rows">${rows}</div></li>`;
+    })
+    .join("");
+  updateDupView();
+  $("dupDlg").showModal();
+}
+function readDupPlan() {
+  const out = [];
+  dupPlan.forEach((g, i) => {
+    if (!document.querySelector(`[data-dup-on="${i}"]`).checked) return;
+    const keep = (document.querySelector(`input[name="dup${i}"]:checked`) || {}).value;
+    if (!keep) return;
+    out.push({ keep, remove: g.rels.filter((r) => r !== keep && byRel.has(r)) });
+  });
+  return out;
+}
+function updateDupView() {
+  dupPlan.forEach((g, i) => {
+    const on = document.querySelector(`[data-dup-on="${i}"]`).checked;
+    const li = document.querySelector(`.dup-group[data-i="${i}"]`);
+    li.classList.toggle("off", !on);
+    for (const row of li.querySelectorAll(".dup-row")) {
+      const keep = row.querySelector("input").checked;
+      row.querySelector("[data-fate]").textContent = !on ? "" : keep ? "남김" : "휴지통";
+      row.classList.toggle("keep", on && keep);
+      row.classList.toggle("drop", on && !keep);
+    }
+  });
+  const n = readDupPlan().reduce((a, p) => a + p.remove.length, 0);
+  $("dupGo").textContent = n ? `${n}개 휴지통으로` : "휴지통으로";
+  $("dupGo").disabled = !n;
+}
+$("dupList").addEventListener("change", updateDupView);
+$("dupCancel").onclick = () => $("dupDlg").close();
+$("dupGo").onclick = async () => {
+  const plan = readDupPlan();
+  $("dupGo").disabled = true;
+  $("dupGo").textContent = "정리하는 중…";
+  const r = await api.trashDuplicates(plan);
+  $("dupDlg").close();
+  for (const rel of r.trashed) lastImported.delete(rel);
+  if (r.trashed.includes(selected)) selected = (plan.find((p) => p.remove.includes(selected)) || {}).keep || "";
+  renderAll(true);
+  let msg = `사본 ${r.trashed.length}개를 휴지통으로 보냈습니다. 사본에 있던 태그·메모는 남긴 파일로 옮겼습니다.`;
+  if (r.failed.length) msg += `\n정리하지 못한 ${r.failed.length}개: ` + r.failed.slice(0, 3).map((f) => `${f.rel.split("/").pop()} (${f.error})`).join(", ") + (r.failed.length > 3 ? " …" : "");
+  toast(msg, r.failed.length ? 9000 : 5000);
+};
+
+// ---- 회사 지식 카드 ----
+async function renderKnowledge() {
+  const k = await api.knowledgeGet();
+  if (k.error) {
+    $("knowledgeState").textContent = k.error;
+    return;
+  }
+  $("knowledgeState").innerHTML = k.exists
+    ? `<span class="state-on">있음</span> · 마지막으로 고친 때 ${esc(new Date(k.updated).toLocaleString())} · ${(k.content.length / 1000).toFixed(1)}천 자`
+    : "아직 없습니다. 아래 문장으로 Claude 에게 만들어 달라고 해 보세요.";
+  return k;
+}
+$("knowledgeEditBtn").onclick = async () => {
+  const k = await api.knowledgeGet();
+  if (k.error) return toast(k.error);
+  $("knowledgeText").value = k.exists ? k.content : k.template;
+  $("knowledgeEditor").hidden = false;
+  $("knowledgeText").focus();
+};
+$("knowledgeCancelBtn").onclick = () => ($("knowledgeEditor").hidden = true);
+$("knowledgeSaveBtn").onclick = async () => {
+  const r = await api.knowledgeSave($("knowledgeText").value);
+  if (r.error) return toast(r.error, 6000);
+  toast(r.backup ? "지식 카드를 저장했습니다. 이전 내용은 기록으로 남겼습니다." : "지식 카드를 저장했습니다.");
+  $("knowledgeEditor").hidden = true;
+  renderKnowledge();
+};
+$("knowledgeOpenBtn").onclick = async () => {
+  const r = await api.knowledgeOpen();
+  if (r.error) toast(r.error);
+  renderKnowledge();
+};
+$("copyKnowledgePromptBtn").onclick = async () => {
+  try {
+    await navigator.clipboard.writeText($("knowledgePrompt").textContent);
+    toast("복사했습니다. Claude 데스크톱 일반 채팅에 붙여 넣으세요.");
+  } catch {
+    toast("복사하지 못했습니다. 글자를 직접 선택해 복사해 주세요.");
+  }
+};
+$("copyCmdBtn").onclick = async () => {
+  try {
+    await navigator.clipboard.writeText($("claudeCodeCmd").textContent);
+    toast("명령을 복사했습니다. 터미널에 붙여 넣으세요.");
+  } catch {
+    toast("복사하지 못했습니다. 글자를 직접 선택해 복사해 주세요.");
+  }
+};
+
 function setSettingsTab(tab) {
+  if (tab === "claude") renderClaudeTab();
   for (const b of document.querySelectorAll(".settings-nav button")) b.classList.toggle("on", b.dataset.tab === tab);
   for (const p of document.querySelectorAll(".tab-panel")) p.hidden = p.dataset.panel !== tab;
 }
 
 function openSettings(tab = "general", group) {
+  $("aiExcludeList").innerHTML = ""; // 열 때마다 새로 그린다 (Claude 탭을 열면)
   const st = S.settings;
   for (const r of document.querySelectorAll('input[name="theme"]')) r.checked = r.value === (st.theme || "system");
   for (const r of document.querySelectorAll('input[name="importLayout"]')) r.checked = r.value === (st.importLayout || "category");
@@ -931,6 +1215,8 @@ $("activeFilters").addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (!b) return;
   if (b.dataset.act === "save-search") return saveCurrentSearch();
+  if (b.dataset.act === "move-all") return openMoveDialog(visible.filter((d) => d.misplaced));
+  if (b.dataset.act === "dedupe") return openDupDialog();
   if (b.dataset.clear === "view") filter.view = "all";
   if (b.dataset.clear === "kind") filter.kind = "";
   if (b.dataset.clear === "project") filter.project = "";
@@ -979,6 +1265,16 @@ $("detail").addEventListener("click", async (e) => {
     renderAll(true);
     return toast(`${folderOf(r.rel)} 폴더로 옮겼습니다.`);
   }
+  if (act === "dedupe-one") return openDupDialog([dupOf.get(d.rel)].filter(Boolean));
+  if (act === "delete") {
+    const r = await api.deleteDoc(d.rel);
+    if (r.cancelled) return;
+    if (r.error) return toast("지우지 못했습니다: " + r.error, 6000);
+    lastImported.delete(d.rel);
+    selected = "";
+    renderAll(true);
+    return toast(`'${d.rel.split("/").pop()}'을(를) 휴지통으로 옮겼습니다.`);
+  }
   if (act === "new-version") {
     b.disabled = true;
     const r = await api.newVersion(d.rel);
@@ -1003,6 +1299,11 @@ $("detail").addEventListener("click", async (e) => {
 $("detail").addEventListener("change", async (e) => {
   const d = byRel.get(selected);
   if (!d) return;
+  if (e.target.id === "aiExcludeToggle") {
+    if (e.target.checked) await addTag(d, "AI제외");
+    else await removeTag(d, "AI제외");
+    return;
+  }
   if (e.target.id === "catSelect") {
     await patchDoc(d.rel, { userCategory: e.target.value });
     renderAll(true);
@@ -1078,6 +1379,10 @@ $("settingsDlg").addEventListener("close", async () => {
     partners: linesToNamed($("partnersInput").value),
     tagRules: textToRules($("rulesInput").value),
     keywordOverrides: kwDraft,
+    // Claude 탭을 열지 않았으면 체크 상자가 없으므로 지금 값을 그대로 둔다
+    aiExcludeCategories: $("aiExcludeList").children.length
+      ? [...document.querySelectorAll("[data-aiex]:checked")].map((x) => x.dataset.aiex)
+      : S.settings.aiExcludeCategories || [],
   });
   toast("설정을 저장하고 모든 문서를 다시 분류했습니다.");
 });
