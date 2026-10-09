@@ -109,12 +109,17 @@ function walkDocx(doc, model) {
     const tId = `t${++model.tables}`;
     const grid = new Map();
     const cells = [];
+    const info = { kind: "docx", tbl, rows: new Map() };
+    model.tableInfo.set(tId, info);
     kids(tbl, "tr").forEach((tr, ri) => {
       let col = 0;
-      for (const tc of docxCells(tr)) {
+      const row = { tr, cells: [], vmerge: false };
+      info.rows.set(ri, row);
+      docxCells(tr).forEach((tc, tcIndex) => {
         const tcPr = kid(tc, "tcPr");
         const span = parseInt(wAttr(tcPr && kid(tcPr, "gridSpan"), "val"), 10) || 1;
         const vm = tcPr && kid(tcPr, "vMerge");
+        if (vm) row.vmerge = true;
         const cont = vm && wAttr(vm, "val") !== "restart";
         if (!cont) {
           const blocks = docxBlocks(tc);
@@ -123,10 +128,13 @@ function walkDocx(doc, model) {
           const text = paras.map(docxParaText).join("\n");
           grid.set(`${ri}:${col}`, text);
           if (nested.length) nested.forEach(table);
-          else cells.push({ id: `${tId}.r${ri + 1}.c${col + 1}`, r: ri, c: col, text, node: { kind: "docx-cell", tc, paras } });
+          else {
+            cells.push({ id: `${tId}.r${ri + 1}.c${col + 1}`, r: ri, c: col, text, node: { kind: "docx-cell", tc, paras } });
+            row.cells.push({ tcIndex, id: `${tId}.r${ri + 1}.c${col + 1}` });
+          }
         }
         col += span;
-      }
+      });
     });
     for (const cell of cells) model.slots.push({ ...cell, kind: "cell", table: tId, labels: labelsFor(grid, cell.r, cell.c) });
   };
@@ -262,11 +270,19 @@ function walkHwpx(docs, model, styleNames) {
     const tId = `t${++model.tables}`;
     const grid = new Map();
     const cells = [];
+    const info = { kind: "hwpx", tbl, rows: new Map(), spans: [] };
+    model.tableInfo.set(tId, info);
     for (const tr of kids(tbl, "tr")) {
-      for (const tc of kids(tr, "tc")) {
+      kids(tr, "tc").forEach((tc, tcIndex) => {
         const addr = kid(tc, "cellAddr");
         const r = parseInt(addr && addr.getAttribute("rowAddr"), 10) || 0;
         const c = parseInt(addr && addr.getAttribute("colAddr"), 10) || 0;
+        const spanEl = kid(tc, "cellSpan");
+        const rowSpan = parseInt(spanEl && spanEl.getAttribute("rowSpan"), 10) || 1;
+        info.spans.push({ r, rowSpan });
+        if (!info.rows.has(r)) info.rows.set(r, { tr, cells: [], vmerge: false });
+        const row = info.rows.get(r);
+        if (rowSpan > 1) row.vmerge = true;
         const sub = kid(tc, "subList");
         const paras = sub ? kids(sub, "p") : [];
         const nested = [];
@@ -274,8 +290,11 @@ function walkHwpx(docs, model, styleNames) {
         const text = paras.map(hwpxParaText).join("\n");
         grid.set(`${r}:${c}`, text);
         if (nested.length) nested.forEach(table);
-        else if (paras.length && paras.every((p) => !hwpxObjects(p).length)) cells.push({ id: `${tId}.r${r + 1}.c${c + 1}`, r, c, text, node: { kind: "hwpx-cell", sub, paras } });
-      }
+        else if (paras.length && paras.every((p) => !hwpxObjects(p).length)) {
+          cells.push({ id: `${tId}.r${r + 1}.c${c + 1}`, r, c, text, node: { kind: "hwpx-cell", sub, paras } });
+          row.cells.push({ tcIndex, id: `${tId}.r${r + 1}.c${c + 1}` });
+        }
+      });
     }
     for (const cell of cells) model.slots.push({ ...cell, kind: "cell", table: tId, labels: labelsFor(grid, cell.r, cell.c) });
   };
@@ -421,7 +440,7 @@ async function load(buf, ext) {
   } catch {
     throw new Error("파일을 열 수 없습니다 (손상되었거나 암호가 걸린 파일일 수 있습니다)");
   }
-  const model = { ext, zip, parts: [], slots: [], paras: 0, tables: 0 };
+  const model = { ext, zip, parts: [], slots: [], paras: 0, tables: 0, tableInfo: new Map() };
   if (ext === ".docx") {
     const f = zip.file("word/document.xml");
     if (!f) throw new Error("워드 문서 본문(word/document.xml)이 없습니다");
@@ -468,41 +487,223 @@ async function inspectForm(buf, ext, { offset = 0, limit = 300 } = {}) {
     if (s.labels && s.labels.column) o.column_label = s.labels.column;
     return o;
   });
+  // 표마다 행 수와 첫 행(제목) — 행을 늘릴 때 어느 행을 본으로 쓸지 고르는 데 쓴다
+  const slotText = new Map(m.slots.map((s) => [s.id, s.text]));
+  const tables = [...m.tableInfo.entries()].map(([id, info]) => {
+    const first = info.rows.get(0);
+    return {
+      id,
+      rows: info.rows.size,
+      first_row: first ? clip(first.cells.map((c) => (slotText.get(c.id) || "").replace(/\s+/g, " ").trim()).join(" | "), 160) : "",
+      rows_not_copyable: [...info.rows.entries()].filter(([ri, r]) => r.vmerge || (info.kind === "hwpx" && info.spans.some((sp) => sp.r < ri && sp.r + sp.rowSpan - 1 >= ri))).map(([ri]) => ri + 1),
+    };
+  });
   return {
     format: m.ext === ".docx" ? "워드(.docx)" : "한글(.hwpx)",
     paragraphs: m.paras,
     tables: m.tables,
+    table_list: tables.length ? tables : undefined,
     total: m.slots.length,
     slots: page,
     next_offset: offset + limit < m.slots.length ? offset + limit : null,
   };
 }
 
+// 표 칸(tc) 하나를 lines 로 채운다
+function setCell(kind, tc, lines, header) {
+  if (kind === "docx") {
+    const paras = docxBlocks(tc).filter((b) => b.localName === "p");
+    if (!paras.length) return false;
+    const [first, ...rest] = paras;
+    for (const p of rest) p.parentNode.removeChild(p);
+    return docxSetParagraph(first, lines);
+  }
+  const sub = kid(tc, "subList");
+  const paras = sub ? kids(sub, "p") : [];
+  if (!paras.length) return false;
+  const [first, ...rest] = paras;
+  for (const p of rest) p.parentNode.removeChild(p);
+  return hwpxSetParagraph(first, lines, header);
+}
+
+const toLines = (text) => String(text).replace(/\r\n?/g, "\n").split("\n");
+
+// ---------- 체크 표시 (□ → ■) ----------
+
+const CHECK = { "□": "■", "☐": "☑", "○": "●", "◯": "●", "❏": "■", "▢": "▣" };
+const UNCHECK = { "■": "□", "☑": "☐", "☒": "☐", "●": "○", "▣": "▢", "◼": "□" };
+const BOXES = new Set([...Object.keys(CHECK), ...Object.keys(UNCHECK)]);
+
+// 칸 안의 글자 조각(Text 노드)들을 순서대로
+function slotTextNodes(node) {
+  const out = [];
+  const visit = (el) => {
+    for (let n = el.firstChild; n; n = n.nextSibling) {
+      if (n.nodeType === 3 || n.nodeType === 4) {
+        if (el.localName === "t") out.push(n);
+      } else if (isEl(n) && n.localName !== "delText" && n.localName !== "instrText") visit(n);
+    }
+  };
+  if (node.kind === "docx-p" || node.kind === "hwpx-p") visit(node.p);
+  else for (const p of node.paras) visit(p);
+  return out;
+}
+
+/**
+ * 칸 안에서 label 바로 앞의 네모(□)를 채운다(check) / 비운다(uncheck). 글자 모양은 그대로 둔다.
+ * 예: "□ 해당  □ 미해당" 에서 check "해당" → "■ 해당  □ 미해당"
+ */
+function setCheck(node, label, on) {
+  const nodes = slotTextNodes(node);
+  let all = "";
+  const spans = nodes.map((n) => {
+    const start = all.length;
+    all += n.data;
+    return { n, start };
+  });
+  // label 이 여러 번 나오면 바로 앞에 네모가 있는 첫 자리 ("해당" 이 "미해당" 안에도 있으므로)
+  let from = 0;
+  while (true) {
+    const at = all.indexOf(label, from);
+    if (at < 0) throw new Error(`'${label}' 앞에 네모(□)가 있는 곳을 찾지 못했습니다`);
+    let i = at - 1;
+    while (i >= 0 && /\s/.test(all[i])) i--;
+    if (i >= 0 && BOXES.has(all[i]) && (at === 0 || !/[가-힣A-Za-z0-9]/.test(all[at - 1]) || BOXES.has(all[at - 1]))) {
+      const map = on ? CHECK : UNCHECK;
+      const ch = all[i];
+      const next = map[ch] || ch; // 이미 그 상태면 그대로
+      const span = spans.filter((s) => s.start <= i).pop();
+      const off = i - span.start;
+      const v = span.n.data.slice(0, off) + next + span.n.data.slice(off + 1);
+      span.n.data = v; // xmldom 은 data 를 저장한다 (nodeValue 만 바꾸면 반영되지 않음)
+      span.n.nodeValue = v;
+      docxSyncCheckbox(span.n, on);
+      return;
+    }
+    from = at + 1;
+  }
+}
+
+// 워드 체크 상자 컨트롤(w14:checkbox)이면 체크 값도 맞춘다
+function docxSyncCheckbox(textNode, on) {
+  for (let n = textNode.parentNode; n && n.localName !== "body"; n = n.parentNode) {
+    if (n.localName !== "sdt") continue;
+    const pr = kid(n, "sdtPr");
+    const box = pr && kids(pr).find((c) => c.localName === "checkbox");
+    const checked = box && kid(box, "checked");
+    if (checked) checked.setAttribute(checked.prefix ? checked.prefix + ":val" : "val", on ? "1" : "0");
+    return;
+  }
+}
+
+// ---------- 표 행 늘리기 ----------
+
+/**
+ * template_row 행을 본으로 rows 만큼 채운다: 첫 값 묶음은 그 행에, 나머지는 그 행을 복사해 바로 아래에 넣는다.
+ * 값은 그 행의 칸(합친 칸은 하나)에 왼쪽부터 차례로 들어간다. 복사한 행에서 값을 주지 않은 칸은 비운다.
+ */
+function addTableRows(m, op, header) {
+  const info = m.tableInfo.get(op.table);
+  if (!info) throw new Error(`없는 표입니다: ${op.table}`);
+  const ri = op.template_row - 1;
+  const row = info.rows.get(ri);
+  if (!row) throw new Error(`${op.table} 에 ${op.template_row}행이 없습니다`);
+  if (!row.cells.length) throw new Error(`${op.table} ${op.template_row}행에는 채울 칸이 없습니다`);
+  if (row.vmerge) throw new Error(`${op.table} ${op.template_row}행에는 세로로 합친 칸이 있어 복사할 수 없습니다. 합친 칸이 없는 행을 본으로 고르세요`);
+  if (info.kind === "hwpx" && info.spans.some((sp) => sp.r < ri && sp.r + sp.rowSpan - 1 >= ri)) throw new Error(`${op.table} ${op.template_row}행은 위쪽 칸과 세로로 합쳐져 있어 복사할 수 없습니다`);
+  for (const vals of op.rows) if (vals.length > row.cells.length) throw new Error(`${op.table} ${op.template_row}행의 칸은 ${row.cells.length}개인데 값이 ${vals.length}개입니다`);
+
+  const cellsOf = (tr) => (info.kind === "docx" ? docxCells(tr) : kids(tr, "tc"));
+  const original = row.tr.cloneNode(true); // 채우기 전 모양 그대로 복사해 둔다
+  const restyled = [];
+  const fillRow = (tr, vals, clearRest) => {
+    const tcs = cellsOf(tr);
+    row.cells.forEach((cell, k) => {
+      if (k < vals.length) {
+        if (setCell(info.kind, tcs[cell.tcIndex], toLines(vals[k]), header)) restyled.push(cell.id);
+      } else if (clearRest) setCell(info.kind, tcs[cell.tcIndex], [""], header);
+    });
+  };
+  fillRow(row.tr, op.rows[0], false);
+  const added = op.rows.length - 1;
+  let after = row.tr;
+  op.rows.slice(1).forEach((vals, k) => {
+    const tr = original.cloneNode(true);
+    after.parentNode.insertBefore(tr, after.nextSibling);
+    after = tr;
+    if (info.kind === "hwpx") for (const tc of kids(tr, "tc")) kid(tc, "cellAddr").setAttribute("rowAddr", String(ri + 1 + k));
+    fillRow(tr, vals, true);
+  });
+  if (info.kind === "hwpx" && added) {
+    // 아래 행들의 행 번호를 밀고, 표의 행 수와 높이를 늘린다
+    for (let t = after.nextSibling; t; t = t.nextSibling) {
+      if (!isEl(t) || t.localName !== "tr") continue;
+      for (const tc of kids(t, "tc")) {
+        const a = kid(tc, "cellAddr");
+        a.setAttribute("rowAddr", String((parseInt(a.getAttribute("rowAddr"), 10) || 0) + added));
+      }
+    }
+    const tbl = info.tbl;
+    tbl.setAttribute("rowCnt", String((parseInt(tbl.getAttribute("rowCnt"), 10) || 0) + added));
+    const rowH = Math.max(0, ...kids(row.tr, "tc").map((tc) => parseInt((kid(tc, "cellSz") || { getAttribute: () => 0 }).getAttribute("height"), 10) || 0));
+    const sz = kid(tbl, "sz");
+    if (sz && rowH) sz.setAttribute("height", String((parseInt(sz.getAttribute("height"), 10) || 0) + rowH * added));
+  }
+  return { added, restyled };
+}
+
 /**
  * fills: [{ id, text }] 대로 바꾼 새 파일 내용. 없는 칸 번호가 하나라도 있으면 아무것도 바꾸지 않고 오류.
  * 결과: { buffer, filled, restyled: 안내 문구 모양(회색·기울임)이라 보통 글자 모양으로 바꿔 쓴 칸들 }
  */
-async function fillForm(buf, ext, fills) {
-  if (!Array.isArray(fills) || !fills.length) throw new Error("바꿀 칸이 없습니다");
+async function fillForm(buf, ext, fills = [], { tableRows = [] } = {}) {
+  fills = fills || [];
+  tableRows = tableRows || [];
+  if (!fills.length && !tableRows.length) throw new Error("바꿀 칸이 없습니다");
   if (fills.length > MAX_FILLS) throw new Error(`한 번에 바꿀 수 있는 칸은 ${MAX_FILLS}개까지입니다`);
   const m = await load(buf, ext);
   const byId = new Map(m.slots.map((s) => [s.id, s]));
   const seen = new Set();
   const missing = [];
   for (const f of fills) {
-    if (!f || typeof f.id !== "string") throw new Error("칸마다 id 와 text 가 필요합니다");
-    if (typeof f.text !== "string") throw new Error(`${f.id}: text 가 필요합니다`);
-    if (f.text.length > MAX_TEXT) throw new Error(`${f.id}: 칸 하나에 ${MAX_TEXT}자까지 넣을 수 있습니다`);
-    if (seen.has(f.id)) throw new Error(`${f.id}: 같은 칸을 두 번 바꾸려고 했습니다`);
+    if (!f || typeof f.id !== "string") throw new Error("칸마다 id 와 text(또는 check/uncheck)가 필요합니다");
+    const modes = ["text", "check", "uncheck"].filter((k) => f[k] !== undefined && f[k] !== null);
+    if (modes.length !== 1) throw new Error(`${f.id}: text, check, uncheck 중 하나만 주세요`);
+    if (f.text !== undefined && f.text !== null && typeof f.text !== "string") throw new Error(`${f.id}: text 는 글자여야 합니다`);
+    if (typeof f.text === "string" && f.text.length > MAX_TEXT) throw new Error(`${f.id}: 칸 하나에 ${MAX_TEXT}자까지 넣을 수 있습니다`);
+    if (seen.has(f.id)) throw new Error(`${f.id}: 같은 칸을 두 번 바꾸려고 했습니다 (체크 여러 개는 check 에 목록으로)`);
     seen.add(f.id);
     if (!byId.has(f.id)) missing.push(f.id);
   }
   if (missing.length) throw new Error(`없는 칸 번호입니다: ${missing.slice(0, 10).join(", ")}${missing.length > 10 ? " …" : ""} (inspect_form 으로 다시 확인해 주세요)`);
+  // 표 행 늘리기 확인: 같은 행을 칸 채우기와 함께 바꾸면 헷갈리므로 막는다
+  const rowKeys = new Set();
+  for (const op of tableRows) {
+    if (!op || typeof op.table !== "string" || !Number.isInteger(op.template_row) || !Array.isArray(op.rows) || !op.rows.length) throw new Error("표 행 채우기에는 table, template_row, rows 가 필요합니다");
+    if (op.rows.length > 500) throw new Error("표 행은 한 번에 500줄까지 넣을 수 있습니다");
+    for (const vals of op.rows) if (!Array.isArray(vals) || vals.some((v) => typeof v !== "string" || v.length > MAX_TEXT)) throw new Error(`${op.table}: rows 는 글자 목록의 목록이어야 합니다`);
+    const key = `${op.table}.r${op.template_row}`;
+    if (rowKeys.has(key)) throw new Error(`${key}: 같은 행을 두 번 본으로 쓸 수 없습니다`);
+    rowKeys.add(key);
+    const clash = fills.find((f) => f.id.startsWith(key + ".c"));
+    if (clash) throw new Error(`${clash.id}: 표 행 채우기(${key})와 같은 행입니다. 그 행의 값은 rows 에 넣어 주세요`);
+  }
 
   const restyled = [];
   for (const f of fills) {
-    const lines = f.text.replace(/\r\n?/g, "\n").split("\n");
     const n = byId.get(f.id).node;
+    if (f.check !== undefined || f.uncheck !== undefined) {
+      const labels = [].concat(f.check !== undefined ? f.check : f.uncheck);
+      for (const label of labels) {
+        try {
+          setCheck(n, String(label), f.check !== undefined);
+        } catch (e) {
+          throw new Error(`${f.id}: ${e.message}`);
+        }
+      }
+      continue;
+    }
+    const lines = toLines(f.text);
     let r;
     if (n.kind === "docx-p") r = docxSetParagraph(n.p, lines);
     else if (n.kind === "hwpx-p") r = hwpxSetParagraph(n.p, lines, m.header);
@@ -514,6 +715,14 @@ async function fillForm(buf, ext, fills) {
     }
     if (r) restyled.push(f.id);
   }
+  // 표 행: 아래쪽 행부터 처리해야 위쪽 행 번호가 그대로다
+  let rowsAdded = 0;
+  const ordered = [...tableRows].sort((a, b) => (a.table === b.table ? b.template_row - a.template_row : 0));
+  for (const op of ordered) {
+    const r = addTableRows(m, op, m.header);
+    rowsAdded += r.added;
+    restyled.push(...r.restyled);
+  }
 
   const ser = new XMLSerializer();
   for (const part of m.parts) m.zip.file(part.name, ser.serializeToString(part.doc));
@@ -522,7 +731,7 @@ async function fillForm(buf, ext, fills) {
     m.zip.file("mimetype", await m.zip.file("mimetype").async("string"), { compression: "STORE" });
   }
   const buffer = await m.zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE", compressionOptions: { level: 6 } });
-  return { buffer, filled: fills.length, restyled };
+  return { buffer, filled: fills.length, rows_added: rowsAdded, restyled };
 }
 
 module.exports = { FORM_EXTS, inspectForm, fillForm, unsupportedMessage };

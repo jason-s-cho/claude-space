@@ -136,3 +136,70 @@ test("양식 채우기: 잘못된 칸 번호면 아무것도 바꾸지 않고, .
   await assert.rejects(forms.inspectForm(Buffer.from("x"), ".hwp"), /다른 이름으로 저장.*hwpx/);
   await assert.rejects(forms.inspectForm(Buffer.from("not a zip"), ".docx"), /열 수 없습니다/);
 });
+
+// 참여인력 표: 제목 행 + 빈 행 하나 + 합계 행
+async function docxPeopleForm() {
+  const row = (cells, pr = "") => `<w:tr>${cells.map((c) => tc(p(c, { rPr: c ? "<w:b/>" : "" }), pr)).join("")}</w:tr>`;
+  const body =
+    `<w:tbl><w:tblPr/><w:tblGrid><w:gridCol/><w:gridCol/><w:gridCol/></w:tblGrid>` +
+    row(["성명", "직위", "참여율"]) +
+    `<w:tr>${tc(p("", { mark: '<w:sz w:val="18"/>' }))}${tc(p(""))}${tc(p(""))}</w:tr>` +
+    row(["합계", "", ""]) +
+    `</w:tbl>` +
+    p("□ 해당   □ 미해당") +
+    `<w:sdt><w:sdtPr><w14:checkbox xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"><w14:checked w14:val="0"/></w14:checkbox></w:sdtPr><w:sdtContent><w:p><w:r><w:t>☐</w:t></w:r><w:r><w:t xml:space="preserve"> 동의함</w:t></w:r></w:p></w:sdtContent></w:sdt>` +
+    `<w:sectPr/>`;
+  const zip = await JSZip.loadAsync(await docxForm());
+  zip.file("word/document.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ${W} xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"><w:body>${body}</w:body></w:document>`);
+  return zip.generateAsync({ type: "nodebuffer" });
+}
+
+test("워드 양식: 표 행 늘리기와 체크 표시", async () => {
+  const src = await docxPeopleForm();
+  const r = await forms.inspectForm(src, ".docx");
+  assert.deepStrictEqual(r.slots.map((s) => s.id).slice(0, 9), ["t1.r1.c1", "t1.r1.c2", "t1.r1.c3", "t1.r2.c1", "t1.r2.c2", "t1.r2.c3", "t1.r3.c1", "t1.r3.c2", "t1.r3.c3"]);
+  const out = await forms.fillForm(src, ".docx", [{ id: "p1", check: "해당" }, { id: "p2", check: "동의함" }, { id: "t1.r3.c3", text: "150%" }], {
+    tableRows: [{ table: "t1", template_row: 2, rows: [["홍길동", "책임", "50%"], ["김철수", "선임", "50%"], ["이영희"]] }],
+  });
+  assert.strictEqual(out.rows_added, 2);
+  const again = await forms.inspectForm(out.buffer, ".docx");
+  const text = Object.fromEntries(again.slots.map((s) => [s.id, s.text]));
+  assert.deepStrictEqual(
+    [1, 2, 3, 4, 5].map((r) => [1, 2, 3].map((c) => text[`t1.r${r}.c${c}`]).join("|")),
+    ["성명|직위|참여율", "홍길동|책임|50%", "김철수|선임|50%", "이영희||", "합계||150%"]
+  );
+  assert.strictEqual(text.p1, "■ 해당   □ 미해당"); // '미해당' 안의 '해당' 은 건드리지 않는다
+  assert.strictEqual(text.p2, "☑ 동의함");
+  const xml = await (await JSZip.loadAsync(out.buffer)).file("word/document.xml").async("string");
+  assert.match(xml, /<w14:checked w14:val="1"\/>/);
+  // 복사한 행도 원래 빈 칸의 글자 모양(문단 기호 크기)을 따른다
+  assert.strictEqual((xml.match(/<w:rPr><w:sz w:val="18"\/><\/w:rPr><w:t xml:space="preserve">/g) || []).length, 3);
+  // 잘못된 요청은 아무것도 바꾸지 않는다
+  await assert.rejects(forms.fillForm(src, ".docx", [], { tableRows: [{ table: "t1", template_row: 2, rows: [["a", "b", "c", "d"]] }] }), /칸은 3개인데 값이 4개/);
+  await assert.rejects(forms.fillForm(src, ".docx", [{ id: "t1.r2.c1", text: "x" }], { tableRows: [{ table: "t1", template_row: 2, rows: [["a"]] }] }), /같은 행/);
+  await assert.rejects(forms.fillForm(src, ".docx", [{ id: "p1", check: "없는말" }]), /네모/);
+  await assert.rejects(forms.fillForm(src, ".docx", [], { tableRows: [{ table: "t9", template_row: 1, rows: [["a"]] }] }), /없는 표/);
+});
+
+test("한글 양식: 표 행 늘리면 아래 행 번호·행 수·표 높이를 맞춘다", async () => {
+  const HP = 'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph" xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section"';
+  const para = (runs) => `<hp:p id="0" paraPrIDRef="3" styleIDRef="0" pageBreak="0" columnBreak="0" merged="0">${runs}</hp:p>`;
+  const cell = (r, c, text, rowSpan = 1) =>
+    `<hp:tc name="" header="0" borderFillIDRef="4"><hp:subList id="">${para(text ? `<hp:run charPrIDRef="5"><hp:t>${text}</hp:t></hp:run>` : '<hp:run charPrIDRef="6"/>')}</hp:subList><hp:cellAddr colAddr="${c}" rowAddr="${r}"/><hp:cellSpan colSpan="1" rowSpan="${rowSpan}"/><hp:cellSz width="10000" height="1000"/></hp:tc>`;
+  const tbl = `<hp:tbl id="1" rowCnt="4" colCnt="2"><hp:sz width="20000" height="4000"/><hp:tr>${cell(0, 0, "장비명")}${cell(0, 1, "수량")}</hp:tr><hp:tr>${cell(1, 0, "")}${cell(1, 1, "")}</hp:tr><hp:tr>${cell(2, 0, "비고", 2)}${cell(2, 1, "")}</hp:tr><hp:tr>${cell(3, 1, "")}</hp:tr></hp:tbl>`;
+  const sec = `<?xml version="1.0" encoding="UTF-8" standalone="yes" ?><hs:sec ${HP}>${para(`<hp:run charPrIDRef="0">${tbl}<hp:t/></hp:run>`)}${para('<hp:run charPrIDRef="0"><hp:t>□ 신규  □ 계속</hp:t></hp:run>')}</hs:sec>`;
+  const zip = await JSZip.loadAsync(await hwpxForm());
+  zip.file("Contents/section0.xml", sec);
+  const src = await zip.generateAsync({ type: "nodebuffer" });
+  const out = await forms.fillForm(src, ".hwpx", [{ id: "p1", check: ["계속"] }], { tableRows: [{ table: "t1", template_row: 2, rows: [["SEM", "1"], ["XRD", "2"], ["AFM", "1"]] }] });
+  const x = await (await JSZip.loadAsync(out.buffer)).file("Contents/section0.xml").async("string");
+  assert.match(x, /rowCnt="6"/);
+  assert.match(x, /<hp:sz width="20000" height="6000"\/>/);
+  const addrs = [...x.matchAll(/<hp:t>([^<]*)<\/hp:t><\/hp:run><\/hp:p><\/hp:subList><hp:cellAddr colAddr="(\d)" rowAddr="(\d)"/g)].map((m) => `${m[1]}@${m[3]}.${m[2]}`);
+  assert.deepStrictEqual(addrs, ["장비명@0.0", "수량@0.1", "SEM@1.0", "1@1.1", "XRD@2.0", "2@2.1", "AFM@3.0", "1@3.1", "비고@4.0"]);
+  assert.match(x, /<hp:cellAddr colAddr="1" rowAddr="5"\/>/); // 맨 아래 행도 밀렸다
+  assert.match(x, /<hp:t>□ 신규  ■ 계속<\/hp:t>/);
+  // 세로로 합친 칸이 있는 행은 본으로 쓸 수 없다
+  await assert.rejects(forms.fillForm(src, ".hwpx", [], { tableRows: [{ table: "t1", template_row: 3, rows: [["a"]] }] }), /세로로 합친/);
+  await assert.rejects(forms.fillForm(src, ".hwpx", [], { tableRows: [{ table: "t1", template_row: 4, rows: [["a"]] }] }), /세로로 합쳐/);
+});

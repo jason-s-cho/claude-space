@@ -141,6 +141,9 @@ test("Claude 커넥터: 둘러보기·검색·읽기·버전·관련 문서·새
     assert.match((await call("fill_form", { path: report, fills: [{ id: "p1", text: "x" }], new_name: "2026 최종보고서_채움.docx" })).text, /이미 있습니다/);
     assert.match((await call("fill_form", { path: report, fills: [{ id: "p1", text: "x" }], new_name: "다른형식.hwpx" })).text, /같은 형식/);
     assert.match((await call("inspect_form", { path: "구매·견적/장비 견적.docx" })).text, /AI 제외/);
+    // check·table_rows 도 받는다 (이 문서엔 네모·표가 없어서 알맞은 오류)
+    assert.match((await call("fill_form", { path: report, fills: [{ id: "p1", check: "해당" }] })).text, /네모/);
+    assert.match((await call("fill_form", { path: report, table_rows: [{ table: "t1", template_row: 2, rows: [["a"]] }] })).text, /없는 표/);
     const v2 = (await call("fill_form", { path: report, fills: [{ id: "p1", text: "최종보고서(수정)" }] })).data;
     assert.match(v2.new_path, /최종보고서_v\d+\.docx$/);
 

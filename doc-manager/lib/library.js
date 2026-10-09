@@ -313,9 +313,9 @@ class Library {
   }
 
   // 양식을 채워 새 파일로 저장한다. new_name 을 주면 그 이름으로 (같은 폴더, 같은 확장자), 아니면 다음 버전 이름으로.
-  async fillForm(rel, fills, { newName } = {}) {
+  async fillForm(rel, fills, { newName, tableRows } = {}) {
     const { v, full, ext } = this.formSource(rel);
-    const r = await forms.fillForm(await fs.promises.readFile(full), ext, fills);
+    const r = await forms.fillForm(await fs.promises.readFile(full), ext, fills, { tableRows });
     const root = this.root();
     let t;
     if (newName) {
@@ -333,6 +333,7 @@ class Library {
       source: v.rel,
       new_path: t.rel,
       filled: r.filled,
+      rows_added: r.rows_added || undefined,
       restyled_from_guide_text: r.restyled.length ? r.restyled : undefined,
       note_for_ai: "원본은 그대로입니다. 새 파일을 다시 고치려면 inspect_form 을 새 파일 경로로 다시 불러 칸 번호를 확인하세요 (줄을 늘리면 뒤쪽 문단 번호가 바뀝니다).",
     };

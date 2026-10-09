@@ -173,7 +173,8 @@ tool(
     description:
       "워드(.docx)·한글(.hwpx) 양식을 칸 목록으로 보여 줍니다. 표 밖 문단은 p1, p2 …, 표 칸은 t1.r2.c3(1번째 표 2행 3열) 형식의 id 이고, " +
       "칸마다 지금 글자(text), 빈 칸 여부(empty), 문단 스타일(style, 예: 개요 1·Heading1), 표 칸이면 같은 행 왼쪽 제목(row_label)·맨 앞 열(row_header)·같은 열 맨 위 제목(column_label)을 줍니다. " +
-      "'(입력)', '여기에 작성', '○○○' 같은 안내 문구나 빈 칸이 채울 곳입니다. 칸이 많으면 next_offset 으로 이어 봅니다. 긴 본문 전체는 read_document 로 읽으세요. " +
+      "'(입력)', '여기에 작성', '○○○' 같은 안내 문구나 빈 칸이 채울 곳입니다. table_list 에는 표마다 행 수·첫 행(제목)·복사할 수 없는 행(세로로 합친 칸)이 있습니다. " +
+      "칸이 많으면 next_offset 으로 이어 봅니다. 긴 본문 전체는 read_document 로 읽으세요. " +
       "한글 .hwp·옛 워드 .doc 은 지원하지 않습니다(사용자에게 .hwpx/.docx 로 저장해 달라고 하세요).",
     inputSchema: {
       path: pathArg.describe("양식 문서 경로 (search_documents 결과의 path, 또는 fill_form 이 돌려준 new_path)"),
@@ -192,22 +193,41 @@ tool(
     description:
       "inspect_form 의 칸 id 대로 글자를 바꿔 새 파일로 저장합니다. 글꼴·크기·표·칸 크기·문단 모양·누름틀은 그대로 두고 글자만 바꾸므로 기관 양식을 그대로 제출용으로 만들 수 있습니다. " +
       "원본은 절대 바뀌지 않습니다. text 의 줄바꿈(\\n)은 같은 모양의 문단을 더 만듭니다. 회색·기울임 안내 문구 자리는 보통 글자 모양으로 바꿔 씁니다. " +
+      "체크 표시: text 대신 check(또는 uncheck)에 보기 이름을 주면 그 앞의 □ 를 ■ 로 바꿉니다 (예: '□ 해당 □ 미해당' 칸에 check: '해당'). " +
+      "행이 모자란 표(참여인력·장비·예산·특허 목록 등)는 table_rows 로: template_row 행을 본으로 rows 의 첫 값 묶음은 그 행에, 나머지는 그 행을 복사해 바로 아래에 넣습니다 (값은 그 행의 칸에 왼쪽부터; 합계 행 등 아래 행은 밀려 내려갑니다). " +
       "한 번에 모든 칸을 채우세요 (줄을 늘리면 뒤쪽 문단 번호가 바뀌므로, 새 파일을 다시 고치려면 inspect_form 을 새 경로로 다시 부릅니다). " +
       "없는 칸 번호가 하나라도 있으면 아무것도 저장하지 않습니다.",
     inputSchema: {
       path: pathArg.describe("채울 양식 문서 경로"),
       fills: z
-        .array(z.object({ id: z.string().describe("칸 id (예: p12, t1.r2.c3)"), text: z.string().describe("넣을 글자. 빈 문자열이면 칸을 비웁니다") }))
-        .min(1)
+        .array(
+          z.object({
+            id: z.string().describe("칸 id (예: p12, t1.r2.c3)"),
+            text: z.string().optional().describe("넣을 글자. 빈 문자열이면 칸을 비웁니다"),
+            check: z.union([z.string(), z.array(z.string())]).optional().describe("앞의 □ 를 ■ 로 바꿀 보기 이름 (예: '해당', ['신규', '계속'])"),
+            uncheck: z.union([z.string(), z.array(z.string())]).optional().describe("앞의 ■ 를 □ 로 되돌릴 보기 이름"),
+          })
+        )
         .max(3000)
-        .describe("바꿀 칸 목록"),
+        .optional()
+        .describe("바꿀 칸 목록 (칸마다 text, check, uncheck 중 하나)"),
+      table_rows: z
+        .array(
+          z.object({
+            table: z.string().describe("표 id (예: t3)"),
+            template_row: z.number().int().min(1).describe("본으로 쓸 행 번호 (1부터, 보통 첫 빈 행)"),
+            rows: z.array(z.array(z.string())).min(1).max(500).describe("행마다 칸 값 목록 (왼쪽부터)"),
+          })
+        )
+        .optional()
+        .describe("행을 늘려 채울 표들"),
       new_name: z.string().optional().describe("새 파일 이름 (예: 2027_소부장_수요조사서_엠씨케이테크.hwpx). 원본과 같은 폴더에 저장. 빼면 다음 버전 이름(…_v2)"),
       change_summary: z.string().optional().describe("무엇을 채웠는지 한두 문장 (기록에 남습니다)"),
     },
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
   },
-  async ({ path: rel, fills, new_name }) => lib.fillForm(rel, fills, { newName: new_name }),
-  (a, r) => ({ path: a.path, new_path: r ? r.new_path : undefined, filled: a.fills ? a.fills.length : 0, change_summary: a.change_summary })
+  async ({ path: rel, fills, table_rows, new_name }) => lib.fillForm(rel, fills || [], { newName: new_name, tableRows: table_rows || [] }),
+  (a, r) => ({ path: a.path, new_path: r ? r.new_path : undefined, filled: a.fills ? a.fills.length : 0, rows_added: r ? r.rows_added : undefined, change_summary: a.change_summary })
 );
 
 tool(
