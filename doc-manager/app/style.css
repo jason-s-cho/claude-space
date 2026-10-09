@@ -435,3 +435,26 @@ dialog[open] .settings-form { animation: pop 0.16s var(--ease); }
 .toast .prog-name { font-size: 12px; opacity: 0.75; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 380px; }
 .toast .bar { height: 4px; border-radius: 4px; background: rgba(127, 127, 127, 0.35); overflow: hidden; }
 .toast .bar i { display: block; height: 100%; background: var(--accent); border-radius: 4px; transition: width 0.15s; }
+
+/* Claude 연결 */
+.connect-card { display: grid; gap: 10px; padding: 16px; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface-2); }
+.connect-head { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 12px; align-items: center; }
+.connect-icon { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: linear-gradient(135deg, #d97757, #c2613f); color: #fff; }
+.connect-icon svg { width: 22px; height: 22px; }
+.connect-actions { display: flex; gap: 6px; }
+.state-on { color: #1f8a4c; font-weight: 600; }
+.state-warn { color: var(--warn-text); font-weight: 600; }
+.cmd-row { display: flex; gap: 6px; align-items: flex-start; }
+.cmd-row code { flex: 1; min-width: 0; font-family: var(--mono); font-size: 11.5px; line-height: 1.6; padding: 10px 12px; border-radius: var(--r); background: var(--surface-2); border: 1px solid var(--line); word-break: break-all; color: var(--text-2); }
+.check-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 16px; }
+.inline-icon { width: 14px; height: 14px; vertical-align: -2px; margin-right: 5px; color: var(--text-3); }
+.ai-log { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; max-height: 220px; overflow-y: auto; border: 1px solid var(--line); border-radius: var(--r); }
+.ai-log li { display: grid; grid-template-columns: 92px 120px minmax(0, 1fr); gap: 8px; padding: 6px 10px; font-size: 12px; border-bottom: 1px solid var(--line); }
+.ai-log li:last-child { border-bottom: 0; }
+.ai-log .t { color: var(--text-3); font-variant-numeric: tabular-nums; }
+.ai-log .k { font-weight: 600; color: var(--text-2); }
+.ai-log .d { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ai-log .err { color: var(--danger); }
+.ai-log .empty-log { display: block; color: var(--text-3); padding: 12px; }
+.ai-toggle { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 12.5px; color: var(--text-2); cursor: pointer; }
+.ai-toggle input { accent-color: var(--accent); }

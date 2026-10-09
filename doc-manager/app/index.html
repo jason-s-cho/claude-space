@@ -40,6 +40,9 @@
     <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 5 5 9-10"/></symbol>
     <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5h.01"/></symbol>
+    <symbol id="i-bot" viewBox="0 0 24 24"><rect x="4" y="8" width="16" height="12" rx="3"/><path d="M12 4v4M9 13h.01M15 13h.01M9.5 17h5"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v6c0 4.5 3 7.5 7 9 4-1.5 7-4.5 7-9V6z"/></symbol>
     <symbol id="i-move" viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M10 13h6m0 0-2.5-2.5M16 13l-2.5 2.5"/></symbol>
   </defs>
 </svg>
@@ -124,6 +127,7 @@
       <button type="button" data-tab="projects">과제</button>
       <button type="button" data-tab="rules">고객사 · 태그</button>
       <button type="button" data-tab="keywords">분류 키워드</button>
+      <button type="button" data-tab="claude">Claude 연결</button>
       <button type="button" data-tab="about">정보</button>
     </nav>
     <div class="settings-body">
@@ -192,6 +196,40 @@
             <div class="restore-row" id="kwRemoved"></div>
             <button class="link" id="kwResetGroup" type="button">이 분류를 기본 키워드로 되돌리기</button>
           </div>
+        </div>
+      </div>
+
+      <div class="tab-panel" data-panel="claude" hidden>
+        <h3>Claude 연결</h3>
+        <p class="hint">Claude 데스크톱 앱(또는 Claude Code)에서 이 보관함을 쓸 수 있게 연결합니다. 연결하면 Claude 에게 "작년 K-방산 최종보고서에서 성과 부분 찾아서 올해 계획서에 맞게 고쳐 줘"처럼 말할 수 있습니다.
+          Claude 는 문서를 <b>찾고 읽고</b>, 고친 결과를 <b>새 버전 파일</b>로만 저장합니다. 기존 파일을 고치거나 지울 수는 없습니다.</p>
+
+        <div class="connect-card">
+          <div class="connect-head">
+            <div class="connect-icon"><svg><use href="#i-bot"/></svg></div>
+            <div><div class="field-label">Claude 데스크톱 앱</div><div class="hint" id="claudeState">확인 중…</div></div>
+            <div class="connect-actions">
+              <button class="btn primary" id="claudeConnectBtn" type="button">연결</button>
+              <button class="btn ghost" id="claudeDisconnectBtn" type="button" hidden>연결 해제</button>
+            </div>
+          </div>
+          <small class="hint">연결하거나 해제한 뒤에는 Claude 데스크톱 앱을 <b>완전히 종료했다가 다시 켜야</b> 적용됩니다. (작업 표시줄 알림 영역의 Claude 아이콘 → 종료) 기존 Claude 설정은 <code>.bak</code> 파일로 남겨 둡니다.</small>
+        </div>
+
+        <div class="field">
+          <span class="field-label">Claude Code 에서 쓰기 <small>터미널에 한 번 붙여 넣기</small></span>
+          <div class="cmd-row"><code id="claudeCodeCmd"></code><button class="icon-btn" id="copyCmdBtn" type="button" title="복사" aria-label="명령 복사"><svg><use href="#i-copy"/></svg></button></div>
+        </div>
+
+        <div class="field">
+          <span class="field-label"><svg class="inline-icon"><use href="#i-shield"/></svg>Claude 에 보내지 않을 문서</span>
+          <div class="check-grid" id="aiExcludeList"></div>
+          <small class="hint">고른 분류의 문서와, 문서 오른쪽에서 <b>Claude 에 보내지 않기</b>를 켠 문서('AI제외' 태그)는 Claude 가 검색하거나 읽을 수 없습니다.</small>
+        </div>
+
+        <div class="field">
+          <span class="field-label">최근 Claude 사용 기록 <small>Claude 가 무엇을 찾고 읽고 만들었는지</small></span>
+          <ul class="ai-log" id="aiLogList"></ul>
         </div>
       </div>
 

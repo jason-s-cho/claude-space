@@ -444,6 +444,7 @@ async function renderDetail() {
       <div class="tag-edit">${tagChips}<input class="tag-input" id="tagInput" placeholder="+ 태그" list="allTags"></div>
       <datalist id="allTags">${allTags().map((t) => `<option value="${esc(t)}">`).join("")}</datalist>
       ${hiddenTags}
+      <label class="ai-toggle" title="켜면 Claude 커넥터가 이 문서를 검색하거나 읽을 수 없습니다 ('AI제외' 태그)"><input type="checkbox" id="aiExcludeToggle" ${d.tags.includes("AI제외") ? "checked" : ""}>${icon("shield")}Claude 에 보내지 않기</label>
     </div>
     <div class="card">
       <h4>${icon("sparkle")}핵심 키워드<small>누르면 검색 · ＋는 태그로</small></h4>
@@ -743,12 +744,79 @@ function kwRestore(k) {
   renderKwEditor();
 }
 
+// ---- Claude 연결 탭 ----
+const TOOL_LABEL = {
+  library_overview: "둘러보기", search_documents: "검색", read_document: "읽기", list_versions: "버전 기록",
+  find_related_documents: "관련 문서", save_new_version: "새 버전 저장", prepare_new_version: "새 버전 복사본",
+};
+
+async function renderClaudeTab() {
+  const st = await api.claudeStatus();
+  const main = st.targets[0] || {};
+  const anyBad = st.targets.find((t) => t.error);
+  const connected = st.targets.some((t) => t.connected);
+  const stale = st.targets.some((t) => t.connected && !t.matches);
+  $("claudeState").innerHTML = anyBad
+    ? `<span class="state-warn">${esc(anyBad.error)}</span>`
+    : connected
+      ? stale
+        ? `<span class="state-warn">연결되어 있지만 예전 위치를 가리킵니다. '다시 연결'을 눌러 주세요.</span>`
+        : `<span class="state-on">연결됨</span> · Claude 앱을 다시 켜면 '문서 보관함' 도구가 보입니다.`
+      : `연결되어 있지 않습니다. <span class="muted">(${esc(main.path || "")})</span>`;
+  $("claudeConnectBtn").textContent = connected ? "다시 연결" : "연결";
+  $("claudeDisconnectBtn").hidden = !connected;
+  $("claudeCodeCmd").textContent = st.claudeCode;
+  // 제외할 분류
+  const excluded = new Set(S.settings.aiExcludeCategories || []);
+  $("aiExcludeList").innerHTML = S.categories
+    .map((c) => `<label class="check"><input type="checkbox" data-aiex="${c.id}" ${excluded.has(c.id) ? "checked" : ""}><span>${esc(catLabel(c.id))}</span></label>`)
+    .join("");
+  // 기록
+  const log = await api.aiLog();
+  const time = (iso) => {
+    const d = new Date(iso);
+    const p = (n) => String(n).padStart(2, "0");
+    return `${p(d.getMonth() + 1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  };
+  $("aiLogList").innerHTML = log.length
+    ? log
+        .map((l) => {
+          const what = l.error ? `<span class="err">${esc(l.error)}</span>` : esc(l.new_path ? `${l.path} → ${l.new_path}${l.change_summary ? " (" + l.change_summary + ")" : ""}` : l.query !== undefined ? `“${l.query}”` : l.path || "");
+          return `<li><span class="t">${time(l.time)}</span><span class="k">${esc(TOOL_LABEL[l.tool] || l.tool)}</span><span class="d" title="${esc(l.path || l.query || "")}">${what}</span></li>`;
+        })
+        .join("")
+    : '<li><span class="empty-log">아직 Claude 가 이 보관함을 쓴 기록이 없습니다.</span></li>';
+}
+
+$("claudeConnectBtn").onclick = async () => {
+  const r = await api.claudeConnect();
+  if (r.error) toast(r.error, 7000);
+  else toast("Claude 데스크톱 설정에 문서 보관함을 넣었습니다.\nClaude 앱을 완전히 종료했다가 다시 켜 주세요.", 7000);
+  renderClaudeTab();
+};
+$("claudeDisconnectBtn").onclick = async () => {
+  const r = await api.claudeDisconnect();
+  if (r.error) toast(r.error, 7000);
+  else toast("Claude 연결을 해제했습니다. Claude 앱을 다시 켜면 적용됩니다.");
+  renderClaudeTab();
+};
+$("copyCmdBtn").onclick = async () => {
+  try {
+    await navigator.clipboard.writeText($("claudeCodeCmd").textContent);
+    toast("명령을 복사했습니다. 터미널에 붙여 넣으세요.");
+  } catch {
+    toast("복사하지 못했습니다. 글자를 직접 선택해 복사해 주세요.");
+  }
+};
+
 function setSettingsTab(tab) {
+  if (tab === "claude") renderClaudeTab();
   for (const b of document.querySelectorAll(".settings-nav button")) b.classList.toggle("on", b.dataset.tab === tab);
   for (const p of document.querySelectorAll(".tab-panel")) p.hidden = p.dataset.panel !== tab;
 }
 
 function openSettings(tab = "general", group) {
+  $("aiExcludeList").innerHTML = ""; // 열 때마다 새로 그린다 (Claude 탭을 열면)
   const st = S.settings;
   for (const r of document.querySelectorAll('input[name="theme"]')) r.checked = r.value === (st.theme || "system");
   for (const r of document.querySelectorAll('input[name="importLayout"]')) r.checked = r.value === (st.importLayout || "category");
@@ -1003,6 +1071,11 @@ $("detail").addEventListener("click", async (e) => {
 $("detail").addEventListener("change", async (e) => {
   const d = byRel.get(selected);
   if (!d) return;
+  if (e.target.id === "aiExcludeToggle") {
+    if (e.target.checked) await addTag(d, "AI제외");
+    else await removeTag(d, "AI제외");
+    return;
+  }
   if (e.target.id === "catSelect") {
     await patchDoc(d.rel, { userCategory: e.target.value });
     renderAll(true);
@@ -1078,6 +1151,10 @@ $("settingsDlg").addEventListener("close", async () => {
     partners: linesToNamed($("partnersInput").value),
     tagRules: textToRules($("rulesInput").value),
     keywordOverrides: kwDraft,
+    // Claude 탭을 열지 않았으면 체크 상자가 없으므로 지금 값을 그대로 둔다
+    aiExcludeCategories: $("aiExcludeList").children.length
+      ? [...document.querySelectorAll("[data-aiex]:checked")].map((x) => x.dataset.aiex)
+      : S.settings.aiExcludeCategories || [],
   });
   toast("설정을 저장하고 모든 문서를 다시 분류했습니다.");
 });

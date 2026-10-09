@@ -17,10 +17,12 @@
     "dist:dir": "electron-builder --dir"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.1",
     "cfb": "^1.2.2",
     "jszip": "^3.10.1",
     "pdfjs-dist": "^4.10.38",
-    "word-extractor": "^1.0.4"
+    "word-extractor": "^1.0.4",
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "electron": "^39.0.0",
@@ -38,6 +40,7 @@
       "main.js",
       "preload.js",
       "lib/**/*",
+      "mcp/**/*",
       "app/**/*",
       "assets/icon.png"
     ],

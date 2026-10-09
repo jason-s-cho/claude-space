@@ -25,6 +25,18 @@ let lastFocusScan = 0;
 
 const userFile = (name) => path.join(app.getPath("userData"), name);
 const store = require("./lib/store");
+const claudeConfig = require("./lib/claude-config");
+const { readLog } = require("./lib/library");
+
+// Claude 커넥터 실행 방법: 이 앱의 실행 파일을 Node 처럼 돌려 mcp/server.js 를 실행한다.
+// (따로 Node 를 설치할 필요가 없다. 설치판에서는 app.asar 안의 파일을 그대로 읽는다)
+function mcpEntry() {
+  return {
+    command: process.execPath,
+    args: [path.join(app.getAppPath(), "mcp", "server.js")],
+    env: { ELECTRON_RUN_AS_NODE: "1", DOCMANAGER_USERDATA: app.getPath("userData") },
+  };
+}
 
 // 색인 파일: 보통 문서 폴더 안의 .docmanager/index.json, 폴더에 쓸 수 없으면 앱 데이터 폴더
 let indexFile = null;
@@ -41,7 +53,7 @@ const mtimeOf = (file) => {
   }
 };
 
-const DEFAULT_SETTINGS = { root: "", partners: [], tagRules: [], keywordOverrides: {}, savedSearches: [], recentSearches: [], importLayout: "category", projects: [], techTags: true, theme: "system" };
+const DEFAULT_SETTINGS = { root: "", partners: [], tagRules: [], keywordOverrides: {}, savedSearches: [], recentSearches: [], importLayout: "category", projects: [], techTags: true, theme: "system", aiExcludeCategories: [] };
 
 function loadSettings() {
   try {
@@ -439,6 +451,27 @@ function registerIpc() {
     }
   });
 
+  // ---- Claude 연결 ----
+  ipcMain.handle("claude-status", () => {
+    const entry = mcpEntry();
+    return { targets: claudeConfig.status(entry), claudeCode: claudeConfig.claudeCodeCommand(entry) };
+  });
+  ipcMain.handle("claude-connect", () => {
+    try {
+      return { done: claudeConfig.connect(mcpEntry()) };
+    } catch (e) {
+      return { error: String((e && e.message) || e) };
+    }
+  });
+  ipcMain.handle("claude-disconnect", () => {
+    try {
+      return { done: claudeConfig.disconnect() };
+    } catch (e) {
+      return { error: String((e && e.message) || e) };
+    }
+  });
+  ipcMain.handle("ai-log", () => (settings.root ? readLog(settings.root, 40) : []));
+
   ipcMain.handle("move-to-category", async (_e, rel) => {
     const e = index && index.files[rel];
     if (!e) return { error: "알 수 없는 파일" };
@@ -501,6 +534,7 @@ function registerIpc() {
     if (Array.isArray(next.tagRules)) settings.tagRules = next.tagRules;
     if (Array.isArray(next.projects)) settings.projects = next.projects;
     if (typeof next.techTags === "boolean") settings.techTags = next.techTags;
+    if (Array.isArray(next.aiExcludeCategories)) settings.aiExcludeCategories = next.aiExcludeCategories.filter((x) => typeof x === "string");
     if (["system", "light", "dark"].includes(next.theme)) {
       settings.theme = next.theme;
       applyTheme();

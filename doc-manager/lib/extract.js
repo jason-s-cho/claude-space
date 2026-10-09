@@ -7,7 +7,7 @@ const path = require("path");
 const JSZip = require("jszip");
 const { extractHwp } = require("./hwp");
 
-const MAX_TEXT = 30000; // 문서 하나당 보관할 최대 글자 수
+const MAX_TEXT = 30000; // 색인에 보관할 문서 하나당 최대 글자 수 (Claude 가 읽을 때는 opts.maxText 로 늘린다)
 
 const SUPPORTED = {
   ".docx": "word", ".doc": "word",
@@ -110,7 +110,7 @@ function loadPdfjs() {
   return pdfjsPromise;
 }
 
-async function extractPdf(buf) {
+async function extractPdf(buf, maxText = MAX_TEXT) {
   const pdfjs = await loadPdfjs();
   const doc = await pdfjs.getDocument({
     data: new Uint8Array(buf),
@@ -122,7 +122,7 @@ async function extractPdf(buf) {
   try {
     const parts = [];
     let length = 0;
-    for (let i = 1; i <= doc.numPages && length < MAX_TEXT; i++) {
+    for (let i = 1; i <= doc.numPages && length < maxText; i++) {
       const page = await doc.getPage(i);
       const content = await page.getTextContent();
       let line = "";
@@ -152,17 +152,19 @@ async function extractDoc(filePath) {
   return { text: [d.getBody(), d.getHeaders({ includeFooters: true })].join("\n") };
 }
 
-function tidy(text) {
+function tidy(text, maxText = MAX_TEXT) {
   return (text || "")
     .replace(/\r/g, "")
     .replace(/[ \t ]+/g, " ")
     .replace(/\n\s*\n+/g, "\n")
     .trim()
-    .slice(0, MAX_TEXT);
+    .slice(0, maxText);
 }
 
 // 결과: { kind, text, title, author, pages, error }
-async function extract(filePath) {
+// opts.maxText: 남길 최대 글자 수 (기본은 색인용 3만 자)
+async function extract(filePath, opts = {}) {
+  const maxText = opts.maxText || MAX_TEXT;
   const ext = path.extname(filePath).toLowerCase();
   const kind = fileKind(filePath);
   const result = { kind, text: "", title: "", author: "", pages: 0, error: "" };
@@ -178,10 +180,10 @@ async function extract(filePath) {
       else if (ext === ".xlsx") r = await extractXlsx(buf);
       else if (ext === ".hwpx") r = await extractHwpx(buf);
       else if (ext === ".hwp") r = extractHwp(buf);
-      else if (ext === ".pdf") r = await extractPdf(buf);
+      else if (ext === ".pdf") r = await extractPdf(buf, maxText);
     }
     Object.assign(result, r);
-    result.text = tidy(result.text);
+    result.text = tidy(result.text, maxText);
   } catch (e) {
     // 암호가 걸렸거나 손상된 파일: 파일 이름만으로 분류한다.
     result.error = String((e && e.message) || e).slice(0, 200);

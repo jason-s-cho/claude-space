@@ -1,0 +1,173 @@
+// 문서 보관함 Claude 커넥터 (MCP 서버, stdio).
+// Claude 데스크톱 앱이나 Claude Code 가 이 프로그램을 실행해서 보관함을 검색·읽기·새 버전 저장한다.
+//
+// 실행: 앱 실행 파일을 Node 처럼 돌린다.
+//   ELECTRON_RUN_AS_NODE=1  DOCMANAGER_USERDATA=<앱 데이터 폴더>  "<문서 보관함.exe>" "<app.asar>/mcp/server.js"
+// (설정 → Claude 연결 에서 '연결' 을 누르면 Claude 데스크톱 설정에 이 내용이 자동으로 들어간다)
+//
+// 표준 출력(stdout)은 MCP 통신 전용이므로 여기서는 console.log 를 쓰지 않는다.
+const os = require("os");
+const fs = require("fs");
+const path = require("path");
+const { McpServer } = require("@modelcontextprotocol/sdk/server/mcp.js");
+const { StdioServerTransport } = require("@modelcontextprotocol/sdk/server/stdio.js");
+const { z } = require("zod");
+const { Library } = require("../lib/library");
+
+const pkg = require("../package.json");
+
+// 앱 데이터 폴더: 연결할 때 앱이 DOCMANAGER_USERDATA 로 알려 준다. 없으면 흔한 위치에서 찾는다.
+function findUserData() {
+  if (process.env.DOCMANAGER_USERDATA) return process.env.DOCMANAGER_USERDATA;
+  const base =
+    process.platform === "win32" ? process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming")
+    : process.platform === "darwin" ? path.join(os.homedir(), "Library", "Application Support")
+    : process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
+  for (const name of ["문서 보관함", "doc-manager"]) {
+    const dir = path.join(base, name);
+    if (fs.existsSync(path.join(dir, "settings.json"))) return dir;
+  }
+  return path.join(base, "문서 보관함");
+}
+
+const lib = new Library({ userDataDir: findUserData() });
+
+const INSTRUCTIONS = `이 서버는 사용자가 직접 작성한 업무 문서(국가과제·지원사업 계획서/보고서, IR·회사소개, 홍보, 기술·시장 분석, 고객사 자료, 견적 등)를 모아 둔 '문서 보관함'입니다.
+- 먼저 library_overview 로 분류·과제·태그를 보고, search_documents 로 찾은 뒤 read_document 로 본문을 읽으세요. 긴 문서는 next_offset 으로 이어 읽습니다.
+- 기본 검색 결과는 각 문서의 최신 버전만 보여 줍니다. 이전 버전이 필요하면 list_versions 를 쓰세요.
+- 새 문서나 계획서를 쓸 때는 find_related_documents 로 재사용할 만한 이전 자료(같은 과제·기술·키워드)를 찾으세요.
+- 기존 파일은 절대 고칠 수 없습니다. 고친 결과는 항상 새 버전으로 저장합니다:
+  · 파일을 직접 만들 수 있으면(예: docx/pptx 를 생성) save_new_version 에 base64 로 보냅니다.
+  · 로컬 파일을 직접 편집할 수 있는 환경(Claude Code)이면 prepare_new_version 으로 복사본 경로를 받아 그 파일을 편집합니다.
+- 'AI제외' 태그나 사용자가 제외한 분류의 문서는 보이지 않습니다. 사용자가 그런 문서를 찾으면 제외 설정 때문일 수 있다고 알려 주세요.`;
+
+const server = new McpServer({ name: "doc-manager", title: "문서 보관함", version: pkg.version }, { instructions: INSTRUCTIONS });
+
+const asText = (obj) => ({ content: [{ type: "text", text: JSON.stringify(obj, null, 2) }] });
+
+// 도구 하나를 등록한다: 오류는 Claude 가 읽을 수 있는 메시지로, 사용 기록은 ai-log 로.
+function tool(name, config, fn, logOf) {
+  server.registerTool(name, config, async (args) => {
+    try {
+      const result = await fn(args || {});
+      lib.log(name, logOf ? logOf(args || {}, result) : {});
+      return asText(result);
+    } catch (e) {
+      lib.log(name, { ...(logOf ? logOf(args || {}, null) : {}), error: String((e && e.message) || e) });
+      return { isError: true, content: [{ type: "text", text: String((e && e.message) || e) }] };
+    }
+  });
+}
+
+const pathArg = z.string().describe("문서 경로. search_documents 결과의 path 값을 그대로 넣습니다 (예: 회사소개/IR·투자/엠씨케이테크_IR_260406.pptx)");
+
+tool(
+  "library_overview",
+  {
+    title: "보관함 둘러보기",
+    description: "문서 보관함의 분류별 문서 수, 등록된 과제·고객사, 많이 쓰인 태그, 검색 문법을 보여 줍니다. 처음에 한 번 부르면 무엇이 있는지 알 수 있습니다.",
+    inputSchema: {},
+    annotations: { readOnlyHint: true },
+  },
+  async () => lib.overview(),
+  () => ({})
+);
+
+tool(
+  "search_documents",
+  {
+    title: "문서 검색",
+    description:
+      "파일 이름·폴더·태그·핵심 키워드·본문에서 문서를 찾습니다. " +
+      '문법: 단어 여러 개는 모두 포함, "구절"(띄어쓰기 무시), A|B, -제외어, #태그, 분류:보고서, 연도:2025, 형식:ppt|word|excel|pdf|hwp, 폴더:이름, 이름:최종, 키워드:그래핀. ' +
+      "빈 검색어면 최근 문서부터 보여 줍니다. 기본은 문서마다 최신 버전만 보여 줍니다.",
+    inputSchema: {
+      query: z.string().describe("검색어 (예: '그래핀 스텔스 분류:IR', '#2024 K-방산 제품고도화 분류:보고서')"),
+      limit: z.number().int().min(1).max(50).optional().describe("최대 결과 수 (기본 15)"),
+      include_old_versions: z.boolean().optional().describe("이전 버전도 함께 보려면 true"),
+    },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ query, limit, include_old_versions }) => lib.search(query, { limit: limit || 15, latestOnly: !include_old_versions }),
+  (a, r) => ({ query: a.query, results: r ? r.results.map((x) => x.path) : undefined })
+);
+
+tool(
+  "read_document",
+  {
+    title: "문서 읽기",
+    description: `문서 본문을 글자로 읽습니다 (Word·PowerPoint·Excel·PDF·한글). 한 번에 최대 ${20000}자씩이며, next_offset 이 있으면 그 값으로 다시 불러 이어 읽습니다.`,
+    inputSchema: {
+      path: pathArg,
+      offset: z.number().int().min(0).optional().describe("이어 읽을 위치 (이전 결과의 next_offset)"),
+    },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ path: rel, offset }) => lib.read(rel, { offset: offset || 0 }),
+  (a) => ({ path: a.path, offset: a.offset || 0 })
+);
+
+tool(
+  "list_versions",
+  {
+    title: "버전 기록",
+    description: "같은 문서의 여러 버전(초안·v01·날짜·(2) 등)을 최신순으로 보여 줍니다. 어느 것이 최신본인지 확인할 때 씁니다.",
+    inputSchema: { path: pathArg },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ path: rel }) => lib.versions(rel),
+  (a) => ({ path: a.path })
+);
+
+tool(
+  "find_related_documents",
+  {
+    title: "관련 문서 찾기",
+    description: "이 문서와 같은 과제·고객사·기술 태그를 쓰거나 핵심 키워드가 겹치는 다른 문서를 찾습니다. 새 계획서·IR을 쓸 때 재사용할 이전 자료를 찾는 데 씁니다.",
+    inputSchema: { path: pathArg, limit: z.number().int().min(1).max(30).optional() },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ path: rel, limit }) => lib.related(rel, { limit: limit || 10 }),
+  (a, r) => ({ path: a.path, results: r ? r.related.map((x) => x.path) : undefined })
+);
+
+tool(
+  "save_new_version",
+  {
+    title: "새 버전으로 저장",
+    description:
+      "고친 문서 파일을 원본과 같은 폴더에 다음 버전 이름(…_v02, 오늘 날짜, …_v2)으로 저장합니다. 원본과 기존 파일은 절대 덮어쓰지 않습니다. " +
+      "파일 전체 내용을 base64 로 보냅니다. 형식을 바꿔 저장하려면 file_extension 을 줍니다 (예: PDF 를 보고 docx 로 다시 쓴 경우). 저장하면 문서 보관함이 자동으로 분류하고 버전 기록에 묶습니다.",
+    inputSchema: {
+      path: pathArg.describe("고친 원본 문서의 경로"),
+      content_base64: z.string().describe("새 파일 전체 내용 (base64)"),
+      file_extension: z.string().optional().describe("원본과 다른 형식으로 저장할 때 확장자 (예: docx, pptx, xlsx, hwpx)"),
+      change_summary: z.string().optional().describe("무엇을 고쳤는지 한두 문장 (기록에 남습니다)"),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+  },
+  async ({ path: rel, content_base64, file_extension }) => lib.saveNewVersion(rel, content_base64, { ext: file_extension }),
+  (a, r) => ({ path: a.path, new_path: r ? r.new_path : undefined, change_summary: a.change_summary })
+);
+
+tool(
+  "prepare_new_version",
+  {
+    title: "새 버전 복사본 만들기",
+    description:
+      "원본을 다음 버전 이름으로 복사하고 그 파일의 전체 경로(absolute_path)를 돌려줍니다. 로컬 파일을 직접 편집할 수 있을 때(Claude Code 등) 이 복사본을 고치면 됩니다. 원본은 그대로 남습니다.",
+    inputSchema: { path: pathArg },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+  },
+  async ({ path: rel }) => lib.prepareNewVersion(rel),
+  (a, r) => ({ path: a.path, new_path: r ? r.new_path : undefined })
+);
+
+async function main() {
+  await server.connect(new StdioServerTransport());
+}
+
+main().catch((e) => {
+  process.stderr.write("문서 보관함 커넥터를 시작하지 못했습니다: " + ((e && e.stack) || e) + "\n");
+  process.exit(1);
+});
