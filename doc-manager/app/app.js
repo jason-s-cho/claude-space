@@ -566,6 +566,21 @@ function select(rel, scroll) {
 function goto(rel) {
   const d = byRel.get(rel);
   if (!d) return;
+  // 지금 걸러 보는 조건(방금 넣은 문서·분류·검색 등)에 안 들어가는 문서면 조건을 풀어서 목록에 보이게 한다
+  if (!filtered().some((x) => x.rel === rel)) {
+    filter.view = "all";
+    filter.tags.clear();
+    filter.kind = "";
+    filter.project = "";
+    if (query) {
+      $("q").value = "";
+      query = "";
+      results = null;
+      hlTerms = [];
+      if ($("sort").value === "relevance") $("sort").value = "mtime";
+    }
+    renderSide();
+  }
   if (d.versions && groupVersions) expanded.add(d.versions.latest);
   selected = rel;
   renderList();
