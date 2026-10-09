@@ -12,7 +12,7 @@ const INDEX_VERSION = 1;
 //   2: .hwp 본문 읽기
 const EXTRACT_VERSION = 2;
 const REREAD_EXTS = { 2: [".hwp"] };
-const SKIP_DIRS = new Set(["node_modules", ".git", "$RECYCLE.BIN", "System Volume Information", ".Trash"]);
+const SKIP_DIRS = new Set(["Claude 지식", "node_modules", ".git", "$RECYCLE.BIN", "System Volume Information", ".Trash"]);
 
 function emptyIndex(root) {
   return { version: INDEX_VERSION, root, files: {}, classifierVersion: CLASSIFIER_VERSION };

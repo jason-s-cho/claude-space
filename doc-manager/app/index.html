@@ -219,6 +219,28 @@
         </div>
 
         <div class="field">
+          <span class="field-label">회사 지식 카드 <small>Claude 가 문서를 쓰기 전에 먼저 읽는 회사 핵심 사실</small></span>
+          <div class="knowledge-card">
+            <div class="knowledge-head">
+              <div class="hint" id="knowledgeState">확인 중…</div>
+              <div class="connect-actions">
+                <button class="btn ghost" id="knowledgeEditBtn" type="button">직접 고치기</button>
+                <button class="btn ghost" id="knowledgeOpenBtn" type="button">폴더에서 보기</button>
+              </div>
+            </div>
+            <div class="cmd-row"><code id="knowledgePrompt">문서 보관함의 자료로 회사 지식 카드를 만들어 줘</code><button class="icon-btn" id="copyKnowledgePromptBtn" type="button" title="복사" aria-label="요청 문장 복사"><svg><use href="#i-copy"/></svg></button></div>
+            <small class="hint">위 문장을 Claude 데스크톱 <b>일반 채팅</b>에 붙여 넣으면 Claude 가 보관함 문서를 읽고 카드를 만들어 <code>Claude 지식/회사 지식 카드.md</code> 에 저장합니다. 문서가 늘면 "회사 지식 카드 새로 고쳐 줘"라고 하면 됩니다. 이전 내용은 자동으로 보관하고, 맨 아래 <b>사용자 메모</b>는 Claude 가 고치지 않습니다.</small>
+            <div id="knowledgeEditor" hidden>
+              <textarea id="knowledgeText" rows="16" spellcheck="false"></textarea>
+              <div class="connect-actions end">
+                <button class="btn ghost" id="knowledgeCancelBtn" type="button">닫기</button>
+                <button class="btn primary" id="knowledgeSaveBtn" type="button">카드 저장</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
           <span class="field-label">Claude Code 에서 쓰기 <small>터미널에 한 번 붙여 넣기</small></span>
           <div class="cmd-row"><code id="claudeCodeCmd"></code><button class="icon-btn" id="copyCmdBtn" type="button" title="복사" aria-label="명령 복사"><svg><use href="#i-copy"/></svg></button></div>
         </div>

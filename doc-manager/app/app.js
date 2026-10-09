@@ -748,6 +748,7 @@ function kwRestore(k) {
 const TOOL_LABEL = {
   library_overview: "둘러보기", search_documents: "검색", read_document: "읽기", list_versions: "버전 기록",
   find_related_documents: "관련 문서", save_new_version: "새 버전 저장", prepare_new_version: "새 버전 복사본",
+  get_knowledge: "지식 카드 읽기", save_knowledge_card: "지식 카드 저장",
 };
 
 async function renderClaudeTab() {
@@ -766,6 +767,7 @@ async function renderClaudeTab() {
   $("claudeConnectBtn").textContent = connected ? "다시 연결" : "연결";
   $("claudeDisconnectBtn").hidden = !connected;
   $("claudeCodeCmd").textContent = st.claudeCode;
+  renderKnowledge();
   // 제외할 분류
   const excluded = new Set(S.settings.aiExcludeCategories || []);
   $("aiExcludeList").innerHTML = S.categories
@@ -830,6 +832,46 @@ $("claudeTestBtn").onclick = async () => {
   } finally {
     btn.disabled = false;
     btn.textContent = "연결 테스트";
+  }
+};
+// ---- 회사 지식 카드 ----
+async function renderKnowledge() {
+  const k = await api.knowledgeGet();
+  if (k.error) {
+    $("knowledgeState").textContent = k.error;
+    return;
+  }
+  $("knowledgeState").innerHTML = k.exists
+    ? `<span class="state-on">있음</span> · 마지막으로 고친 때 ${esc(new Date(k.updated).toLocaleString())} · ${(k.content.length / 1000).toFixed(1)}천 자`
+    : "아직 없습니다. 아래 문장으로 Claude 에게 만들어 달라고 해 보세요.";
+  return k;
+}
+$("knowledgeEditBtn").onclick = async () => {
+  const k = await api.knowledgeGet();
+  if (k.error) return toast(k.error);
+  $("knowledgeText").value = k.exists ? k.content : k.template;
+  $("knowledgeEditor").hidden = false;
+  $("knowledgeText").focus();
+};
+$("knowledgeCancelBtn").onclick = () => ($("knowledgeEditor").hidden = true);
+$("knowledgeSaveBtn").onclick = async () => {
+  const r = await api.knowledgeSave($("knowledgeText").value);
+  if (r.error) return toast(r.error, 6000);
+  toast(r.backup ? "지식 카드를 저장했습니다. 이전 내용은 기록으로 남겼습니다." : "지식 카드를 저장했습니다.");
+  $("knowledgeEditor").hidden = true;
+  renderKnowledge();
+};
+$("knowledgeOpenBtn").onclick = async () => {
+  const r = await api.knowledgeOpen();
+  if (r.error) toast(r.error);
+  renderKnowledge();
+};
+$("copyKnowledgePromptBtn").onclick = async () => {
+  try {
+    await navigator.clipboard.writeText($("knowledgePrompt").textContent);
+    toast("복사했습니다. Claude 데스크톱 일반 채팅에 붙여 넣으세요.");
+  } catch {
+    toast("복사하지 못했습니다. 글자를 직접 선택해 복사해 주세요.");
   }
 };
 $("copyCmdBtn").onclick = async () => {

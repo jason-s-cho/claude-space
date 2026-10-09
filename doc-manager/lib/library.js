@@ -13,6 +13,7 @@ const searchLib = require("./search");
 const { extract, SUPPORTED } = require("./extract");
 const { CATEGORIES, migrateOverrides } = require("./classify");
 const { docFrequency, topKeywords } = require("./keywords");
+const knowledge = require("./knowledge");
 const { groupVersions, nextVersionName, uniqueVersionName } = require("./versions");
 
 const AI_EXCLUDE_TAG = "AI제외";
@@ -279,6 +280,31 @@ class Library {
   }
 
   // ---- 기록 ----
+
+  // ---- 회사 지식 카드 ----
+
+  getKnowledge() {
+    const root = this.root();
+    const k = knowledge.read(root);
+    return {
+      exists: k.exists,
+      updated: k.updated,
+      file: `${knowledge.DIR_NAME}/${knowledge.CARD_NAME}`,
+      card: k.exists ? k.content : knowledge.TEMPLATE,
+      note_for_ai: k.exists
+        ? "문서를 쓰거나 고칠 때 이 카드의 사실·수치·표현을 우선 쓰세요. 카드와 문서가 다르면 사용자에게 알려 주세요."
+        : "아직 지식 카드가 없습니다. 위 card 는 빈 양식입니다. 사용자가 원하면 아래 순서로 만들어 save_knowledge_card 로 저장하세요.\n" + knowledge.BUILD_STEPS,
+    };
+  }
+
+  saveKnowledge(content) {
+    const r = knowledge.save(this.root(), content, { protectUserSection: true });
+    return {
+      saved: `${knowledge.DIR_NAME}/${knowledge.CARD_NAME}`,
+      previous_kept: !!r.backup,
+      user_section_restored: r.keptUserSection || undefined,
+    };
+  }
 
   log(tool, detail) {
     try {

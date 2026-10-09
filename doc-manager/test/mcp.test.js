@@ -58,7 +58,22 @@ test("Claude 커넥터: 둘러보기·검색·읽기·버전·관련 문서·새
   const { client, call } = await connect(ud);
   try {
     const tools = (await client.listTools()).tools.map((t) => t.name).sort();
-    assert.deepStrictEqual(tools, ["find_related_documents", "library_overview", "list_versions", "prepare_new_version", "read_document", "save_new_version", "search_documents"]);
+    assert.deepStrictEqual(tools, ["find_related_documents", "get_knowledge", "library_overview", "list_versions", "prepare_new_version", "read_document", "save_knowledge_card", "save_new_version", "search_documents"]);
+    const prompts = (await client.listPrompts()).prompts.map((p) => p.name);
+    assert.deepStrictEqual(prompts, ["build_knowledge_card"]);
+    const pr = await client.getPrompt({ name: "build_knowledge_card" });
+    assert.match(pr.messages[0].content.text, /save_knowledge_card/);
+
+    // 회사 지식 카드: 없으면 양식, 저장하면 문서 폴더에, 사용자 메모는 지킨다
+    let kn = (await call("get_knowledge")).data;
+    assert.strictEqual(kn.exists, false);
+    assert.match(kn.card, /## 사용자 메모/);
+    fs.mkdirSync(path.join(root, "Claude 지식"));
+    fs.writeFileSync(path.join(root, "Claude 지식", "회사 지식 카드.md"), "# 회사 지식 카드\n\n## 사용자 메모\n- 내 메모\n");
+    const ks = (await call("save_knowledge_card", { content: "# 회사 지식 카드\n## 2. 핵심 기술·제품\n- 그래핀 스텔스 패널 [출처: 회사소개/IR·투자/엠씨케이테크_IR_260406.docx]\n", change_summary: "처음 작성" })).data;
+    assert.ok(ks.previous_kept && ks.user_section_restored);
+    kn = (await call("get_knowledge")).data;
+    assert.ok(kn.exists && kn.card.includes("그래핀 스텔스 패널") && kn.card.includes("- 내 메모"));
 
     const ov = (await call("library_overview")).data;
     assert.strictEqual(ov.documents, 2); // IR 두 버전은 하나로
@@ -119,6 +134,7 @@ test("Claude 커넥터: 둘러보기·검색·읽기·버전·관련 문서·새
     assert.ok(log.some((l) => l.tool === "search_documents" && l.query === "그래핀"));
     assert.ok(log.some((l) => l.tool === "save_new_version" && l.change_summary === "시장 규모 갱신" && l.new_path === saved.new_path));
     assert.ok(log.some((l) => l.tool === "read_document" && l.error));
+    assert.ok(log.some((l) => l.tool === "save_knowledge_card" && l.change_summary === "처음 작성"));
   } finally {
     await client.close();
     for (const d of [root, ud]) fs.rmSync(d, { recursive: true, force: true });

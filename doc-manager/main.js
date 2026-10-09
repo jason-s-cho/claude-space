@@ -26,6 +26,7 @@ let lastFocusScan = 0;
 const userFile = (name) => path.join(app.getPath("userData"), name);
 const store = require("./lib/store");
 const claudeConfig = require("./lib/claude-config");
+const knowledge = require("./lib/knowledge");
 const { readLog } = require("./lib/library");
 
 // Claude 커넥터 실행 방법: 이 앱의 실행 파일을 Node 처럼 돌려 mcp/server.js 를 실행한다.
@@ -474,6 +475,31 @@ function registerIpc() {
     const entry = mcpEntry();
     const test = await claudeConfig.selfTest(entry);
     return { test, logs: claudeConfig.claudeLogs(), targets: claudeConfig.status(entry) };
+  });
+  // ---- 회사 지식 카드 ----
+  ipcMain.handle("knowledge-get", () => {
+    if (!settings.root) return { error: "문서 폴더를 먼저 골라 주세요." };
+    const k = knowledge.read(settings.root);
+    return { ...k, template: knowledge.TEMPLATE, rel: `${knowledge.DIR_NAME}/${knowledge.CARD_NAME}` };
+  });
+  ipcMain.handle("knowledge-save", (_e, content) => {
+    try {
+      if (!settings.root) throw new Error("문서 폴더를 먼저 골라 주세요.");
+      return knowledge.save(settings.root, content);
+    } catch (e) {
+      return { error: String((e && e.message) || e) };
+    }
+  });
+  ipcMain.handle("knowledge-open", async () => {
+    try {
+      if (!settings.root) throw new Error("문서 폴더를 먼저 골라 주세요.");
+      const k = knowledge.read(settings.root);
+      if (!k.exists) knowledge.save(settings.root, knowledge.TEMPLATE);
+      shell.showItemInFolder(k.path);
+      return {};
+    } catch (e) {
+      return { error: String((e && e.message) || e) };
+    }
   });
   ipcMain.handle("ai-log", () => (settings.root ? readLog(settings.root, 40) : []));
 

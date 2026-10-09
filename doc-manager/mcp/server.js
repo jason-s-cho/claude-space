@@ -13,6 +13,7 @@ const { McpServer } = require("@modelcontextprotocol/sdk/server/mcp.js");
 const { StdioServerTransport } = require("@modelcontextprotocol/sdk/server/stdio.js");
 const { z } = require("zod");
 const { Library } = require("../lib/library");
+const knowledge = require("../lib/knowledge");
 
 const pkg = require("../package.json");
 
@@ -33,6 +34,7 @@ function findUserData() {
 const lib = new Library({ userDataDir: findUserData() });
 
 const INSTRUCTIONS = `이 서버는 사용자가 직접 작성한 업무 문서(국가과제·지원사업 계획서/보고서, IR·회사소개, 홍보, 기술·시장 분석, 고객사 자료, 견적 등)를 모아 둔 '문서 보관함'입니다.
+- 문서를 새로 쓰거나 고치기 전에는 get_knowledge 로 '회사 지식 카드'(회사 개요·기술·성능 수치·과제 이력·고객사·자주 쓰는 표현)를 먼저 읽고, 그 사실과 표현을 우선 쓰세요.
 - 먼저 library_overview 로 분류·과제·태그를 보고, search_documents 로 찾은 뒤 read_document 로 본문을 읽으세요. 긴 문서는 next_offset 으로 이어 읽습니다.
 - 기본 검색 결과는 각 문서의 최신 버전만 보여 줍니다. 이전 버전이 필요하면 list_versions 를 쓰세요.
 - 새 문서나 계획서를 쓸 때는 find_related_documents 로 재사용할 만한 이전 자료(같은 과제·기술·키워드)를 찾으세요.
@@ -161,6 +163,52 @@ tool(
   },
   async ({ path: rel }) => lib.prepareNewVersion(rel),
   (a, r) => ({ path: a.path, new_path: r ? r.new_path : undefined })
+);
+
+tool(
+  "get_knowledge",
+  {
+    title: "회사 지식 카드 읽기",
+    description:
+      "사용자 회사의 핵심 사실을 정리한 '회사 지식 카드'를 읽습니다: 회사 개요, 핵심 기술·제품, 대표 성능 수치, 과제 이력, 고객사, 자주 쓰는 표현, 확인 필요 항목. " +
+      "문서를 쓰거나 고치기 전에, 또는 회사에 관한 질문에 답하기 전에 먼저 부르세요. 카드가 없으면 빈 양식과 만드는 순서를 돌려줍니다.",
+    inputSchema: {},
+    annotations: { readOnlyHint: true },
+  },
+  async () => lib.getKnowledge(),
+  (a, r) => ({ exists: r ? r.exists : undefined })
+);
+
+tool(
+  "save_knowledge_card",
+  {
+    title: "회사 지식 카드 저장",
+    description:
+      "회사 지식 카드 전체 내용(마크다운)을 저장합니다. 이전 내용은 기록으로 남고, '## 사용자 메모' 부분은 사용자 것이 그대로 유지됩니다. " +
+      "사용자가 지식 카드를 만들거나 새로 고쳐 달라고 할 때, 또는 새로 알게 된 사실을 카드에 넣어 달라고 할 때 씁니다.\n" +
+      knowledge.BUILD_STEPS,
+    inputSchema: {
+      content: z.string().describe("카드 전체 내용 (마크다운). get_knowledge 의 양식 구조를 따릅니다."),
+      change_summary: z.string().optional().describe("무엇을 새로 넣거나 바꿨는지 한두 문장 (기록에 남습니다)"),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  },
+  async ({ content }) => lib.saveKnowledge(content),
+  (a) => ({ path: `${knowledge.DIR_NAME}/${knowledge.CARD_NAME}`, change_summary: a.change_summary })
+);
+
+// Claude 데스크톱의 '+' 메뉴에서 고를 수 있는 작업
+server.registerPrompt(
+  "build_knowledge_card",
+  { title: "회사 지식 카드 만들기", description: "문서 보관함의 자료를 읽고 회사 지식 카드를 만들거나 새로 고칩니다." },
+  () => ({
+    messages: [
+      {
+        role: "user",
+        content: { type: "text", text: "문서 보관함의 자료로 회사 지식 카드를 만들어 줘(이미 있으면 새로 고쳐 줘).\n\n" + knowledge.BUILD_STEPS },
+      },
+    ],
+  })
 );
 
 async function main() {
