@@ -145,6 +145,7 @@ async function moveToFolder(index, rel, folder) {
   delete index.files[rel];
   entry.rel = newRel;
   index.files[newRel] = entry;
+  index.textDirty = true; // 본문 캐시는 경로로 찾으므로 다시 쓴다
   return newRel;
 }
 

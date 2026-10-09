@@ -75,9 +75,13 @@ class Library {
     try {
       mtime = fs.statSync(file).mtimeMs;
     } catch {}
+    const textFile = store.textCacheFile(this.userDataDir, s.root);
+    try {
+      mtime += fs.statSync(textFile).mtimeMs;
+    } catch {}
     const key = file + "|" + JSON.stringify(s.aiExcludeCategories || []);
     if (this.cache.file === key && this.cache.mtime === mtime && this.cache.views) return this.cache;
-    const index = indexer.loadIndex(file, s.root, { anyRoot });
+    const index = indexer.loadIndex(file, s.root, { anyRoot, textFile });
     const entries = Object.values(index.files);
     const df = docFrequency(entries.map((e) => e.terms));
     const versions = groupVersions(entries.map((e) => ({ rel: e.rel, base: e.rel.split("/").pop(), mtimeMs: e.mtimeMs })));
@@ -109,7 +113,7 @@ class Library {
           ext: p.ext,
           years: [...years],
           catText: catLabel(eff.category),
-          textNs: (e.text || "").toLowerCase().replace(/\s+/g, ""),
+          textNs: e.text ? e.text.toLowerCase().split(/\s+/).join("") : "", // replace 로 만든 문자열은 검색이 수십 배 느리다
         },
       });
     }

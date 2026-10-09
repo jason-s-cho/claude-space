@@ -44,6 +44,7 @@ function mcpEntry() {
 
 // 색인 파일: 보통 문서 폴더 안의 .docmanager/index.json, 폴더에 쓸 수 없으면 앱 데이터 폴더
 let indexFile = null;
+let textFile = null; // 이 PC의 본문 캐시 (store.textCacheFile)
 let indexInFolder = false;
 // 다른 PC(클라우드 동기화)가 고친 것을 알아채기 위해 마지막으로 읽고 쓴 시각을 기억한다.
 let indexDiskMtime = 0;
@@ -99,9 +100,12 @@ function loadRoot(root) {
   const loc = store.indexLocation(root, userFile("index.json"));
   indexFile = loc.file;
   indexInFolder = loc.inFolder;
-  index = indexer.loadIndex(indexFile, root, { anyRoot: indexInFolder });
+  textFile = store.textCacheFile(app.getPath("userData"), root);
+  index = indexer.loadIndex(indexFile, root, { anyRoot: indexInFolder, textFile });
   indexDiskMtime = mtimeOf(indexFile);
-  if (indexer.upgradeIfNeeded(index, classifyOptions())) persistIndex();
+  warmSearch();
+  // 본문이 들어 있던 예전 색인이면 지금 바로 작은 색인 + 이 PC의 본문 캐시로 나눠 쓴다
+  if (indexer.upgradeIfNeeded(index, classifyOptions()) || index.textDirty) persistIndex();
   keywordCache = versionCache = null;
 }
 
@@ -117,7 +121,7 @@ function syncFromDisk() {
   }
   const iMtime = mtimeOf(indexFile);
   if (iMtime && iMtime !== indexDiskMtime) {
-    index = indexer.loadIndex(indexFile, settings.root, { anyRoot: indexInFolder });
+    index = indexer.loadIndex(indexFile, settings.root, { anyRoot: indexInFolder, textSource: indexer.textSourceOf(index) });
     indexDiskMtime = iMtime;
     changed = true;
   }
@@ -141,7 +145,7 @@ function classifyOptions() {
 function persistIndex() {
   if (!index || !index.root || !indexFile) return;
   try {
-    indexer.saveIndex(indexFile, index);
+    indexer.saveIndex(indexFile, index, { textFile });
     indexDiskMtime = mtimeOf(indexFile);
   } catch (e) {
     send("scan-error", "색인을 저장하지 못했습니다: " + ((e && e.message) || e));
@@ -210,7 +214,11 @@ function docSummary(e) {
     note: e.note || "",
     starred: !!e.starred,
     keywords: keywordsOf(e.rel),
-    versions: versionMap().get(e.rel) || null, // { size, latest, order }
+    // 버전 묶음: 묶음 목록(order)은 state.families 에 한 번만 담고, 문서에는 묶음 이름만 (문서마다 목록을 되풀이하면 수 MB 가 된다)
+    versions: (() => {
+      const v = versionMap().get(e.rel);
+      return v ? { key: v.key, size: v.size, latest: v.latest } : null;
+    })(),
     expectedDir,
     // 이 PC의 한글·워드로 바꿀 수 있는 형식 (윈도우에서만)
     convertTo: process.platform === "win32" ? targetsFor("." + p.ext) : [],
@@ -262,6 +270,11 @@ function state() {
     scanning,
     progress,
     docs: index ? Object.values(index.files).map(docSummary) : [],
+    families: (() => {
+      const out = {};
+      for (const v of versionMap().values()) out[v.key] = v.order;
+      return out;
+    })(),
     duplicates: currentDupGroups().map((rels) => ({ rels, keep: duplicates.suggestKeep(index, rels, inPlaceRel, versionRank) })),
   };
 }
@@ -371,12 +384,33 @@ function fullPath(rel) {
 
 // 검색용으로 본문을 소문자·띄어쓰기 없이 만들어 둔다. (파일이 바뀔 때만 다시 만든다)
 const textCache = new Map();
-function searchView(e) {
+// 띄어쓰기를 뺀 소문자 본문 (검색용). replace(/\s+/g) 로 만든 문자열은 includes 가 수십 배 느려서 split/join 으로 만든다.
+const squash = (t) => (t ? t.toLowerCase().split(/\s+/).join("") : "");
+function textOf(e) {
   let c = textCache.get(e.rel);
   if (!c || c.stamp !== e.indexedAt) {
-    c = { stamp: e.indexedAt, textNs: (e.text || "").toLowerCase().replace(/\s+/g, "") };
+    c = { stamp: e.indexedAt, textNs: squash(e.text) };
     textCache.set(e.rel, c);
   }
+  return c;
+}
+
+// 앱을 켠 뒤 쉬는 틈에 검색용 본문을 미리 만들어 둔다 (첫 검색이 느리지 않게)
+let warmTimer = null;
+function warmSearch() {
+  clearTimeout(warmTimer);
+  const rels = index ? Object.keys(index.files) : [];
+  let i = 0;
+  const step = () => {
+    const end = Math.min(rels.length, i + 40);
+    for (; i < end; i++) if (index && index.files[rels[i]]) textOf(index.files[rels[i]]);
+    if (i < rels.length) warmTimer = setTimeout(step, 0);
+  };
+  warmTimer = setTimeout(step, 1500);
+}
+
+function searchView(e) {
+  const c = textOf(e);
   const p = indexer.nameParts(e.rel);
   const eff = indexer.effective(e);
   const cat = CATEGORIES.find((x) => x.id === eff.category) || {};
@@ -403,9 +437,12 @@ function search(query) {
   const results = [];
   for (const e of Object.values(index.files)) {
     const score = searchLib.matchView(searchView(e), parsed);
-    if (score > 0) results.push({ rel: e.rel, score, snippet: searchLib.snippet(e.text || "", parsed.highlight) });
+    if (score > 0) results.push({ rel: e.rel, score });
   }
   for (const rel of textCache.keys()) if (!index.files[rel]) textCache.delete(rel);
+  // 본문 미리보기는 점수가 높은 앞쪽 결과만 만든다 (문서가 많을 때 느려지지 않게)
+  results.sort((a, b) => b.score - a.score);
+  for (const r of results.slice(0, 300)) r.snippet = searchLib.snippet(index.files[r.rel].text || "", parsed.highlight);
   return { highlight: parsed.highlight, results };
 }
 

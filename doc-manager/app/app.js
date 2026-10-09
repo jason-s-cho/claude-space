@@ -108,6 +108,8 @@ function applyState(next) {
   S = next;
   catById = Object.fromEntries(S.categories.map((c) => [c.id, c]));
   byRel = new Map(S.docs.map((d) => [d.rel, d]));
+  // 버전 묶음 목록은 따로 한 번만 온다 → 문서마다 이어 붙인다 (같은 배열을 함께 씀)
+  for (const d of S.docs) if (d.versions) d.versions.order = (S.families || {})[d.versions.key] || [d.rel];
   rebuildDupMap();
   if (selected && !byRel.has(selected)) selected = "";
   document.body.classList.toggle("mac", S.platform === "darwin");
@@ -356,7 +358,7 @@ function renderList() {
   $("activeFilters").innerHTML = f || '<span class="title">전체 문서</span>';
 
   // 버전 묶기: 같은 묶음은 (지금 정렬에서) 처음 나온 문서 하나만 보여 준다.
-  const rows = [];
+  const rows = []; // [{ d, child }] — 글(HTML)은 화면에 그릴 때 만든다
   rowOrder = [];
   const shownFamilies = new Set();
   let families = 0;
@@ -366,27 +368,34 @@ function renderList() {
       if (shownFamilies.has(v.latest)) continue;
       shownFamilies.add(v.latest);
       families++;
-      rows.push(rowHtml(d));
+      rows.push({ d });
       rowOrder.push(d.rel);
       if (expanded.has(v.latest)) {
         for (const rel of v.order) {
           if (rel === d.rel || !byRel.has(rel)) continue;
-          rows.push(rowHtml(byRel.get(rel), { child: true }));
+          rows.push({ d: byRel.get(rel), child: true });
           rowOrder.push(rel);
         }
       }
     } else {
-      rows.push(rowHtml(d));
+      rows.push({ d });
       rowOrder.push(d.rel);
     }
   }
   $("count").textContent = groupVersions && families ? `${visible.length}개 · 버전 묶음 ${families}` : `${visible.length}개`;
   $("count").title = groupVersions && families ? "같은 문서의 여러 버전은 하나로 묶여 있습니다. 숫자 단추를 누르면 펼칩니다." : "";
 
+  // 문서가 많아도 빠르도록 처음엔 앞쪽 몇백 줄만 그리고, 아래로 내리면 이어서 그린다.
   const list = $("list");
   const scroll = list.scrollTop;
-  list.innerHTML = rows.join("");
+  const key = JSON.stringify([filter.view, [...filter.tags], filter.kind, filter.project, query, $("sort").value, groupVersions]);
+  const keep = key === listKey ? listShown : 0; // 같은 목록을 다시 그릴 때는 보던 데까지
+  listKey = key;
+  listRows = rows;
+  listShown = Math.min(rows.length, Math.max(PAGE_ROWS, keep, rowOrder.indexOf(selected) + 30));
+  list.innerHTML = rows.slice(0, listShown).map(rowItemHtml).join("") + moreRowHtml();
   list.scrollTop = scroll;
+  watchMoreRow();
   const empty = $("empty");
   empty.hidden = visible.length > 0;
   list.hidden = !visible.length;
@@ -394,6 +403,39 @@ function renderList() {
     const msg = S.scanning && !S.docs.length ? "문서를 읽는 중입니다…" : S.docs.length ? "조건에 맞는 문서가 없습니다." : "아직 문서가 없습니다. 파일을 이 창에 끌어다 놓아 보세요.";
     empty.innerHTML = `${icon(S.docs.length ? "search" : "inbox")}<div>${msg}</div>`;
   }
+}
+
+const PAGE_ROWS = 200;
+let listRows = [], listShown = 0, listKey = "";
+const rowItemHtml = (r) => rowHtml(r.d, r.child ? { child: true } : {});
+const moreRowHtml = () =>
+  listShown < listRows.length ? `<li class="more-rows" id="moreRows"><button type="button" data-more>아래 문서 더 보기 (${(listRows.length - listShown).toLocaleString()}개 남음)</button></li>` : "";
+
+// 목록 아래쪽에 n 줄을 더 그린다
+function showMoreRows(n = PAGE_ROWS) {
+  if (listShown >= listRows.length) return;
+  const more = $("moreRows");
+  const next = Math.min(listRows.length, listShown + n);
+  const html = listRows.slice(listShown, next).map(rowItemHtml).join("");
+  listShown = next;
+  if (more) more.remove();
+  $("list").insertAdjacentHTML("beforeend", html + moreRowHtml());
+  watchMoreRow();
+}
+
+// '더 보기' 줄이 보이면 저절로 이어서 그린다
+let moreObserver = null;
+function watchMoreRow() {
+  if (!moreObserver) moreObserver = new IntersectionObserver((es) => es.some((e) => e.isIntersecting) && showMoreRows(), { root: $("list"), rootMargin: "600px" });
+  moreObserver.disconnect();
+  const more = $("moreRows");
+  if (more) moreObserver.observe(more);
+}
+
+// 아직 그리지 않은 아래쪽 문서를 고르면(키보드 이동 등) 거기까지 그린다
+function ensureRowShown(rel) {
+  const i = rowOrder.indexOf(rel);
+  if (i >= listShown) showMoreRows(i - listShown + 30);
 }
 
 async function renderDetail() {
@@ -530,6 +572,7 @@ function allTags() {
 async function patchDoc(rel, patch) {
   const updated = await api.updateDoc(rel, patch);
   if (!updated) return;
+  if (updated.versions) updated.versions.order = (S.families || {})[updated.versions.key] || [rel];
   const i = S.docs.findIndex((d) => d.rel === rel);
   if (i >= 0) S.docs[i] = updated;
   byRel.set(rel, updated);
@@ -553,6 +596,7 @@ async function removeTag(d, tag) {
 
 function select(rel, scroll) {
   selected = rel;
+  ensureRowShown(rel);
   for (const li of $("list").querySelectorAll(".row")) {
     const on = li.dataset.rel === rel;
     li.classList.toggle("sel", on);
@@ -1340,6 +1384,7 @@ $("activeFilters").addEventListener("click", (e) => {
 });
 
 $("list").addEventListener("click", (e) => {
+  if (e.target.closest("[data-more]")) return showMoreRows();
   const vb = e.target.closest("[data-family]");
   if (vb) {
     const k = vb.dataset.family;
