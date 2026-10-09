@@ -51,6 +51,7 @@ contextBridge.exposeInMainWorld("docs", {
   claudeStatus: () => ipcRenderer.invoke("claude-status"),
   claudeConnect: () => ipcRenderer.invoke("claude-connect"),
   claudeDisconnect: () => ipcRenderer.invoke("claude-disconnect"),
+  claudeTest: () => ipcRenderer.invoke("claude-test"),
   aiLog: () => ipcRenderer.invoke("ai-log"),
   onState: on("state"),
   onProgress: on("progress"),

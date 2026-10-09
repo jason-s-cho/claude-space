@@ -800,6 +800,38 @@ $("claudeDisconnectBtn").onclick = async () => {
   else toast("Claude 연결을 해제했습니다. Claude 앱을 다시 켜면 적용됩니다.");
   renderClaudeTab();
 };
+$("claudeTestBtn").onclick = async () => {
+  const btn = $("claudeTestBtn");
+  const box = $("claudeTestResult");
+  btn.disabled = true;
+  btn.textContent = "테스트 중…";
+  box.hidden = false;
+  box.innerHTML = '<p class="hint">커넥터를 Claude 와 같은 방법으로 실행해 보는 중…</p>';
+  try {
+    const { test, logs, targets } = await api.claudeTest();
+    const rows = [];
+    rows.push(
+      test.ok
+        ? `<p><span class="state-on">✔ 커넥터 정상</span> · 도구 ${test.tools.length}개, 보이는 문서 ${test.documents ?? "?"}개 (${(test.ms / 1000).toFixed(1)}초)</p>`
+        : `<p><span class="state-warn">✖ 커넥터를 실행하지 못했습니다</span>: ${esc(test.error)}</p>${test.stderr ? `<pre>${esc(test.stderr)}</pre>` : ""}`
+    );
+    targets.forEach((t, i) => {
+      const lg = logs[i] || {};
+      rows.push(`<p class="hint"><b>Claude 설정</b> ${t.connected ? "✔ 들어 있음" : "✖ 없음"} — <code>${esc(t.path)}</code></p>`);
+      rows.push(
+        lg.exists
+          ? `<p class="hint"><b>Claude 가 커넥터를 실행한 기록</b> (마지막 ${esc(new Date(lg.modified).toLocaleString())}) — <code>${esc(lg.file)}</code></p><pre>${esc(lg.tail)}</pre>`
+          : `<p class="hint"><b>Claude 가 커넥터를 실행한 기록 없음</b> — Claude 앱이 이 설정을 아직 읽지 않았습니다. Claude 를 트레이 아이콘에서 완전히 종료한 뒤 다시 켜 보세요. 그래도 없으면 Claude 가 다른 위치의 설정을 쓰는 설치판일 수 있습니다.</p>`
+      );
+    });
+    box.innerHTML = rows.join("");
+  } catch (e) {
+    box.innerHTML = `<p class="state-warn">${esc(String(e))}</p>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "연결 테스트";
+  }
+};
 $("copyCmdBtn").onclick = async () => {
   try {
     await navigator.clipboard.writeText($("claudeCodeCmd").textContent);

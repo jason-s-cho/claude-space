@@ -56,3 +56,31 @@ test("설정 파일 위치 (윈도우 스토어판 포함)와 Claude Code 명령
   assert.match(cmd, /^claude mcp add doc-manager --scope user -e ELECTRON_RUN_AS_NODE="1" -e DOCMANAGER_USERDATA=".+" -- ".+문서 보관함\.exe" ".+server\.js"$/);
   fs.rmSync(home, { recursive: true, force: true });
 });
+
+test("연결 테스트: 커넥터를 실행해 도구 목록과 보관함 요약을 받는다", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "docmgr-st-root-"));
+  const ud = fs.mkdtempSync(path.join(os.tmpdir(), "docmgr-st-ud-"));
+  fs.writeFileSync(path.join(ud, "settings.json"), JSON.stringify({ root }));
+  const ok = await cc.selfTest({ command: process.execPath, args: [path.join(__dirname, "..", "mcp", "server.js")], env: { DOCMANAGER_USERDATA: ud } });
+  assert.ok(ok.ok, ok.error);
+  assert.ok(ok.tools.includes("search_documents"));
+  assert.strictEqual(ok.documents, 0);
+  // 실행 파일이 없으면 오류를 알려 준다 (멈추지 않고)
+  const bad = await cc.selfTest({ command: path.join(ud, "없는.exe"), args: [] }, { timeoutMs: 5000 });
+  assert.strictEqual(bad.ok, false);
+  assert.ok(bad.error);
+  fs.rmSync(root, { recursive: true, force: true });
+  fs.rmSync(ud, { recursive: true, force: true });
+});
+
+test("Claude 가 남긴 커넥터 기록의 끝부분을 읽는다", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "docmgr-cl-"));
+  const cfg = path.join(dir, "claude_desktop_config.json");
+  assert.strictEqual(cc.claudeLogs([cfg])[0].exists, false);
+  fs.mkdirSync(path.join(dir, "logs"));
+  fs.writeFileSync(path.join(dir, "logs", "mcp-server-doc-manager.log"), Array.from({ length: 30 }, (_, i) => `줄 ${i}`).join("\r\n"));
+  const [log] = cc.claudeLogs([cfg], 3);
+  assert.ok(log.exists);
+  assert.strictEqual(log.tail, "줄 27\n줄 28\n줄 29");
+  fs.rmSync(dir, { recursive: true, force: true });
+});

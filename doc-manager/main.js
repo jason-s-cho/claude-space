@@ -470,6 +470,11 @@ function registerIpc() {
       return { error: String((e && e.message) || e) };
     }
   });
+  ipcMain.handle("claude-test", async () => {
+    const entry = mcpEntry();
+    const test = await claudeConfig.selfTest(entry);
+    return { test, logs: claudeConfig.claudeLogs(), targets: claudeConfig.status(entry) };
+  });
   ipcMain.handle("ai-log", () => (settings.root ? readLog(settings.root, 40) : []));
 
   ipcMain.handle("move-to-category", async (_e, rel) => {

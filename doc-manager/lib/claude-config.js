@@ -98,4 +98,61 @@ function claudeCodeCommand(entry) {
   return `claude mcp add ${SERVER_KEY} --scope user ${envs} -- ${q(entry.command)} ${entry.args.map(q).join(" ")}`;
 }
 
-module.exports = { SERVER_KEY, configPaths, status, connect, disconnect, claudeCodeCommand, readConfig };
+// 연결 테스트: Claude 가 하는 것과 똑같이 커넥터를 실행해서 도구 목록과 보관함 요약을 받아 본다.
+// 결과: { ok, tools, documents, error, stderr, ms }
+async function selfTest(entry, { timeoutMs = 20000 } = {}) {
+  const { Client } = require("@modelcontextprotocol/sdk/client/index.js");
+  const { StdioClientTransport } = require("@modelcontextprotocol/sdk/client/stdio.js");
+  const started = Date.now();
+  const transport = new StdioClientTransport({ command: entry.command, args: entry.args, env: { ...process.env, ...(entry.env || {}) }, stderr: "pipe" });
+  let stderr = "";
+  if (transport.stderr) transport.stderr.on("data", (d) => (stderr = (stderr + d).slice(-2000)));
+  const client = new Client({ name: "doc-manager-self-test", version: "1.0.0" });
+  let timer;
+  const timeout = new Promise((_, rej) => (timer = setTimeout(() => rej(new Error(`${timeoutMs / 1000}초 안에 응답이 없습니다`)), timeoutMs)));
+  try {
+    const run = (async () => {
+      await client.connect(transport);
+      const { tools } = await client.listTools();
+      const r = await client.callTool({ name: "library_overview", arguments: {} });
+      const text = (r.content && r.content[0] && r.content[0].text) || "";
+      if (r.isError) throw new Error(text);
+      let documents;
+      try {
+        documents = JSON.parse(text).documents;
+      } catch {}
+      return { tools: tools.map((t) => t.name), documents };
+    })();
+    const res = await Promise.race([run, timeout]);
+    return { ok: true, ...res, ms: Date.now() - started };
+  } catch (e) {
+    return { ok: false, error: String((e && e.message) || e), stderr: stderr.trim(), ms: Date.now() - started };
+  } finally {
+    clearTimeout(timer);
+    try {
+      await client.close();
+    } catch {}
+  }
+}
+
+// Claude 데스크톱이 이 커넥터를 실행하며 남긴 기록(logs/mcp-server-doc-manager.log)의 끝부분.
+// 파일이 없으면 Claude 가 이 설정 파일을 읽지 않았거나(다른 설치 위치·모드) 아직 다시 켜지 않은 것이다.
+function claudeLogs(paths = configPaths(), lines = 12) {
+  return paths.map((p) => {
+    const file = path.join(path.dirname(p), "logs", `mcp-server-${SERVER_KEY}.log`);
+    try {
+      const st = fs.statSync(file);
+      const fd = fs.openSync(file, "r");
+      const size = Math.min(st.size, 64 * 1024); // 끝부분만
+      const buf = Buffer.alloc(size);
+      fs.readSync(fd, buf, 0, size, st.size - size);
+      fs.closeSync(fd);
+      const tail = buf.toString("utf8").split(/\r?\n/).filter(Boolean).slice(-lines).join("\n");
+      return { file, exists: true, modified: st.mtime.toISOString(), tail };
+    } catch {
+      return { file, exists: false };
+    }
+  });
+}
+
+module.exports = { SERVER_KEY, configPaths, status, connect, disconnect, claudeCodeCommand, readConfig, selfTest, claudeLogs };
