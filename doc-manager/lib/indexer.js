@@ -4,14 +4,14 @@
 const fs = require("fs");
 const path = require("path");
 const { extract, fileKind } = require("./extract");
-const { classify } = require("./classify");
+const { classify, RENAMED, CLASSIFIER_VERSION } = require("./classify");
 const { countTerms } = require("./keywords");
 
 const INDEX_VERSION = 1;
 const SKIP_DIRS = new Set(["node_modules", ".git", "$RECYCLE.BIN", "System Volume Information", ".Trash"]);
 
 function emptyIndex(root) {
-  return { version: INDEX_VERSION, root, files: {} };
+  return { version: INDEX_VERSION, root, files: {}, classifierVersion: CLASSIFIER_VERSION };
 }
 
 function loadIndex(file, root) {
@@ -19,7 +19,11 @@ function loadIndex(file, root) {
     const data = JSON.parse(fs.readFileSync(file, "utf8"));
     if (data && data.version === INDEX_VERSION && data.root === root && data.files) {
       // 키워드 기능이 생기기 전에 만든 색인: 파일을 다시 읽지 않고 저장된 본문으로 센다.
-      for (const e of Object.values(data.files)) if (!e.terms) e.terms = countTerms([e.title, e.text].join("\n"));
+      for (const e of Object.values(data.files)) {
+        if (!e.terms) e.terms = countTerms([e.title, e.text].join("\n"));
+        // 이름이 바뀐 분류 (예: 수요조사서 → 공고·수요조사)
+        if (e.userCategory && RENAMED[e.userCategory]) e.userCategory = RENAMED[e.userCategory];
+      }
       return data;
     }
   } catch {}
@@ -173,6 +177,14 @@ async function scan(index, options, onProgress) {
 // 분류 규칙(고객사 목록, 태그 규칙)이 바뀌었을 때 파일을 다시 읽지 않고 분류만 다시 한다.
 function reclassifyAll(index, options) {
   for (const e of Object.values(index.files)) reclassify(e, options);
+  index.classifierVersion = CLASSIFIER_VERSION;
 }
 
-module.exports = { loadIndex, saveIndex, emptyIndex, scan, reclassifyAll, effective, nameParts, buildEntry, addFile, walk, isTempName, USER_FIELDS };
+// 분류 규칙이 바뀐 새 버전의 앱으로 처음 열었으면 모든 문서를 다시 분류한다. (파일은 다시 읽지 않음)
+function upgradeIfNeeded(index, options) {
+  if (index.classifierVersion === CLASSIFIER_VERSION) return false;
+  reclassifyAll(index, options);
+  return true;
+}
+
+module.exports = { upgradeIfNeeded, loadIndex, saveIndex, emptyIndex, scan, reclassifyAll, effective, nameParts, buildEntry, addFile, walk, isTempName, USER_FIELDS };

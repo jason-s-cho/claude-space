@@ -13,25 +13,41 @@ function safeName(s) {
   return s.replace(/[\\/:*?"<>|]/g, " ").replace(/\s+/g, " ").trim().replace(/[. ]+$/, "") || "기타";
 }
 
-// 분류에 맞는 하위 폴더. 예: 국가과제/과제보고서, 대외/고객사·협력사 요청자료/현대모비스
-function folderFor(category, tags, partners) {
+const names = (list) => new Set((list || []).map((p) => (typeof p === "string" ? p : p && p.name)).filter(Boolean));
+const GOV = "국가과제·지원사업";
+
+// 분류에 맞는 하위 폴더.
+//   국가과제·지원사업/2024 K-방산 제품고도화/5 보고서   (등록한 과제면 과제 폴더 아래)
+//   국가과제·지원사업/5 보고서                          (과제를 모를 때)
+//   고객사·협력사/현대모비스
+//   기술·시장 분석
+function folderFor(category, tags, partners, projects) {
   const c = CATEGORIES.find((x) => x.id === category) || CATEGORIES.find((x) => x.id === "other");
-  const parts = c.group ? [c.group, c.label] : [c.label];
-  if (category === "request") {
-    const names = new Set((partners || []).map((p) => (typeof p === "string" ? p : p.name)));
-    const partner = tags.find((t) => names.has(t));
-    if (partner) parts.push(partner);
+  tags = tags || [];
+  const parts = [];
+  if (c.group === GOV) {
+    parts.push(GOV);
+    const project = tags.find((t) => names(projects).has(t));
+    if (project) parts.push(project);
+    parts.push(c.folder);
+  } else {
+    if (c.group) parts.push(c.group);
+    parts.push(c.folder);
+    if (category === "request") {
+      const partner = tags.find((t) => names(partners).has(t));
+      if (partner) parts.push(partner);
+    }
   }
   return parts.map(safeName).join("/");
 }
 
 // 문서 폴더 안에 분류별 폴더를 만들어 둔다. 이미 있으면 그대로 두고, 파일은 옮기지 않는다.
 // 결과: 새로 만든 폴더 수
-function ensureCategoryFolders(root, partners) {
+function ensureCategoryFolders(root, partners, projects) {
   const dirs = CATEGORIES.map((c) => folderFor(c.id, [], []));
-  for (const p of partners || []) {
-    const name = typeof p === "string" ? p : p && p.name;
-    if (name && name.trim()) dirs.push(folderFor("request", [name.trim()], [name.trim()]));
+  for (const name of names(partners)) dirs.push(folderFor("request", [name], [name]));
+  for (const name of names(projects)) {
+    for (const c of CATEGORIES.filter((x) => x.group === GOV)) dirs.push(folderFor(c.id, [name], [], [name]));
   }
   let made = 0;
   for (const d of dirs) {
@@ -45,9 +61,37 @@ function ensureCategoryFolders(root, partners) {
   return made;
 }
 
+// 예전 버전(0.1)이 만들어 둔 분류 폴더. 비어 있을 때만 지운다. (파일이 하나라도 있으면 그대로 둔다)
+const LEGACY_FOLDERS = [
+  "국가과제/수요조사서", "국가과제/과제계획서", "국가과제/과제보고서", "국가과제/기타 과제자료", "국가과제",
+  "회사소개/IR 자료", "홍보/카탈로그", "대외/고객사·협력사 요청자료", "대외",
+];
+
+function removeLegacyFolders(root) {
+  let removed = 0;
+  const tryRemove = (full) => {
+    try {
+      fs.rmdirSync(full); // 비어 있지 않으면 실패한다
+      removed++;
+    } catch {}
+  };
+  for (const d of LEGACY_FOLDERS) {
+    const full = path.join(root, ...d.split("/"));
+    if (!fs.existsSync(full)) continue;
+    // 고객사 하위 폴더(대외/고객사·협력사 요청자료/회사)도 비어 있으면 지운다
+    if (d === "대외/고객사·협력사 요청자료") {
+      try {
+        for (const e of fs.readdirSync(full, { withFileTypes: true })) if (e.isDirectory()) tryRemove(path.join(full, e.name));
+      } catch {}
+    }
+    tryRemove(full);
+  }
+  return removed;
+}
+
 // 이 문서가 들어가야 할 분류 폴더 (문서 폴더 기준 상대 경로)
-function expectedFolder(category, tags, partners) {
-  return folderFor(category, tags || [], partners);
+function expectedFolder(category, tags, partners, projects) {
+  return folderFor(category, tags || [], partners, projects);
 }
 
 /**
@@ -147,7 +191,7 @@ async function importFiles(index, paths, opts = {}) {
         // 원래 있던 폴더 이름도 단서로 쓴다. (예: …/고객사/현대모비스/단가표.xlsx)
         const from = path.dirname(src).split(path.sep).filter(Boolean).slice(-2).join("/");
         const c = classify({ name: path.basename(src, path.extname(src)), dir: from, text: x.text, title: x.title }, opts.options);
-        dir = path.join(root, ...folderFor(c.category, c.tags, opts.options && opts.options.partners).split("/"));
+        dir = path.join(root, ...folderFor(c.category, c.tags, opts.options && opts.options.partners, opts.options && opts.options.projects).split("/"));
       }
       await fs.promises.mkdir(dir, { recursive: true });
       const { dest, duplicate } = await destinationFor(src, dir);
@@ -170,4 +214,4 @@ async function importFiles(index, paths, opts = {}) {
   return { imported, existing, skipped };
 }
 
-module.exports = { importFiles, folderFor, safeName, ensureCategoryFolders, expectedFolder, moveToFolder };
+module.exports = { removeLegacyFolders, importFiles, folderFor, safeName, ensureCategoryFolders, expectedFolder, moveToFolder };

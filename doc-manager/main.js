@@ -1,11 +1,12 @@
-const { app, BrowserWindow, Menu, shell, ipcMain, dialog } = require("electron");
+const { app, BrowserWindow, Menu, shell, ipcMain, dialog, nativeTheme } = require("electron");
 const fs = require("fs");
 const path = require("path");
 const indexer = require("./lib/indexer");
-const { CATEGORIES, KEYWORDS, KEYWORD_GROUPS } = require("./lib/classify");
+const { CATEGORIES, KEYWORDS, KEYWORD_GROUPS, TECH_TAGS, migrateOverrides } = require("./lib/classify");
 const { docFrequency, topKeywords } = require("./lib/keywords");
 const searchLib = require("./lib/search");
-const { importFiles, ensureCategoryFolders, expectedFolder, moveToFolder } = require("./lib/importer");
+const { groupVersions } = require("./lib/versions");
+const { importFiles, ensureCategoryFolders, expectedFolder, moveToFolder, removeLegacyFolders } = require("./lib/importer");
 const { SUPPORTED } = require("./lib/extract");
 
 if (!app.requestSingleInstanceLock()) {
@@ -24,11 +25,13 @@ let lastFocusScan = 0;
 
 const userFile = (name) => path.join(app.getPath("userData"), name);
 
-const DEFAULT_SETTINGS = { root: "", partners: [], tagRules: [], keywordOverrides: {}, savedSearches: [], recentSearches: [], importLayout: "category" };
+const DEFAULT_SETTINGS = { root: "", partners: [], tagRules: [], keywordOverrides: {}, savedSearches: [], recentSearches: [], importLayout: "category", projects: [], techTags: true, theme: "system" };
 
 function loadSettings() {
   try {
-    return { ...DEFAULT_SETTINGS, ...JSON.parse(fs.readFileSync(userFile("settings.json"), "utf8")) };
+    const s = { ...DEFAULT_SETTINGS, ...JSON.parse(fs.readFileSync(userFile("settings.json"), "utf8")) };
+    s.keywordOverrides = migrateOverrides(s.keywordOverrides);
+    return s;
   } catch {
     return { ...DEFAULT_SETTINGS };
   }
@@ -40,7 +43,13 @@ function saveSettings() {
 }
 
 function classifyOptions() {
-  return { partners: settings.partners, tagRules: settings.tagRules, keywordOverrides: settings.keywordOverrides };
+  return {
+    partners: settings.partners,
+    projects: settings.projects,
+    tagRules: settings.tagRules,
+    keywordOverrides: settings.keywordOverrides,
+    techTags: settings.techTags !== false,
+  };
 }
 
 function persistIndex() {
@@ -59,6 +68,16 @@ function keywordMap() {
   return keywordCache;
 }
 const keywordsOf = (rel) => keywordMap().get(rel) || [];
+
+// 같은 문서의 여러 버전 묶음. 키워드와 같이 색인이 바뀌면 다시 만든다.
+let versionCache = null;
+function versionMap() {
+  if (!versionCache) {
+    const docs = index ? Object.values(index.files).map((e) => ({ rel: e.rel, base: e.rel.split("/").pop(), mtimeMs: e.mtimeMs })) : [];
+    versionCache = groupVersions(docs);
+  }
+  return versionCache;
+}
 
 // 화면에 보내는 문서 정보. 본문 전체는 보내지 않고 앞부분만 보낸다.
 function docSummary(e) {
@@ -90,8 +109,9 @@ function docSummary(e) {
     note: e.note || "",
     starred: !!e.starred,
     keywords: keywordsOf(e.rel),
+    versions: versionMap().get(e.rel) || null, // { size, latest, order }
     // 분류에 맞는 폴더. 지금 폴더와 다르면 화면에서 '옮기기' 버튼을 보여 준다.
-    expectedDir: settings.importLayout === "root" ? "" : expectedFolder(eff.category, eff.tags, settings.partners),
+    expectedDir: settings.importLayout === "root" ? "" : expectedFolder(eff.category, eff.tags, settings.partners, settings.projects),
   };
 }
 
@@ -99,9 +119,12 @@ function state() {
   return {
     root: settings.root,
     settings,
+    appVersion: app.getVersion(),
+    platform: process.platform,
     categories: CATEGORIES,
     keywordGroups: KEYWORD_GROUPS,
     defaultKeywords: KEYWORDS,
+    techTags: TECH_TAGS.map(([tag, words]) => ({ tag, words })),
     scanning,
     progress,
     docs: index ? Object.values(index.files).map(docSummary) : [],
@@ -135,7 +158,7 @@ async function runScan() {
       }
     });
     persistIndex();
-    if (r.added || r.updated || r.removed) keywordCache = null;
+    if (r.added || r.updated || r.removed) keywordCache = versionCache = null;
     send("scan-done", { added: r.added, updated: r.updated, removed: r.removed });
   } catch (e) {
     send("scan-error", String((e && e.message) || e));
@@ -171,8 +194,9 @@ function startWatching() {
 
 // '분류별 하위 폴더' 방식이면 문서 폴더 안에 분류 폴더를 만들어 둔다.
 function prepareFolders() {
+  if (settings.root && fs.existsSync(settings.root)) removeLegacyFolders(settings.root);
   if (settings.root && settings.importLayout !== "root" && fs.existsSync(settings.root)) {
-    return ensureCategoryFolders(settings.root, settings.partners);
+    return ensureCategoryFolders(settings.root, settings.partners, settings.projects);
   }
   return 0;
 }
@@ -182,7 +206,8 @@ function openRoot(root) {
   saveSettings();
   prepareFolders();
   index = root ? indexer.loadIndex(userFile("index.json"), root) : null;
-  keywordCache = null;
+  if (index && indexer.upgradeIfNeeded(index, classifyOptions())) persistIndex();
+  keywordCache = versionCache = null;
   startWatching();
   send("state", state());
   runScan();
@@ -259,7 +284,7 @@ function registerIpc() {
     if (!index || !index.root) return { imported: [], existing: [], skipped: [], error: "먼저 문서 폴더를 골라 주세요." };
     const r = await importFiles(index, paths, { layout: settings.importLayout, options: classifyOptions() });
     persistIndex();
-    keywordCache = null;
+    keywordCache = versionCache = null;
     send("state", state());
     return r;
   }
@@ -281,9 +306,9 @@ function registerIpc() {
     if (!e) return { error: "알 수 없는 파일" };
     const eff = indexer.effective(e);
     try {
-      const newRel = await moveToFolder(index, rel, expectedFolder(eff.category, eff.tags, settings.partners));
+      const newRel = await moveToFolder(index, rel, expectedFolder(eff.category, eff.tags, settings.partners, settings.projects));
       persistIndex();
-      keywordCache = null;
+      keywordCache = versionCache = null;
       send("state", state());
       return { rel: newRel };
     } catch (err) {
@@ -336,6 +361,12 @@ function registerIpc() {
   ipcMain.handle("save-settings", (_e, next) => {
     if (Array.isArray(next.partners)) settings.partners = next.partners;
     if (Array.isArray(next.tagRules)) settings.tagRules = next.tagRules;
+    if (Array.isArray(next.projects)) settings.projects = next.projects;
+    if (typeof next.techTags === "boolean") settings.techTags = next.techTags;
+    if (["system", "light", "dark"].includes(next.theme)) {
+      settings.theme = next.theme;
+      applyTheme();
+    }
     if (next.keywordOverrides && typeof next.keywordOverrides === "object") settings.keywordOverrides = next.keywordOverrides;
     if (next.importLayout === "category" || next.importLayout === "root") settings.importLayout = next.importLayout;
     saveSettings();
@@ -374,15 +405,31 @@ function isWebUrl(url) {
   return /^https?:\/\//i.test(url);
 }
 
+// 제목 표시줄을 없애고 화면이 창 맨 위까지 오게 한다. 창 단추(최소화·닫기)는 운영체제 것을 위에 겹쳐 쓴다.
+const TITLEBAR_HEIGHT = 52;
+function overlayColors() {
+  return nativeTheme.shouldUseDarkColors
+    ? { color: "#00000000", symbolColor: "#c9ccd6", height: TITLEBAR_HEIGHT }
+    : { color: "#00000000", symbolColor: "#3b3f4a", height: TITLEBAR_HEIGHT };
+}
+
+function applyTheme() {
+  nativeTheme.themeSource = ["light", "dark"].includes(settings.theme) ? settings.theme : "system";
+}
+
 function createWindow() {
+  const mac = process.platform === "darwin";
   win = new BrowserWindow({
-    width: 1280,
-    height: 820,
-    minWidth: 760,
-    minHeight: 560,
+    width: 1320,
+    height: 840,
+    minWidth: 860,
+    minHeight: 580,
     title: "문서 보관함",
     icon: path.join(__dirname, "assets", "icon.png"),
     autoHideMenuBar: true,
+    titleBarStyle: "hidden",
+    ...(mac ? { trafficLightPosition: { x: 18, y: 18 } } : { titleBarOverlay: overlayColors() }),
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#111216" : "#f7f7f9",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       contextIsolation: true,
@@ -428,7 +475,18 @@ app.whenReady().then(() => {
   if (process.platform === "win32") app.setAppUserModelId("com.jasonscho.docmanager");
   if (process.platform !== "darwin") Menu.setApplicationMenu(null);
   settings = loadSettings();
-  if (settings.root) index = indexer.loadIndex(userFile("index.json"), settings.root);
+  applyTheme();
+  nativeTheme.on("updated", () => {
+    if (win && process.platform !== "darwin") {
+      try {
+        win.setTitleBarOverlay(overlayColors());
+      } catch {}
+    }
+  });
+  if (settings.root) {
+    index = indexer.loadIndex(userFile("index.json"), settings.root);
+    if (indexer.upgradeIfNeeded(index, classifyOptions())) persistIndex();
+  }
   registerIpc();
   createWindow();
   if (settings.root) {

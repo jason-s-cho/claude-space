@@ -1,6 +1,6 @@
 {
   "name": "doc-manager",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "문서 보관함 — 내가 만든 문서를 자동 분류·태그하는 데스크톱 앱 (Electron)",
   "main": "main.js",
   "homepage": "https://github.com/jason-s-cho/claude-space",
@@ -52,7 +52,12 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "문서 보관함",
+      "uninstallDisplayName": "문서 보관함"
     },
     "mac": {
       "category": "public.app-category.productivity",
