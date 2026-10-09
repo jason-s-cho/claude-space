@@ -54,3 +54,10 @@ test("단서가 없으면 미분류", () => {
   assert.strictEqual(r.category, "other");
   assert.deepStrictEqual(r.reasons, []);
 });
+
+test("분류 키워드를 더하거나 뺄 수 있다", () => {
+  const doc = { name: "2025 기술로드맵", dir: "" };
+  assert.strictEqual(cat(doc), "other");
+  assert.strictEqual(cat(doc, { keywordOverrides: { gov_plan: { add: [["기술로드맵", 6]] } } }), "gov_plan");
+  assert.notStrictEqual(cat({ name: "회사소개서" }, { keywordOverrides: { company: { remove: ["회사소개서", "회사소개", "회사 소개"] } } }), "company");
+});

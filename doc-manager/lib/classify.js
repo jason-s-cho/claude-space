@@ -75,6 +75,40 @@ for (const key of Object.keys(KEYWORDS)) {
   KEYWORDS[key] = [...best.values()];
 }
 
+// 화면의 '분류 키워드' 설정에서 쓰는 이름. gov 는 국가과제 세부 종류 모두에 더해지는 공통 단서다.
+const KEYWORD_GROUPS = [
+  { key: "gov", label: "국가과제 공통 단서" },
+  { key: "gov_demand", label: "국가과제 · 수요조사서" },
+  { key: "gov_plan", label: "국가과제 · 과제계획서" },
+  { key: "gov_report", label: "국가과제 · 과제보고서" },
+  { key: "ir", label: "회사소개 · IR 자료" },
+  { key: "company", label: "회사소개 · 회사소개서" },
+  { key: "website", label: "홍보 · 홈페이지" },
+  { key: "catalog", label: "홍보 · 카탈로그" },
+  { key: "request", label: "대외 · 고객사·협력사 요청자료" },
+];
+
+const normKw = (kw) => kw.replace(/\s+/g, "").toLowerCase();
+
+// 기본 키워드에 내가 더하거나 뺀 키워드를 반영한다.
+// overrides: { [그룹]: { add: [[키워드, 가중치]], remove: [키워드] } }
+let mergedCache = { key: null, value: KEYWORDS };
+function mergedKeywords(overrides) {
+  const key = JSON.stringify(overrides || {});
+  if (mergedCache.key === key) return mergedCache.value;
+  const out = {};
+  for (const g of Object.keys(KEYWORDS)) {
+    const o = (overrides && overrides[g]) || {};
+    const removed = new Set((o.remove || []).map(normKw));
+    const map = new Map();
+    for (const [kw, w] of KEYWORDS[g]) if (!removed.has(normKw(kw))) map.set(normKw(kw), [kw, w]);
+    for (const [kw, w] of o.add || []) if (kw && kw.trim() && w > 0) map.set(normKw(kw), [kw.trim(), Number(w)]);
+    out[g] = [...map.values()];
+  }
+  mergedCache = { key, value: out };
+  return out;
+}
+
 const AGENCIES = [
   ["산업통상자원부", ["산업통상자원부", "산업부", "MOTIE"]],
   ["중소벤처기업부", ["중소벤처기업부", "중기부", "MSS"]],
@@ -180,14 +214,15 @@ function normalizePartners(partners) {
 const MIN_SCORE = 3;
 
 // doc: { name, dir, text, title }
-// options: { partners: [이름 또는 {name, aliases}], tagRules: [{ tag, keywords: [] }] }
+// options: { partners: [이름 또는 {name, aliases}], tagRules: [{ tag, keywords: [] }], keywordOverrides }
 // 결과: { category, score, reasons: [문장], tags: [] }
 function classify(doc, options = {}) {
   const sec = sections(doc);
   const scores = {};
   const hits = {};
-  for (const key of Object.keys(KEYWORDS)) {
-    const r = scoreList(sec, KEYWORDS[key]);
+  const lists = mergedKeywords(options.keywordOverrides);
+  for (const key of Object.keys(lists)) {
+    const r = scoreList(sec, lists[key]);
     scores[key] = r.score;
     hits[key] = r.hits;
   }
@@ -298,4 +333,4 @@ function isEnglish(text) {
   return latin > 200 && hangul < latin * 0.05;
 }
 
-module.exports = { classify, CATEGORIES, KEYWORDS };
+module.exports = { classify, CATEGORIES, KEYWORDS, KEYWORD_GROUPS, mergedKeywords };

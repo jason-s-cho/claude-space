@@ -2,7 +2,9 @@ const { app, BrowserWindow, Menu, shell, ipcMain, dialog } = require("electron")
 const fs = require("fs");
 const path = require("path");
 const indexer = require("./lib/indexer");
-const { CATEGORIES } = require("./lib/classify");
+const { CATEGORIES, KEYWORDS, KEYWORD_GROUPS } = require("./lib/classify");
+const { docFrequency, topKeywords } = require("./lib/keywords");
+const searchLib = require("./lib/search");
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -20,7 +22,7 @@ let lastFocusScan = 0;
 
 const userFile = (name) => path.join(app.getPath("userData"), name);
 
-const DEFAULT_SETTINGS = { root: "", partners: [], tagRules: [] };
+const DEFAULT_SETTINGS = { root: "", partners: [], tagRules: [], keywordOverrides: {}, savedSearches: [], recentSearches: [] };
 
 function loadSettings() {
   try {
@@ -36,12 +38,25 @@ function saveSettings() {
 }
 
 function classifyOptions() {
-  return { partners: settings.partners, tagRules: settings.tagRules };
+  return { partners: settings.partners, tagRules: settings.tagRules, keywordOverrides: settings.keywordOverrides };
 }
 
 function persistIndex() {
   if (index && index.root) indexer.saveIndex(userFile("index.json"), index);
 }
+
+// 문서마다 핵심 키워드. 전체 문서와 비교해야 하므로 색인이 바뀔 때마다 다시 계산한다.
+let keywordCache = null; // Map(rel → 키워드), 색인이 바뀌면 null 로 비운다.
+function keywordMap() {
+  if (!keywordCache) {
+    const entries = index ? Object.values(index.files) : [];
+    const df = docFrequency(entries.map((e) => e.terms));
+    keywordCache = new Map();
+    for (const e of entries) keywordCache.set(e.rel, topKeywords(e.terms, df, entries.length));
+  }
+  return keywordCache;
+}
+const keywordsOf = (rel) => keywordMap().get(rel) || [];
 
 // 화면에 보내는 문서 정보. 본문 전체는 보내지 않고 앞부분만 보낸다.
 function docSummary(e) {
@@ -72,6 +87,7 @@ function docSummary(e) {
     hiddenTags: e.hiddenTags || [],
     note: e.note || "",
     starred: !!e.starred,
+    keywords: keywordsOf(e.rel),
   };
 }
 
@@ -80,6 +96,8 @@ function state() {
     root: settings.root,
     settings,
     categories: CATEGORIES,
+    keywordGroups: KEYWORD_GROUPS,
+    defaultKeywords: KEYWORDS,
     scanning,
     progress,
     docs: index ? Object.values(index.files).map(docSummary) : [],
@@ -113,6 +131,7 @@ async function runScan() {
       }
     });
     persistIndex();
+    if (r.added || r.updated || r.removed) keywordCache = null;
     send("scan-done", { added: r.added, updated: r.updated, removed: r.removed });
   } catch (e) {
     send("scan-error", String((e && e.message) || e));
@@ -150,6 +169,7 @@ function openRoot(root) {
   settings.root = root;
   saveSettings();
   index = root ? indexer.loadIndex(userFile("index.json"), root) : null;
+  keywordCache = null;
   startWatching();
   send("state", state());
   runScan();
@@ -162,37 +182,44 @@ function fullPath(rel) {
   return full;
 }
 
-// 검색어 주변 글자를 잘라서 보여 준다.
-function snippetAround(text, terms) {
-  const lower = text.toLowerCase();
-  let at = -1;
-  for (const t of terms) {
-    at = lower.indexOf(t);
-    if (at >= 0) break;
+// 검색용으로 본문을 소문자·띄어쓰기 없이 만들어 둔다. (파일이 바뀔 때만 다시 만든다)
+const textCache = new Map();
+function searchView(e) {
+  let c = textCache.get(e.rel);
+  if (!c || c.stamp !== e.indexedAt) {
+    c = { stamp: e.indexedAt, textNs: (e.text || "").toLowerCase().replace(/\s+/g, "") };
+    textCache.set(e.rel, c);
   }
-  if (at < 0) return "";
-  const start = Math.max(0, at - 50);
-  return (start > 0 ? "…" : "") + text.slice(start, at + 110).replace(/\s+/g, " ") + "…";
+  const p = indexer.nameParts(e.rel);
+  const eff = indexer.effective(e);
+  const cat = CATEGORIES.find((x) => x.id === eff.category) || {};
+  const years = new Set(eff.tags.filter((t) => /^20\d{2}$/.test(t)));
+  years.add(String(new Date(e.mtimeMs).getFullYear()));
+  return {
+    name: p.base,
+    dir: p.dir,
+    title: e.title || "",
+    note: e.note || "",
+    tags: eff.tags,
+    keywords: keywordsOf(e.rel),
+    kind: e.kind,
+    ext: p.ext,
+    years: [...years],
+    catText: `${cat.group || ""} ${cat.label || ""}`,
+    textNs: c.textNs,
+  };
 }
 
 function search(query) {
-  const terms = String(query || "").toLowerCase().split(/\s+/).filter(Boolean);
-  if (!terms.length || !index) return [];
-  const out = [];
+  const parsed = searchLib.parseQuery(query);
+  if (!index || searchLib.isEmpty(parsed)) return { highlight: [], results: [] };
+  const results = [];
   for (const e of Object.values(index.files)) {
-    const eff = indexer.effective(e);
-    const meta = [e.rel, e.title, e.author, e.note || "", eff.tags.join(" ")].join("\n").toLowerCase();
-    const text = (e.text || "").toLowerCase();
-    let score = 0;
-    let ok = true;
-    for (const t of terms) {
-      if (meta.includes(t)) score += 10;
-      else if (text.includes(t)) score += 1;
-      else { ok = false; break; }
-    }
-    if (ok) out.push({ rel: e.rel, score, snippet: snippetAround(e.text || "", terms) });
+    const score = searchLib.matchView(searchView(e), parsed);
+    if (score > 0) results.push({ rel: e.rel, score, snippet: searchLib.snippet(e.text || "", parsed.highlight) });
   }
-  return out;
+  for (const rel of textCache.keys()) if (!index.files[rel]) textCache.delete(rel);
+  return { highlight: parsed.highlight, results };
 }
 
 function csvCell(v) {
@@ -248,9 +275,18 @@ function registerIpc() {
     if (settings.root) await shell.openPath(settings.root);
   });
 
+  // 저장한 검색 · 최근 검색 (분류에는 영향 없음)
+  ipcMain.handle("save-searches", (_e, next) => {
+    if (Array.isArray(next.savedSearches)) settings.savedSearches = next.savedSearches.slice(0, 50);
+    if (Array.isArray(next.recentSearches)) settings.recentSearches = next.recentSearches.slice(0, 15);
+    saveSettings();
+    return true;
+  });
+
   ipcMain.handle("save-settings", (_e, next) => {
-    settings.partners = Array.isArray(next.partners) ? next.partners : [];
-    settings.tagRules = Array.isArray(next.tagRules) ? next.tagRules : [];
+    if (Array.isArray(next.partners)) settings.partners = next.partners;
+    if (Array.isArray(next.tagRules)) settings.tagRules = next.tagRules;
+    if (next.keywordOverrides && typeof next.keywordOverrides === "object") settings.keywordOverrides = next.keywordOverrides;
     saveSettings();
     if (index) {
       indexer.reclassifyAll(index, classifyOptions());

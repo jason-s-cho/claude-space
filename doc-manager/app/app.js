@@ -14,6 +14,7 @@ let catById = {};
 const filter = { view: "all", tags: new Set(), kind: "" };
 let query = "";
 let results = null; // 검색 중이면 Map(rel → { score, snippet })
+let hlTerms = []; // 검색어 중 화면에 칠할 글자
 let selected = "";
 let visible = [];
 let showAllTags = false;
@@ -23,10 +24,13 @@ function esc(s) {
   return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+// 검색어를 칠한다. 띄어쓰기는 있어도 없어도 맞춘다 ("전자파 차폐" = "전자파차폐").
 function highlight(text) {
   let html = esc(text);
-  const terms = query.trim().split(/\s+/).filter(Boolean).map((t) => esc(t).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-  if (terms.length) html = html.replace(new RegExp(`(${terms.join("|")})`, "gi"), "<mark>$1</mark>");
+  const pats = hlTerms
+    .map((t) => [...esc(t).replace(/\s+/g, "")].map((c) => c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s*"))
+    .filter(Boolean);
+  if (pats.length) html = html.replace(new RegExp(`(${pats.join("|")})`, "gi"), "<mark>$1</mark>");
   return html;
 }
 
@@ -133,7 +137,15 @@ function navItem(view, label, n, opts = {}) {
 function renderSide() {
   const docs = S.docs;
   const count = (fn) => docs.filter(fn).length;
-  let h = "<h3>보기</h3>";
+  let h = "";
+  const saved = S.settings.savedSearches || [];
+  if (saved.length) {
+    h += "<h3>저장한 검색</h3>";
+    saved.forEach((sv, i) => {
+      h += `<div class="saved-row"><button class="nav-item" data-saved="${i}" type="button" title="${esc(savedTitle(sv))}"><span>🔎</span><span class="ell">${esc(sv.name)}</span></button><button class="x" data-unsave="${i}" type="button" aria-label="삭제" title="삭제">×</button></div>`;
+    });
+  }
+  h += "<h3>보기</h3>";
   h += navItem("all", "전체 문서", docs.length);
   h += navItem("starred", "★ 즐겨찾기", count((d) => d.starred));
   h += navItem("recent", "최근 30일", count((d) => Date.now() - d.mtimeMs < 30 * DAY));
@@ -182,6 +194,15 @@ function renderSide() {
     h += "</div>";
     if (tags.length > 30) h += `<button class="more" id="moreTags" type="button">${showAllTags ? "접기" : `태그 ${tags.length - 30}개 더 보기`}</button>`;
   }
+  // 여러 문서에서 핵심 키워드로 뽑힌 단어
+  const kwCount = new Map();
+  for (const d of docs) for (const k of d.keywords || []) kwCount.set(k, (kwCount.get(k) || 0) + 1);
+  const kws = [...kwCount.entries()].filter(([, n]) => n >= 2).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ko")).slice(0, 25);
+  if (kws.length) {
+    h += '<h3 title="여러 문서에서 핵심 키워드로 뽑힌 단어. 누르면 본문 검색">자주 나오는 키워드</h3><div class="tag-cloud">';
+    for (const [k, n] of kws) h += `<button class="tag-btn kw" data-kw="${esc(k)}" type="button">${esc(k)}<small>${n}</small></button>`;
+    h += "</div>";
+  }
   $("side").innerHTML = h;
 }
 
@@ -204,6 +225,7 @@ function renderList() {
   if (filter.kind) f += `<span class="filter-chip">${KIND_LABEL[filter.kind]}<button data-clear="kind" type="button" aria-label="해제">×</button></span>`;
   for (const t of filter.tags) f += `<span class="filter-chip">#${esc(t)}<button data-clear-tag="${esc(t)}" type="button" aria-label="해제">×</button></span>`;
   if (query) f += `<span class="filter-chip">“${esc(query)}”<button data-clear="query" type="button" aria-label="해제">×</button></span>`;
+  if (f) f += `<button class="btn small" data-act="save-search" type="button" title="지금 조건(검색어·분류·태그·형식)을 왼쪽 '저장한 검색'에 넣습니다">☆ 이 조건 저장</button>`;
   $("activeFilters").innerHTML = f || '<span class="count">전체 문서</span>';
   $("count").textContent = `${visible.length}개`;
 
@@ -245,7 +267,8 @@ async function renderDetail() {
     .join("");
   const reason = d.userCategory
     ? `직접 고른 분류입니다. <button data-act="reset-cat" type="button">자동 분류로 되돌리기</button>`
-    : d.reasons.length ? `근거: ${esc(d.reasons.join(", "))}` : "분류할 단서를 찾지 못했습니다. 직접 골라 주세요.";
+    : (d.reasons.length ? `근거: ${esc(d.reasons.join(", "))}` : "분류할 단서를 찾지 못했습니다. 직접 골라 주세요.") +
+      ` <button data-act="edit-keywords" type="button">분류 키워드 고치기</button>`;
   const userSet = new Set(d.userTags);
   const tagChips = d.tags.map((t) => `<span class="tag${userSet.has(t) ? " user" : ""}">${esc(t)}<button data-untag="${esc(t)}" type="button" aria-label="${esc(t)} 태그 빼기">×</button></span>`).join("");
   const hidden = d.hiddenTags.length
@@ -280,6 +303,12 @@ async function renderDetail() {
       ${hidden}
     </section>
     <section>
+      <h4>핵심 키워드 <small class="muted">누르면 같은 단어가 나오는 문서 검색 · ＋는 태그로</small></h4>
+      ${d.keywords && d.keywords.length
+        ? `<div class="kw-list">${d.keywords.map((k) => `<span class="kw-chip"><button data-kwsearch="${esc(k)}" type="button">${esc(k)}</button><button class="plus" data-kwtag="${esc(k)}" type="button" title="태그로 붙이기" aria-label="${esc(k)} 태그로 붙이기">＋</button></span>`).join("")}</div>`
+        : '<p class="muted small">뽑을 만한 단어가 없습니다.</p>'}
+    </section>
+    <section>
       <h4>메모</h4>
       <textarea class="note" id="noteInput" placeholder="예: 2025.3 KEIT 제출본, 김부장님 검토 완료">${esc(d.note)}</textarea>
     </section>
@@ -299,7 +328,7 @@ async function renderDetail() {
     const pre = $("preview");
     if (!pre || selected !== rel) return;
     let shown = text.slice(0, 3000);
-    const t = query.trim().split(/\s+/)[0];
+    const t = hlTerms[0];
     if (t) {
       const at = text.toLowerCase().indexOf(t.toLowerCase());
       if (at > 2500) shown = "…" + text.slice(at - 300, at + 2700);
@@ -374,13 +403,117 @@ async function runSearch() {
   const seq = ++searchSeq;
   if (!query) {
     results = null;
+    hlTerms = [];
     renderAll();
     return;
   }
   const r = await api.search(query);
   if (seq !== searchSeq) return;
-  results = new Map(r.map((x) => [x.rel, x]));
+  results = new Map(r.results.map((x) => [x.rel, x]));
+  hlTerms = r.highlight;
   renderAll();
+  // 잠시 그대로 두면 '최근 검색'에 넣는다.
+  clearTimeout(rememberTimer);
+  const q = query;
+  rememberTimer = setTimeout(() => {
+    if (query === q && results && results.size) rememberSearch(q);
+  }, 2500);
+}
+let rememberTimer = null;
+
+// 검색창에 글자를 넣고 바로 검색한다. (키워드·최근 검색·저장한 검색을 눌렀을 때)
+function setQuery(q) {
+  $("q").value = q;
+  query = q.trim();
+  $("sort").value = query ? "relevance" : "mtime";
+  hideSuggest();
+  runSearch();
+  if (query) rememberSearch(query);
+}
+
+// 키워드로 찾기: 띄어쓰기가 있으면 구절로
+function kwQuery(k) {
+  return /\s/.test(k) ? `"${k}"` : k;
+}
+
+// ----- 최근 검색 · 저장한 검색 -----
+
+function rememberSearch(q) {
+  q = q.trim();
+  if (!q) return;
+  const recent = (S.settings.recentSearches || []).filter((x) => x !== q);
+  recent.unshift(q);
+  S.settings.recentSearches = recent.slice(0, 15);
+  api.saveSearches({ recentSearches: S.settings.recentSearches });
+}
+
+function currentConditions() {
+  return { q: query, view: filter.view, tags: [...filter.tags], kind: filter.kind };
+}
+
+function savedTitle(sv) {
+  const parts = [];
+  if (sv.view && sv.view !== "all") parts.push(viewLabel(sv.view));
+  if (sv.kind) parts.push(KIND_LABEL[sv.kind]);
+  for (const t of sv.tags || []) parts.push("#" + t);
+  if (sv.q) parts.push(`“${sv.q}”`);
+  return parts.join(" · ") || "전체 문서";
+}
+
+function saveCurrentSearch() {
+  const sv = currentConditions();
+  sv.name = savedTitle(sv);
+  const saved = (S.settings.savedSearches || []).filter((x) => x.name !== sv.name);
+  saved.unshift(sv);
+  S.settings.savedSearches = saved;
+  api.saveSearches({ savedSearches: saved });
+  renderSide();
+  toast("왼쪽 '저장한 검색'에 넣었습니다.");
+}
+
+function applySaved(sv) {
+  filter.view = sv.view || "all";
+  filter.tags = new Set(sv.tags || []);
+  filter.kind = sv.kind || "";
+  setQuery(sv.q || "");
+}
+
+function removeSaved(i) {
+  const saved = [...(S.settings.savedSearches || [])];
+  saved.splice(i, 1);
+  S.settings.savedSearches = saved;
+  api.saveSearches({ savedSearches: saved });
+  renderSide();
+}
+
+// ----- 검색창 아래 펼침 목록 (최근 검색 · 검색 도움말) -----
+
+function showSuggest() {
+  const box = $("suggest");
+  const recent = S.settings.recentSearches || [];
+  let h = "";
+  if (recent.length) {
+    h += '<div class="sg-head">최근 검색<button class="link" data-clear-recent type="button">모두 지우기</button></div>';
+    h += recent.map((q) => `<button class="sg-item" data-recent="${esc(q)}" type="button">${esc(q)}</button>`).join("");
+  }
+  h += `<div class="sg-head">검색하는 법</div>
+    <dl class="sg-help">
+      <dt>그래핀 센서</dt><dd>두 단어가 모두 있는 문서</dd>
+      <dt>"전자파 차폐"</dt><dd>구절 그대로 (띄어쓰기 무시)</dd>
+      <dt>그래핀|graphene</dt><dd>둘 중 하나라도</dd>
+      <dt>-초안</dt><dd>이 단어가 있는 문서는 빼기</dd>
+      <dt>#KEIT</dt><dd>태그</dd>
+      <dt>분류:보고서</dt><dd>분류 이름에 '보고서'</dd>
+      <dt>연도:2025</dt><dd>연도 태그나 수정한 해</dd>
+      <dt>형식:ppt</dt><dd>word · ppt · excel · pdf · hwp</dd>
+      <dt>폴더:고객사</dt><dd>폴더 이름 (이름: 메모: 키워드: 도 됨)</dd>
+    </dl>`;
+  box.innerHTML = h;
+  box.hidden = false;
+}
+
+function hideSuggest() {
+  $("suggest").hidden = true;
 }
 
 // ---------- 설정 ----------
@@ -411,9 +544,77 @@ function textToRules(text) {
   }).filter((r) => r.tag);
 }
 
-function openSettings() {
+// ----- 분류 키워드 편집 -----
+// 편집하는 동안은 kwDraft 에 담아 두고, 저장을 누르면 settings.keywordOverrides 로 보낸다.
+let kwDraft = {};
+let kwGroup = "gov_plan";
+
+const WEIGHTS = [[2, "약함"], [4, "보통"], [6, "강함"]];
+const weightLabel = (w) => (w >= 6 ? "강함" : w >= 4 ? "보통" : "약함");
+const normKw = (k) => k.replace(/\s+/g, "").toLowerCase();
+
+function renderKwEditor() {
+  const g = kwGroup;
+  const o = kwDraft[g] || { add: [], remove: [] };
+  const removed = new Set((o.remove || []).map(normKw));
+  const added = new Map((o.add || []).map(([k, w]) => [normKw(k), [k, w]]));
+  const base = (S.defaultKeywords[g] || []).filter(([k]) => !added.has(normKw(k)));
+  const chips = [];
+  for (const [k, w] of [...added.values()]) {
+    chips.push(`<span class="kwe user" title="내가 넣은 키워드 · ${weightLabel(w)}">${esc(k)}<i>${weightLabel(w)}</i><button data-kwdel="${esc(k)}" type="button" aria-label="빼기">×</button></span>`);
+  }
+  for (const [k, w] of base) {
+    if (removed.has(normKw(k))) continue;
+    chips.push(`<span class="kwe" title="기본 키워드 · ${weightLabel(w)}">${esc(k)}<i>${weightLabel(w)}</i><button data-kwdel="${esc(k)}" type="button" aria-label="빼기">×</button></span>`);
+  }
+  const off = base.filter(([k]) => removed.has(normKw(k)));
+  $("kwChips").innerHTML = chips.join("") || '<span class="muted">키워드가 없습니다.</span>';
+  $("kwRemoved").innerHTML = off.length
+    ? "뺀 기본 키워드: " + off.map(([k]) => `<button data-kwrestore="${esc(k)}" type="button" title="되살리기">${esc(k)} ↺</button>`).join("")
+    : "";
+  for (const b of $("kwGroups").querySelectorAll("button")) b.classList.toggle("on", b.dataset.group === g);
+}
+
+function kwAdd(k, w) {
+  k = k.trim();
+  if (!k) return;
+  const o = (kwDraft[kwGroup] = kwDraft[kwGroup] || { add: [], remove: [] });
+  o.remove = (o.remove || []).filter((x) => normKw(x) !== normKw(k));
+  const isBase = (S.defaultKeywords[kwGroup] || []).some(([b, bw]) => normKw(b) === normKw(k) && bw === w);
+  o.add = (o.add || []).filter(([x]) => normKw(x) !== normKw(k));
+  if (!isBase) o.add.push([k, w]);
+  renderKwEditor();
+}
+
+function kwRemove(k) {
+  const o = (kwDraft[kwGroup] = kwDraft[kwGroup] || { add: [], remove: [] });
+  const wasAdded = (o.add || []).some(([x]) => normKw(x) === normKw(k));
+  o.add = (o.add || []).filter(([x]) => normKw(x) !== normKw(k));
+  const isBase = (S.defaultKeywords[kwGroup] || []).some(([b]) => normKw(b) === normKw(k));
+  // 내가 넣은 키워드가 기본 키워드의 가중치만 바꾼 것이었다면 기본값으로 돌아가고, 아니면 뺀다.
+  if (isBase && !wasAdded) o.remove = [...new Set([...(o.remove || []), k])];
+  renderKwEditor();
+}
+
+function kwRestore(k) {
+  const o = kwDraft[kwGroup];
+  if (o) o.remove = (o.remove || []).filter((x) => normKw(x) !== normKw(k));
+  renderKwEditor();
+}
+
+function setSettingsTab(tab) {
+  for (const b of document.querySelectorAll(".tabs button")) b.classList.toggle("on", b.dataset.tab === tab);
+  for (const p of document.querySelectorAll(".tab-panel")) p.hidden = p.dataset.panel !== tab;
+}
+
+function openSettings(tab = "rules", group) {
   $("partnersInput").value = partnersToText(S.settings.partners);
   $("rulesInput").value = rulesToText(S.settings.tagRules);
+  kwDraft = JSON.parse(JSON.stringify(S.settings.keywordOverrides || {}));
+  if (group) kwGroup = group;
+  $("kwGroups").innerHTML = S.keywordGroups.map((g) => `<button type="button" data-group="${g.key}">${esc(g.label)}</button>`).join("");
+  renderKwEditor();
+  setSettingsTab(tab);
   $("settingsDlg").showModal();
 }
 
@@ -423,8 +624,33 @@ $("welcomeBtn").onclick = () => api.chooseFolder();
 $("folderBtn").onclick = () => api.chooseFolder();
 $("rescanBtn").onclick = () => api.rescan();
 $("rootPath").onclick = () => api.openRoot();
-$("settingsBtn").onclick = openSettings;
-$("q").addEventListener("input", onQuery);
+$("settingsBtn").onclick = () => openSettings();
+$("q").addEventListener("input", () => {
+  onQuery();
+  if ($("q").value) hideSuggest();
+  else showSuggest();
+});
+$("q").addEventListener("focus", () => {
+  if (!$("q").value) showSuggest();
+});
+$("q").addEventListener("blur", () => setTimeout(hideSuggest, 150));
+$("q").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    clearTimeout(searchTimer);
+    setQuery($("q").value);
+  }
+});
+$("suggest").addEventListener("mousedown", (e) => e.preventDefault()); // 누르는 동안 검색창 포커스 유지
+$("suggest").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  if (b.dataset.recent !== undefined) setQuery(b.dataset.recent);
+  if (b.hasAttribute("data-clear-recent")) {
+    S.settings.recentSearches = [];
+    api.saveSearches({ recentSearches: [] });
+    showSuggest();
+  }
+});
 $("sort").onchange = renderList;
 $("exportBtn").onclick = async () => {
   if (!visible.length) return toast("내보낼 문서가 없습니다.");
@@ -433,13 +659,20 @@ $("exportBtn").onclick = async () => {
 
 $("settingsDlg").addEventListener("close", async () => {
   if ($("settingsDlg").returnValue !== "save") return;
-  await api.saveSettings({ partners: textToPartners($("partnersInput").value), tagRules: textToRules($("rulesInput").value) });
+  await api.saveSettings({
+    partners: textToPartners($("partnersInput").value),
+    tagRules: textToRules($("rulesInput").value),
+    keywordOverrides: kwDraft,
+  });
   toast("설정을 저장하고 모든 문서를 다시 분류했습니다.");
 });
 
 $("side").addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (!b) return;
+  if (b.dataset.saved !== undefined) return applySaved(S.settings.savedSearches[+b.dataset.saved]);
+  if (b.dataset.unsave !== undefined) return removeSaved(+b.dataset.unsave);
+  if (b.dataset.kw) return setQuery(kwQuery(b.dataset.kw));
   if (b.id === "moreTags") showAllTags = !showAllTags;
   else if (b.dataset.view) filter.view = filter.view === b.dataset.view && b.dataset.view !== "all" ? "all" : b.dataset.view;
   else if (b.dataset.kind) filter.kind = filter.kind === b.dataset.kind ? "" : b.dataset.kind;
@@ -454,6 +687,7 @@ $("side").addEventListener("click", (e) => {
 $("activeFilters").addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (!b) return;
+  if (b.dataset.act === "save-search") return saveCurrentSearch();
   if (b.dataset.clear === "view") filter.view = "all";
   if (b.dataset.clear === "kind") filter.kind = "";
   if (b.dataset.clear === "query") {
@@ -488,6 +722,12 @@ $("detail").addEventListener("click", async (e) => {
   if (act === "reset-cat") await patchDoc(d.rel, { userCategory: "" });
   if (b.dataset.untag) return removeTag(d, b.dataset.untag);
   if (b.dataset.retag) return addTag(d, b.dataset.retag);
+  if (b.dataset.kwsearch) return setQuery(kwQuery(b.dataset.kwsearch));
+  if (b.dataset.kwtag) return addTag(d, b.dataset.kwtag);
+  if (act === "edit-keywords") {
+    const cat = d.category === "gov_etc" ? "gov" : d.category;
+    return openSettings("keywords", S.keywordGroups.some((g) => g.key === cat) ? cat : undefined);
+  }
   renderAll(true);
 });
 
@@ -568,3 +808,40 @@ api.onScanDone((r) => {
 api.onScanError((msg) => toast(msg));
 
 api.getState().then(applyState);
+
+// 설정 창: 탭 · 분류 키워드 편집
+document.querySelector(".tabs").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-tab]");
+  if (b) setSettingsTab(b.dataset.tab);
+});
+$("kwGroups").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-group]");
+  if (!b) return;
+  kwGroup = b.dataset.group;
+  renderKwEditor();
+});
+$("kwChips").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-kwdel]");
+  if (b) kwRemove(b.dataset.kwdel);
+});
+$("kwRemoved").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-kwrestore]");
+  if (b) kwRestore(b.dataset.kwrestore);
+});
+function kwAddFromInput() {
+  const input = $("kwInput");
+  for (const k of input.value.split(/[,，]/)) kwAdd(k, Number($("kwWeight").value));
+  input.value = "";
+  input.focus();
+}
+$("kwAddBtn").onclick = kwAddFromInput;
+$("kwInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    e.preventDefault();
+    kwAddFromInput();
+  }
+});
+$("kwResetGroup").onclick = () => {
+  delete kwDraft[kwGroup];
+  renderKwEditor();
+};

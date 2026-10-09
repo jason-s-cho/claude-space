@@ -5,6 +5,7 @@ const fs = require("fs");
 const path = require("path");
 const { extract, fileKind } = require("./extract");
 const { classify } = require("./classify");
+const { countTerms } = require("./keywords");
 
 const INDEX_VERSION = 1;
 const SKIP_DIRS = new Set(["node_modules", ".git", "$RECYCLE.BIN", "System Volume Information", ".Trash"]);
@@ -16,7 +17,11 @@ function emptyIndex(root) {
 function loadIndex(file, root) {
   try {
     const data = JSON.parse(fs.readFileSync(file, "utf8"));
-    if (data && data.version === INDEX_VERSION && data.root === root && data.files) return data;
+    if (data && data.version === INDEX_VERSION && data.root === root && data.files) {
+      // 키워드 기능이 생기기 전에 만든 색인: 파일을 다시 읽지 않고 저장된 본문으로 센다.
+      for (const e of Object.values(data.files)) if (!e.terms) e.terms = countTerms([e.title, e.text].join("\n"));
+      return data;
+    }
   } catch {}
   return emptyIndex(root);
 }
@@ -120,6 +125,7 @@ async function scan(index, options, onProgress) {
       author: x.author || "",
       pages: x.pages || 0,
       text: x.text,
+      terms: countTerms([x.title, x.text].join("\n")),
       error: x.error,
       indexedAt: Date.now(),
     };

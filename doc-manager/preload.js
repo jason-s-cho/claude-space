@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld("docs", {
   showInFolder: (rel) => ipcRenderer.invoke("show-in-folder", rel),
   openRoot: () => ipcRenderer.invoke("open-root"),
   saveSettings: (s) => ipcRenderer.invoke("save-settings", s),
+  saveSearches: (s) => ipcRenderer.invoke("save-searches", s),
   exportCsv: (rels) => ipcRenderer.invoke("export-csv", rels),
   onState: on("state"),
   onProgress: on("progress"),

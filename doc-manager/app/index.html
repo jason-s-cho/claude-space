@@ -14,7 +14,8 @@
     <button class="root-path" id="rootPath" type="button" title="폴더 열기"></button>
   </div>
   <div class="search-wrap">
-    <input id="q" class="search" type="search" placeholder="파일 이름·본문·태그 검색  (Ctrl+F)" autocomplete="off" spellcheck="false">
+    <input id="q" class="search" type="search" placeholder="파일 이름·본문·태그·키워드 검색  (Ctrl+F)" autocomplete="off" spellcheck="false">
+    <div class="suggest" id="suggest" hidden></div>
   </div>
   <div class="toolbar">
     <span class="status" id="status" aria-live="polite"></span>
@@ -60,16 +61,46 @@
 <dialog id="settingsDlg">
   <form method="dialog" class="dlg">
     <h2>분류 설정</h2>
-    <label class="field">
-      <span>고객사 · 협력사 이름 <small>한 줄에 하나. 별칭은 = 뒤에 쉼표로 (예: 현대모비스 = 모비스, Mobis)</small></span>
-      <textarea id="partnersInput" rows="6" spellcheck="false" placeholder="현대모비스 = 모비스, Mobis&#10;LG에너지솔루션 = LGES&#10;포스코"></textarea>
-      <small class="muted">파일 이름이나 폴더 이름에 이 이름이 있으면 '고객사·협력사 요청자료'로 분류하고, 본문에만 있으면 태그만 붙입니다.</small>
-    </label>
-    <label class="field">
-      <span>내 태그 규칙 <small>한 줄에 하나. 태그: 키워드1, 키워드2</small></span>
-      <textarea id="rulesInput" rows="6" spellcheck="false" placeholder="그래핀: 그래핀, graphene&#10;전자파차폐: EMI, 전자파, 차폐&#10;센서"></textarea>
-      <small class="muted">키워드가 파일 이름·폴더·본문 어디에든 있으면 태그를 붙입니다. 키워드를 비우면 태그 이름으로 찾습니다.</small>
-    </label>
+    <div class="tabs" role="tablist">
+      <button type="button" data-tab="rules">고객사 · 태그 규칙</button>
+      <button type="button" data-tab="keywords">분류 키워드</button>
+    </div>
+
+    <div class="tab-panel" data-panel="rules">
+      <label class="field">
+        <span>고객사 · 협력사 이름 <small>한 줄에 하나. 별칭은 = 뒤에 쉼표로 (예: 현대모비스 = 모비스, Mobis)</small></span>
+        <textarea id="partnersInput" rows="6" spellcheck="false" placeholder="현대모비스 = 모비스, Mobis&#10;LG에너지솔루션 = LGES&#10;포스코"></textarea>
+        <small class="muted">파일 이름이나 폴더 이름에 이 이름이 있으면 '고객사·협력사 요청자료'로 분류하고, 본문에만 있으면 태그만 붙입니다.</small>
+      </label>
+      <label class="field">
+        <span>내 태그 규칙 <small>한 줄에 하나. 태그: 키워드1, 키워드2</small></span>
+        <textarea id="rulesInput" rows="6" spellcheck="false" placeholder="그래핀: 그래핀, graphene&#10;전자파차폐: EMI, 전자파, 차폐&#10;센서"></textarea>
+        <small class="muted">키워드가 파일 이름·폴더·본문 어디에든 있으면 태그를 붙입니다. 키워드를 비우면 태그 이름으로 찾습니다.</small>
+      </label>
+    </div>
+
+    <div class="tab-panel" data-panel="keywords" hidden>
+      <p class="muted small">문서에서 이 키워드를 찾으면 그 분류 점수를 올립니다. 파일 이름에 있으면 4배, 폴더 이름은 3배, 본문 앞부분은 1배로 셉니다.
+        '강함'은 파일 이름에 한 번만 나와도 그 분류로 정해질 만큼, '약함'은 다른 단서와 함께 있어야 힘을 쓰는 정도입니다.</p>
+      <div class="kw-editor">
+        <div class="kw-groups" id="kwGroups"></div>
+        <div class="kw-main">
+          <div class="kw-add">
+            <input id="kwInput" class="search" placeholder="키워드 (쉼표로 여러 개)" spellcheck="false">
+            <select id="kwWeight" class="select" aria-label="세기">
+              <option value="2">약함</option>
+              <option value="4" selected>보통</option>
+              <option value="6">강함</option>
+            </select>
+            <button class="btn" id="kwAddBtn" type="button">추가</button>
+          </div>
+          <div class="kw-chips" id="kwChips"></div>
+          <div class="hidden-tags" id="kwRemoved"></div>
+          <button class="link" id="kwResetGroup" type="button">이 분류를 기본 키워드로 되돌리기</button>
+        </div>
+      </div>
+    </div>
+
     <div class="dlg-actions">
       <button class="btn" value="cancel" type="submit">취소</button>
       <button class="btn primary" id="settingsSave" value="save" type="submit">저장하고 다시 분류</button>
