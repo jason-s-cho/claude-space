@@ -44,7 +44,8 @@ contextBridge.exposeInMainWorld("docs", {
   // 방금 끌어다 놓은 파일들의 실제 경로 (위의 drop 처리에서 읽어 둔 것)
   droppedPaths: () => droppedPaths.slice(),
   importFiles: (paths) => ipcRenderer.invoke("import-files", paths),
-  pickAndImport: () => ipcRenderer.invoke("pick-and-import"),
+  pickAndImport: (kind) => ipcRenderer.invoke("pick-and-import", kind),
+  onImportProgress: on("import-progress"),
   moveToCategory: (rel) => ipcRenderer.invoke("move-to-category", rel),
   onState: on("state"),
   onProgress: on("progress"),

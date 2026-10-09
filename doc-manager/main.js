@@ -368,23 +368,45 @@ function registerIpc() {
   });
 
   // 끌어다 놓은 파일(또는 '문서 넣기'로 고른 파일)을 문서 폴더에 복사하고 분류한다.
-  async function doImport(paths) {
-    if (!index || !index.root) return { imported: [], existing: [], skipped: [], error: "먼저 문서 폴더를 골라 주세요." };
-    const r = await importFiles(index, paths, { layout: settings.importLayout, options: classifyOptions() });
-    persistIndex();
-    keywordCache = versionCache = null;
-    send("state", state());
-    return r;
+  // 넣는 도중에 또 넣으면 앞의 것이 끝난 뒤 이어서 한다.
+  let importChain = Promise.resolve();
+  function doImport(paths) {
+    const run = async () => {
+      if (!index || !index.root) return { imported: [], existing: [], skipped: [], error: "먼저 문서 폴더를 골라 주세요." };
+      let lastSend = 0;
+      const r = await importFiles(index, paths, {
+        layout: settings.importLayout,
+        options: classifyOptions(),
+        onProgress: (p) => {
+          const now = Date.now();
+          if (now - lastSend > 120 || p.done === p.total) {
+            lastSend = now;
+            send("import-progress", p);
+          }
+        },
+      });
+      persistIndex();
+      keywordCache = versionCache = null;
+      send("state", state());
+      return r;
+    };
+    const job = importChain.then(run, run);
+    importChain = job.catch(() => {});
+    return job;
   }
 
   ipcMain.handle("import-files", (_e, paths) => doImport(Array.isArray(paths) ? paths.filter((p) => typeof p === "string" && p) : []));
 
-  ipcMain.handle("pick-and-import", async () => {
-    const r = await dialog.showOpenDialog(win, {
-      title: "문서 폴더에 넣을 파일 고르기",
-      properties: ["openFile", "multiSelections"],
-      filters: [{ name: "문서", extensions: Object.keys(SUPPORTED).map((x) => x.slice(1)) }],
-    });
+  // kind: "files"(여러 개 고르기) | "folder"(폴더째, 안의 문서 모두)
+  ipcMain.handle("pick-and-import", async (_e, kind) => {
+    const folder = kind === "folder";
+    const r = await dialog.showOpenDialog(win, folder
+      ? { title: "문서 폴더에 넣을 폴더 고르기 (안의 문서를 모두 넣습니다)", properties: ["openDirectory", "multiSelections"] }
+      : {
+          title: "문서 폴더에 넣을 파일 고르기 (Ctrl·Shift 로 여러 개)",
+          properties: ["openFile", "multiSelections"],
+          filters: [{ name: "문서", extensions: Object.keys(SUPPORTED).map((x) => x.slice(1)) }],
+        });
     if (r.canceled || !r.filePaths.length) return null;
     return doImport(r.filePaths);
   });

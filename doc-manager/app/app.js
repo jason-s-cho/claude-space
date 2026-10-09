@@ -813,7 +813,43 @@ $("folderBtn").onclick = () => api.chooseFolder();
 $("rescanBtn").onclick = () => api.rescan();
 $("rootPath").onclick = () => api.openRoot();
 $("settingsBtn").onclick = () => openSettings();
-$("addBtn").onclick = async () => showImportResult(await api.pickAndImport());
+// 문서 넣기: 단추는 파일 고르기, ▾ 메뉴에서 폴더째 넣기
+async function pickAndImport(kind) {
+  closeAddMenu();
+  showImportResult(await api.pickAndImport(kind));
+}
+function closeAddMenu() {
+  $("addMenu").hidden = true;
+  $("addMenuBtn").setAttribute("aria-expanded", "false");
+}
+$("addBtn").onclick = () => pickAndImport("files");
+$("addMenuBtn").onclick = (e) => {
+  e.stopPropagation();
+  const open = $("addMenu").hidden;
+  $("addMenu").hidden = !open;
+  $("addMenuBtn").setAttribute("aria-expanded", String(open));
+};
+$("addMenu").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-pick]");
+  if (b) pickAndImport(b.dataset.pick);
+});
+document.addEventListener("click", (e) => {
+  if (!$("addMenu").hidden && !e.target.closest("#addSplit")) closeAddMenu();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !$("addMenu").hidden) closeAddMenu();
+});
+
+// 여러 개를 넣는 동안 진행 상황
+function showProgress(p) {
+  if (!p || !p.total || p.done >= p.total) return;
+  const t = $("toast");
+  const pct = Math.round((p.done / p.total) * 100);
+  t.innerHTML = `<div class="prog"><div class="prog-top"><span>문서 넣는 중</span><span>${p.done + 1} / ${p.total}</span></div><div class="prog-name">${esc(p.current)}</div><div class="bar"><i style="width:${pct}%"></i></div></div>`;
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (t.hidden = true), 60000);
+}
 $("sort").onchange = renderList;
 $("groupToggle").onchange = (e) => {
   groupVersions = e.target.checked;
@@ -1099,7 +1135,7 @@ window.addEventListener("drop", async (e) => {
     // 메일 첨부·웹 페이지처럼 디스크에 파일이 없는 곳에서 끌어온 경우
     return toast("놓은 것에서 파일을 찾지 못했습니다.\n탐색기(Finder)의 파일이나 폴더를 끌어다 놓거나, '문서 넣기'로 골라 주세요.", 6000);
   }
-  toast(`${paths.length}개 넣는 중…`, 60000);
+  toast(`넣을 문서를 찾는 중… (${paths.length}개 항목)`, 60000);
   showImportResult(await api.importFiles(paths));
 });
 
@@ -1117,5 +1153,6 @@ api.onScanDone((r) => {
   if (parts.length) toast(parts.join(" · ") + " 반영했습니다.");
 });
 api.onScanError((msg) => toast(msg));
+api.onImportProgress(showProgress);
 
 api.getState().then(applyState);
