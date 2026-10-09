@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:">
+<title>문서 보관함</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <h1>문서 보관함</h1>
+    <button class="root-path" id="rootPath" type="button" title="폴더 열기"></button>
+  </div>
+  <div class="search-wrap">
+    <input id="q" class="search" type="search" placeholder="파일 이름·본문·태그 검색  (Ctrl+F)" autocomplete="off" spellcheck="false">
+  </div>
+  <div class="toolbar">
+    <span class="status" id="status" aria-live="polite"></span>
+    <button class="btn" id="rescanBtn" type="button" title="폴더를 다시 읽습니다">다시 읽기</button>
+    <button class="btn" id="folderBtn" type="button">폴더 변경</button>
+    <button class="btn" id="settingsBtn" type="button">분류 설정</button>
+  </div>
+</header>
+
+<section class="welcome" id="welcome" hidden>
+  <div class="welcome-card">
+    <h2>문서를 모아 둔 폴더를 골라 주세요</h2>
+    <p>폴더 안(하위 폴더 포함)의 워드·파워포인트·엑셀·PDF·한글 파일을 읽어서<br>국가과제 / IR·회사소개 / 홈페이지 / 카탈로그 / 고객사 요청자료 등으로 자동 분류하고 태그를 붙입니다.</p>
+    <p class="muted">파일을 옮기거나 고치지 않습니다. 분류 결과는 이 앱 안에만 저장됩니다.</p>
+    <button class="btn primary big" id="welcomeBtn" type="button">폴더 선택</button>
+  </div>
+</section>
+
+<main class="layout" id="layout" hidden>
+  <nav class="side" id="side" aria-label="분류"></nav>
+
+  <section class="list-pane">
+    <div class="list-head">
+      <div class="filters" id="activeFilters"></div>
+      <div class="list-tools">
+        <span class="count" id="count"></span>
+        <select id="sort" class="select" aria-label="정렬">
+          <option value="mtime">최근 수정순</option>
+          <option value="name">이름순</option>
+          <option value="category">분류순</option>
+          <option value="relevance">검색 관련도순</option>
+        </select>
+        <button class="btn small" id="exportBtn" type="button" title="지금 보이는 목록을 CSV(엑셀)로 저장">목록 내보내기</button>
+      </div>
+    </div>
+    <ul class="list" id="list" role="listbox" aria-label="문서 목록"></ul>
+    <div class="empty" id="empty" hidden></div>
+  </section>
+
+  <aside class="detail" id="detail" aria-label="문서 정보"></aside>
+</main>
+
+<dialog id="settingsDlg">
+  <form method="dialog" class="dlg">
+    <h2>분류 설정</h2>
+    <label class="field">
+      <span>고객사 · 협력사 이름 <small>한 줄에 하나. 별칭은 = 뒤에 쉼표로 (예: 현대모비스 = 모비스, Mobis)</small></span>
+      <textarea id="partnersInput" rows="6" spellcheck="false" placeholder="현대모비스 = 모비스, Mobis&#10;LG에너지솔루션 = LGES&#10;포스코"></textarea>
+      <small class="muted">파일 이름이나 폴더 이름에 이 이름이 있으면 '고객사·협력사 요청자료'로 분류하고, 본문에만 있으면 태그만 붙입니다.</small>
+    </label>
+    <label class="field">
+      <span>내 태그 규칙 <small>한 줄에 하나. 태그: 키워드1, 키워드2</small></span>
+      <textarea id="rulesInput" rows="6" spellcheck="false" placeholder="그래핀: 그래핀, graphene&#10;전자파차폐: EMI, 전자파, 차폐&#10;센서"></textarea>
+      <small class="muted">키워드가 파일 이름·폴더·본문 어디에든 있으면 태그를 붙입니다. 키워드를 비우면 태그 이름으로 찾습니다.</small>
+    </label>
+    <div class="dlg-actions">
+      <button class="btn" value="cancel" type="submit">취소</button>
+      <button class="btn primary" id="settingsSave" value="save" type="submit">저장하고 다시 분류</button>
+    </div>
+  </form>
+</dialog>
+
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script src="app.js"></script>
+</body>
+</html>

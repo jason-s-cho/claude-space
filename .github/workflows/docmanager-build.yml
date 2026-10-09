@@ -1,0 +1,68 @@
+name: Doc manager build
+
+# 수동 실행(Actions 탭 → Run workflow) 하거나, docmanager-v* 태그를 푸시하면
+# 문서 보관함의 Windows / macOS / Linux 설치 파일을 빌드한다. 태그로 실행하면 릴리스에도 올라간다.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "docmanager-v*"
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: doc-manager
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: doc-manager/package-lock.json
+
+      - run: npm ci
+
+      - run: npm test
+
+      - run: npm run dist
+        env:
+          # 코드 서명 인증서가 없으므로 자동 탐색을 끈다.
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.os }}
+          path: |
+            doc-manager/dist/*.exe
+            doc-manager/dist/*.dmg
+            doc-manager/dist/*.AppImage
+            doc-manager/dist/*.deb
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/docmanager-v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: installers
+          merge-multiple: true
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" installers/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "문서 보관함 $GITHUB_REF_NAME" \
+            --generate-notes

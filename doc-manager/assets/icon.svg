@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="#2b59c3"/>
+  <!-- 뒤쪽 문서 -->
+  <rect x="300" y="200" width="420" height="540" rx="36" fill="#9fb6ec" transform="rotate(-8 510 470)"/>
+  <!-- 앞쪽 문서 -->
+  <rect x="320" y="240" width="420" height="560" rx="36" fill="#ffffff"/>
+  <rect x="380" y="320" width="300" height="34" rx="17" fill="#2b59c3"/>
+  <rect x="380" y="400" width="250" height="26" rx="13" fill="#c9d4ee"/>
+  <rect x="380" y="456" width="280" height="26" rx="13" fill="#c9d4ee"/>
+  <rect x="380" y="512" width="210" height="26" rx="13" fill="#c9d4ee"/>
+  <!-- 태그 -->
+  <g transform="rotate(-20 660 680)">
+    <path d="M560 610 h170 a30 30 0 0 1 30 30 v100 a30 30 0 0 1 -30 30 h-170 l-70 -80 z" fill="#f2b33d"/>
+    <circle cx="560" cy="690" r="18" fill="#ffffff"/>
+  </g>
+</svg>
