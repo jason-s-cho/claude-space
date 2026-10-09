@@ -1094,8 +1094,11 @@ window.addEventListener("drop", async (e) => {
   dragDepth = 0;
   $("dropZone").hidden = true;
   if (!S.root) return toast("먼저 문서 폴더를 골라 주세요.");
-  const paths = api.pathsOf(e.dataTransfer ? e.dataTransfer.files : []);
-  if (!paths.length) return toast("파일을 읽을 수 없습니다. 탐색기에서 파일을 끌어다 놓아 주세요.");
+  const paths = api.droppedPaths();
+  if (!paths.length) {
+    // 메일 첨부·웹 페이지처럼 디스크에 파일이 없는 곳에서 끌어온 경우
+    return toast("놓은 것에서 파일을 찾지 못했습니다.\n탐색기(Finder)의 파일이나 폴더를 끌어다 놓거나, '문서 넣기'로 골라 주세요.", 6000);
+  }
   toast(`${paths.length}개 넣는 중…`, 60000);
   showImportResult(await api.importFiles(paths));
 });
