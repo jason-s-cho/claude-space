@@ -47,6 +47,7 @@ contextBridge.exposeInMainWorld("docs", {
   pickAndImport: (kind) => ipcRenderer.invoke("pick-and-import", kind),
   onImportProgress: on("import-progress"),
   moveToCategory: (rel) => ipcRenderer.invoke("move-to-category", rel),
+  newVersion: (rel) => ipcRenderer.invoke("new-version", rel),
   onState: on("state"),
   onProgress: on("progress"),
   onScanDone: on("scan-done"),

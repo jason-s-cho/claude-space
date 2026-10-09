@@ -5,7 +5,7 @@ const indexer = require("./lib/indexer");
 const { CATEGORIES, KEYWORDS, KEYWORD_GROUPS, TECH_TAGS, migrateOverrides } = require("./lib/classify");
 const { docFrequency, topKeywords } = require("./lib/keywords");
 const searchLib = require("./lib/search");
-const { groupVersions } = require("./lib/versions");
+const { groupVersions, nextVersionName, uniqueVersionName } = require("./lib/versions");
 const { importFiles, ensureCategoryFolders, expectedFolder, moveToFolder, removeLegacyFolders } = require("./lib/importer");
 const { SUPPORTED } = require("./lib/extract");
 
@@ -173,6 +173,7 @@ function docSummary(e) {
     author: e.author,
     error: e.error,
     hasText: !!e.text,
+    protectedText: !!e.protectedText,
     category: eff.category,
     autoCategory: e.autoCategory,
     userCategory: e.userCategory || "",
@@ -409,6 +410,33 @@ function registerIpc() {
         });
     if (r.canceled || !r.filePaths.length) return null;
     return doImport(r.filePaths);
+  });
+
+  // 새 버전으로 고치기: 같은 폴더에 다음 버전 이름으로 복사해서 연다. 원본은 건드리지 않는다.
+  // 분류·태그는 이어받고, 메모·즐겨찾기는 그 버전에만 해당하므로 넘기지 않는다.
+  ipcMain.handle("new-version", async (_e, rel) => {
+    const e = index && index.files[rel];
+    if (!e) return { error: "알 수 없는 파일" };
+    try {
+      const src = fullPath(rel);
+      const dir = path.dirname(src);
+      const v = versionMap().get(rel);
+      const siblings = v ? v.order.map((r) => r.split("/").pop()) : [];
+      const name = uniqueVersionName(nextVersionName(path.basename(src), siblings), (n) => fs.existsSync(path.join(dir, n)));
+      const dest = path.join(dir, name);
+      await fs.promises.copyFile(src, dest, fs.constants.COPYFILE_EXCL);
+      const now = new Date();
+      await fs.promises.utimes(dest, now, now); // 윈도우는 복사해도 원래 수정 시각이 남으므로 지금으로
+      const entry = await indexer.addFile(index, dest, classifyOptions());
+      for (const k of ["userCategory", "userTags", "hiddenTags"]) if (e[k] !== undefined) entry[k] = JSON.parse(JSON.stringify(e[k]));
+      persistIndex();
+      keywordCache = versionCache = null;
+      send("state", state());
+      const err = await shell.openPath(dest);
+      return { rel: entry.rel, openError: err || "" };
+    } catch (err) {
+      return { error: String((err && err.message) || err) };
+    }
   });
 
   ipcMain.handle("move-to-category", async (_e, rel) => {

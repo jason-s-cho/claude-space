@@ -52,4 +52,75 @@ function groupVersions(docs) {
   return out;
 }
 
-module.exports = { familyKey, groupVersions };
+// ---- 새 버전 이름 정하기 ----
+
+const pad = (n, width) => String(n).padStart(width, "0");
+const VERSION_RE = /(?<![A-Za-z])(v|ver|rev)([._ ]?)(\d+)(?!\d)/i;
+
+function validDate(y, m, d) {
+  return m >= 1 && m <= 12 && d >= 1 && d <= 31 && y >= 2015 && y <= new Date().getFullYear() + 1;
+}
+
+/**
+ * 다음 버전의 파일 이름을 정한다. (같은 폴더에 만들 이름. 겹치는지는 부르는 쪽에서 다시 확인)
+ *   보고서_v01.docx  → 보고서_v02.docx   (같은 문서의 다른 버전에 v05 가 있으면 v06)
+ *   IR_260406.pptx   → IR_261009.pptx     (YYMMDD·YYYYMMDD 날짜는 오늘 날짜로)
+ *   회사소개서.pptx  → 회사소개서_v2.pptx  (버전 표시가 없으면 _v2)
+ * 이름 끝의 " (2)", " - 복사본" 같은 표시는 뗀다.
+ */
+function nextVersionName(fileName, siblings = [], now = new Date()) {
+  const ext = (fileName.match(/\.[^.]+$/) || [""])[0];
+  let stem = fileName.slice(0, fileName.length - ext.length);
+  stem = stem.replace(/\s*\(\s*\d+\s*\)\s*$/, "").replace(/\s*-?\s*(복사본|사본|copy)(\s*\(\d+\))?\s*$/i, "").trim();
+
+  // 1) v01 같은 번호: 같은 문서의 모든 버전 중 가장 큰 번호 + 1
+  const m = stem.match(VERSION_RE);
+  if (m) {
+    let max = Number(m[3]);
+    for (const s of siblings) {
+      const sm = s.replace(/\.[^.]+$/, "").match(VERSION_RE);
+      if (sm) max = Math.max(max, Number(sm[3]));
+    }
+    const width = m[3].length > 1 ? m[3].length : 1;
+    return stem.replace(VERSION_RE, `${m[1]}${m[2]}${pad(max + 1, width)}`) + ext;
+  }
+
+  // 2) 날짜(YYYYMMDD 또는 YYMMDD): 오늘 날짜로. 이미 오늘 날짜면 _v2 를 붙인다.
+  const y4 = now.getFullYear(), mo = now.getMonth() + 1, d = now.getDate();
+  const today8 = `${y4}${pad(mo, 2)}${pad(d, 2)}`;
+  const today6 = today8.slice(2);
+  const d8 = stem.match(/(?<!\d)(20\d{2})(\d{2})(\d{2})(?!\d)/);
+  if (d8 && validDate(+d8[1], +d8[2], +d8[3])) {
+    if (d8[0] !== today8) return stem.replace(d8[0], today8) + ext;
+  } else {
+    const d6 = stem.match(/(?<!\d)(\d{2})(\d{2})(\d{2})(?!\d)/);
+    if (d6 && validDate(2000 + +d6[1], +d6[2], +d6[3]) && d6[0] !== today6) return stem.replace(d6[0], today6) + ext;
+  }
+
+  // 3) 버전 표시가 없으면 _v2 (같은 문서에 _v2 가 이미 있으면 그다음)
+  let n = 2;
+  for (const s of siblings) {
+    const sm = s.replace(/\.[^.]+$/, "").match(VERSION_RE);
+    if (sm) n = Math.max(n, Number(sm[3]) + 1);
+  }
+  return `${stem}_v${n}${ext}`;
+}
+
+// 이름이 겹칠 때: 날짜 등은 그대로 두고 버전 번호만 올린다. (번호가 없으면 _v2)
+function bumpNumber(name) {
+  const ext = (name.match(/\.[^.]+$/) || [""])[0];
+  const stem = name.slice(0, name.length - ext.length);
+  const m = stem.match(VERSION_RE);
+  if (!m) return `${stem}_v2${ext}`;
+  const width = m[3].length > 1 ? m[3].length : 1;
+  return stem.replace(VERSION_RE, `${m[1]}${m[2]}${pad(Number(m[3]) + 1, width)}`) + ext;
+}
+
+// 이미 같은 이름이 있으면 번호를 하나씩 올려 비어 있는 이름을 찾는다. exists(name) → boolean
+function uniqueVersionName(name, exists) {
+  let cur = name;
+  for (let i = 0; i < 500 && exists(cur); i++) cur = bumpNumber(cur);
+  return cur;
+}
+
+module.exports = { familyKey, groupVersions, nextVersionName, uniqueVersionName };

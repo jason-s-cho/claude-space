@@ -426,7 +426,8 @@ async function renderDetail() {
     ${banner}
     <div class="d-actions">
       <button class="btn primary" data-act="open" type="button">${icon("external")}열기</button>
-      <button class="btn" data-act="reveal" type="button">${icon("folder-open")}폴더에서 보기</button>
+      <button class="btn" data-act="new-version" type="button" title="${v && v.latest !== d.rel ? "이 (이전) 버전을 복사해서" : "이 문서를 복사해서"} 다음 버전 이름으로 저장하고 엽니다. 원본은 그대로 남습니다.">${icon("layers")}새 버전으로 고치기</button>
+      <button class="icon-btn" data-act="reveal" type="button" title="폴더에서 보기" aria-label="폴더에서 보기">${icon("folder-open")}</button>
       <button class="icon-btn${d.starred ? " on" : ""}" data-act="star" type="button" title="${d.starred ? "즐겨찾기 해제" : "즐겨찾기"}" aria-label="즐겨찾기">${d.starred ? '<svg style="fill:currentColor"><use href="#i-star"/></svg>' : icon("star")}</button>
     </div>
     <div class="card">
@@ -461,7 +462,8 @@ async function renderDetail() {
     <div class="card">
       <h4>${icon("files")}본문 미리보기</h4>
       ${d.error ? `<p class="warn">본문을 읽지 못했습니다 (암호가 걸렸거나 손상된 파일일 수 있습니다). 파일 이름으로만 분류했습니다.</p>` : ""}
-      ${d.hasText ? '<pre class="preview" id="preview">불러오는 중…</pre>' : !d.error ? `<div class="muted small">${["ppt", "xls", "hwp"].includes(d.ext) ? "옛 형식(." + esc(d.ext) + ")은 본문을 읽지 않고 파일 이름으로만 분류합니다. ." + esc(d.ext) + "x 로 저장하면 본문까지 읽습니다." : "본문 글자가 없습니다. (스캔한 PDF 등)"}</div>` : ""}
+      ${d.protectedText ? `<p class="warn">암호가 걸렸거나 배포용으로 저장된 한글 문서라 앞부분(약 1쪽)만 읽었습니다. 일반 문서로 다시 저장하면 전체를 읽습니다.</p>` : ""}
+      ${d.hasText ? '<pre class="preview" id="preview">불러오는 중…</pre>' : !d.error ? `<div class="muted small">${["ppt", "xls"].includes(d.ext) ? "옛 형식(." + esc(d.ext) + ")은 본문을 읽지 않고 파일 이름으로만 분류합니다. ." + esc(d.ext) + "x 로 저장하면 본문까지 읽습니다." : "본문 글자가 없습니다. (스캔한 PDF, 그림만 있는 문서 등)"}</div>` : ""}
     </div>`;
 
   if (d.hasText) {
@@ -976,6 +978,14 @@ $("detail").addEventListener("click", async (e) => {
     selected = r.rel;
     renderAll(true);
     return toast(`${folderOf(r.rel)} 폴더로 옮겼습니다.`);
+  }
+  if (act === "new-version") {
+    b.disabled = true;
+    const r = await api.newVersion(d.rel);
+    b.disabled = false;
+    if (r.error) return toast("새 버전을 만들지 못했습니다: " + r.error);
+    goto(r.rel);
+    return toast(`새 버전 '${r.rel.split("/").pop()}'을(를) 만들고 열었습니다.\n원본은 그대로 남아 있고, 버전 기록에 함께 묶입니다.` + (r.openError ? `\n(파일을 열지 못했습니다: ${r.openError})` : ""), 6000);
   }
   if (act === "star") await patchDoc(d.rel, { starred: !d.starred });
   if (act === "reset-cat") await patchDoc(d.rel, { userCategory: "" });
