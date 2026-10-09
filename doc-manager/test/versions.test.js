@@ -4,9 +4,21 @@ const { familyKey, groupVersions } = require("../lib/versions");
 
 test("버전 표시만 다른 이름은 같은 묶음", () => {
   const k = familyKey("엠씨케이테크_IR_260406.pptx");
-  for (const n of ["엠씨케이테크_IR_초안.pptx", "엠씨케이테크_IR (2).pdf", "엠씨케이테크_IR_final.pptx", "엠씨케이테크_IR_v3.pptx", "엠씨케이테크_IR - 복사본.pptx", "엠씨케이테크_IR_2026-04-06.pptx"]) {
+  for (const n of ["엠씨케이테크_IR_초안.pptx", "엠씨케이테크_IR (2).pptx", "엠씨케이테크_IR_final.pptx", "엠씨케이테크_IR_v3.pptx", "엠씨케이테크_IR - 복사본.pptx", "엠씨케이테크_IR_2026-04-06.pptx"]) {
     assert.strictEqual(familyKey(n), k, n);
   }
+});
+
+test("PDF 로 내보낸 사본은 원본의 버전이 아니다 (hwp↔hwpx, doc↔docx 는 같은 문서)", () => {
+  assert.notStrictEqual(familyKey("commercial invoice_Nitinol Sheet.pdf"), familyKey("commercial invoice_Nitinol Sheet.doc"));
+  assert.strictEqual(familyKey("2027 수요조사서 양식.hwp"), familyKey("2027 수요조사서 양식.hwpx"));
+  assert.strictEqual(familyKey("견적서_중앙대.doc"), familyKey("견적서_중앙대_v2.docx"));
+  assert.notStrictEqual(familyKey("엠씨케이테크_견적.xlsx"), familyKey("엠씨케이테크_견적.docx"));
+  const g = groupVersions([
+    { rel: "a/commercial invoice_Nitinol Sheet.doc", base: "commercial invoice_Nitinol Sheet.doc", mtimeMs: 1 },
+    { rel: "a/commercial invoice_Nitinol Sheet.pdf", base: "commercial invoice_Nitinol Sheet.pdf", mtimeMs: 2 },
+  ]);
+  assert.strictEqual(g.size, 0);
 });
 
 test("연도가 다르거나 국문/영문처럼 내용이 다른 것은 따로", () => {

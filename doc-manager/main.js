@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, shell, ipcMain, dialog, nativeTheme } = require("electron");
+const { app, BrowserWindow, Menu, shell, ipcMain, dialog, nativeTheme, net } = require("electron");
 const fs = require("fs");
 const path = require("path");
 const indexer = require("./lib/indexer");
@@ -7,7 +7,8 @@ const { docFrequency, topKeywords } = require("./lib/keywords");
 const searchLib = require("./lib/search");
 const { groupVersions, nextVersionName, uniqueVersionName } = require("./lib/versions");
 const { importFiles, ensureCategoryFolders, expectedFolder, moveToFolder, moveManyToFolders, isInPlace, removeLegacyFolders } = require("./lib/importer");
-const { SUPPORTED } = require("./lib/extract");
+const { SUPPORTED, extract } = require("./lib/extract");
+const { compareTexts } = require("./lib/diff");
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -28,6 +29,8 @@ const store = require("./lib/store");
 const claudeConfig = require("./lib/claude-config");
 const knowledge = require("./lib/knowledge");
 const duplicates = require("./lib/duplicates");
+const { convert, targetsFor } = require("./lib/convert");
+const updates = require("./lib/updates");
 const { readLog } = require("./lib/library");
 
 // Claude 커넥터 실행 방법: 이 앱의 실행 파일을 Node 처럼 돌려 mcp/server.js 를 실행한다.
@@ -42,6 +45,7 @@ function mcpEntry() {
 
 // 색인 파일: 보통 문서 폴더 안의 .docmanager/index.json, 폴더에 쓸 수 없으면 앱 데이터 폴더
 let indexFile = null;
+let textFile = null; // 이 PC의 본문 캐시 (store.textCacheFile)
 let indexInFolder = false;
 // 다른 PC(클라우드 동기화)가 고친 것을 알아채기 위해 마지막으로 읽고 쓴 시각을 기억한다.
 let indexDiskMtime = 0;
@@ -55,7 +59,7 @@ const mtimeOf = (file) => {
   }
 };
 
-const DEFAULT_SETTINGS = { root: "", partners: [], tagRules: [], keywordOverrides: {}, savedSearches: [], recentSearches: [], importLayout: "category", projects: [], techTags: true, theme: "system", aiExcludeCategories: [] };
+const DEFAULT_SETTINGS = { root: "", partners: [], tagRules: [], keywordOverrides: {}, savedSearches: [], recentSearches: [], importLayout: "category", projects: [], techTags: true, theme: "system", aiExcludeCategories: [], checkUpdates: true };
 
 function loadSettings() {
   try {
@@ -97,9 +101,12 @@ function loadRoot(root) {
   const loc = store.indexLocation(root, userFile("index.json"));
   indexFile = loc.file;
   indexInFolder = loc.inFolder;
-  index = indexer.loadIndex(indexFile, root, { anyRoot: indexInFolder });
+  textFile = store.textCacheFile(app.getPath("userData"), root);
+  index = indexer.loadIndex(indexFile, root, { anyRoot: indexInFolder, textFile });
   indexDiskMtime = mtimeOf(indexFile);
-  if (indexer.upgradeIfNeeded(index, classifyOptions())) persistIndex();
+  warmSearch();
+  // 본문이 들어 있던 예전 색인이면 지금 바로 작은 색인 + 이 PC의 본문 캐시로 나눠 쓴다
+  if (indexer.upgradeIfNeeded(index, classifyOptions()) || index.textDirty) persistIndex();
   keywordCache = versionCache = null;
 }
 
@@ -115,7 +122,7 @@ function syncFromDisk() {
   }
   const iMtime = mtimeOf(indexFile);
   if (iMtime && iMtime !== indexDiskMtime) {
-    index = indexer.loadIndex(indexFile, settings.root, { anyRoot: indexInFolder });
+    index = indexer.loadIndex(indexFile, settings.root, { anyRoot: indexInFolder, textSource: indexer.textSourceOf(index) });
     indexDiskMtime = iMtime;
     changed = true;
   }
@@ -139,7 +146,7 @@ function classifyOptions() {
 function persistIndex() {
   if (!index || !index.root || !indexFile) return;
   try {
-    indexer.saveIndex(indexFile, index);
+    indexer.saveIndex(indexFile, index, { textFile });
     indexDiskMtime = mtimeOf(indexFile);
   } catch (e) {
     send("scan-error", "색인을 저장하지 못했습니다: " + ((e && e.message) || e));
@@ -208,8 +215,14 @@ function docSummary(e) {
     note: e.note || "",
     starred: !!e.starred,
     keywords: keywordsOf(e.rel),
-    versions: versionMap().get(e.rel) || null, // { size, latest, order }
+    // 버전 묶음: 묶음 목록(order)은 state.families 에 한 번만 담고, 문서에는 묶음 이름만 (문서마다 목록을 되풀이하면 수 MB 가 된다)
+    versions: (() => {
+      const v = versionMap().get(e.rel);
+      return v ? { key: v.key, size: v.size, latest: v.latest } : null;
+    })(),
     expectedDir,
+    // 이 PC의 한글·워드로 바꿀 수 있는 형식 (윈도우에서만)
+    convertTo: process.platform === "win32" ? targetsFor("." + p.ext) : [],
     misplaced: !isInPlace(p.dir, expectedDir),
   };
 }
@@ -258,6 +271,11 @@ function state() {
     scanning,
     progress,
     docs: index ? Object.values(index.files).map(docSummary) : [],
+    families: (() => {
+      const out = {};
+      for (const v of versionMap().values()) out[v.key] = v.order;
+      return out;
+    })(),
     duplicates: currentDupGroups().map((rels) => ({ rels, keep: duplicates.suggestKeep(index, rels, inPlaceRel, versionRank) })),
   };
 }
@@ -367,12 +385,33 @@ function fullPath(rel) {
 
 // 검색용으로 본문을 소문자·띄어쓰기 없이 만들어 둔다. (파일이 바뀔 때만 다시 만든다)
 const textCache = new Map();
-function searchView(e) {
+// 띄어쓰기를 뺀 소문자 본문 (검색용). replace(/\s+/g) 로 만든 문자열은 includes 가 수십 배 느려서 split/join 으로 만든다.
+const squash = (t) => (t ? t.toLowerCase().split(/\s+/).join("") : "");
+function textOf(e) {
   let c = textCache.get(e.rel);
   if (!c || c.stamp !== e.indexedAt) {
-    c = { stamp: e.indexedAt, textNs: (e.text || "").toLowerCase().replace(/\s+/g, "") };
+    c = { stamp: e.indexedAt, textNs: squash(e.text) };
     textCache.set(e.rel, c);
   }
+  return c;
+}
+
+// 앱을 켠 뒤 쉬는 틈에 검색용 본문을 미리 만들어 둔다 (첫 검색이 느리지 않게)
+let warmTimer = null;
+function warmSearch() {
+  clearTimeout(warmTimer);
+  const rels = index ? Object.keys(index.files) : [];
+  let i = 0;
+  const step = () => {
+    const end = Math.min(rels.length, i + 40);
+    for (; i < end; i++) if (index && index.files[rels[i]]) textOf(index.files[rels[i]]);
+    if (i < rels.length) warmTimer = setTimeout(step, 0);
+  };
+  warmTimer = setTimeout(step, 1500);
+}
+
+function searchView(e) {
+  const c = textOf(e);
   const p = indexer.nameParts(e.rel);
   const eff = indexer.effective(e);
   const cat = CATEGORIES.find((x) => x.id === eff.category) || {};
@@ -399,9 +438,12 @@ function search(query) {
   const results = [];
   for (const e of Object.values(index.files)) {
     const score = searchLib.matchView(searchView(e), parsed);
-    if (score > 0) results.push({ rel: e.rel, score, snippet: searchLib.snippet(e.text || "", parsed.highlight) });
+    if (score > 0) results.push({ rel: e.rel, score });
   }
   for (const rel of textCache.keys()) if (!index.files[rel]) textCache.delete(rel);
+  // 본문 미리보기는 점수가 높은 앞쪽 결과만 만든다 (문서가 많을 때 느려지지 않게)
+  results.sort((a, b) => b.score - a.score);
+  for (const r of results.slice(0, 300)) r.snippet = searchLib.snippet(index.files[r.rel].text || "", parsed.highlight);
   return { highlight: parsed.highlight, results };
 }
 
@@ -588,6 +630,32 @@ function registerIpc() {
     }
   });
 
+  // ---- 새 버전 ----
+  ipcMain.handle("check-update", () => runUpdateCheck(true));
+  ipcMain.handle("open-update", (_e, url) => {
+    // 이 앱의 GitHub 릴리스 주소만 연다
+    if (typeof url === "string" && url.startsWith("https://github.com/jason-s-cho/claude-space/")) shell.openExternal(url);
+  });
+
+  // 다른 형식으로 저장 (한글·워드 이용). 한 번에 하나씩.
+  let convertQueue = Promise.resolve();
+  ipcMain.handle("convert-doc", (_e, rel, to) => {
+    const job = convertQueue.then(async () => {
+      try {
+        const r = await convert(fullPath(rel), to);
+        const entry = await indexer.addFile(index, r.output, classifyOptions());
+        persistIndex();
+        keywordCache = versionCache = null;
+        send("state", state());
+        return { rel: entry.rel, app: r.app };
+      } catch (err) {
+        return { error: String((err && err.message) || err) };
+      }
+    });
+    convertQueue = job.catch(() => {});
+    return job;
+  });
+
   // 중복 정리: 묶음마다 남길 파일 하나를 두고 나머지를 휴지통으로. 지우기 직전에 내용이 정말 같은지 다시 확인한다.
   ipcMain.handle("trash-duplicates", async (_e, plan) => {
     const trashed = [], failed = [];
@@ -643,6 +711,22 @@ function registerIpc() {
 
   ipcMain.handle("search", (_e, q) => search(q));
 
+  // 두 문서(보통 같은 문서의 두 버전) 본문 비교. 앞이 이전, 뒤가 나중.
+  ipcMain.handle("compare-docs", async (_e, relA, relB) => {
+    try {
+      const read = async (rel) => {
+        const x = await extract(fullPath(rel), { maxText: 400000 });
+        if (x.protected) throw new Error(`${rel.split("/").pop()}: 암호·배포용 문서라 본문을 다 읽을 수 없습니다`);
+        return x.text || "";
+      };
+      const [ta, tb] = await Promise.all([read(relA), read(relB)]);
+      if (!ta.trim() && !tb.trim()) throw new Error("두 문서 모두 본문 글자를 읽을 수 없습니다 (스캔 PDF·옛 형식 등)");
+      return compareTexts(ta, tb);
+    } catch (err) {
+      return { error: String((err && err.message) || err) };
+    }
+  });
+
   ipcMain.handle("get-text", (_e, rel) => (index && index.files[rel] ? index.files[rel].text || "" : ""));
 
   ipcMain.handle("update-doc", (_e, rel, patch) => {
@@ -685,6 +769,7 @@ function registerIpc() {
     if (Array.isArray(next.projects)) settings.projects = next.projects;
     if (typeof next.techTags === "boolean") settings.techTags = next.techTags;
     if (Array.isArray(next.aiExcludeCategories)) settings.aiExcludeCategories = next.aiExcludeCategories.filter((x) => typeof x === "string");
+    if (typeof next.checkUpdates === "boolean") settings.checkUpdates = next.checkUpdates;
     if (["system", "light", "dark"].includes(next.theme)) {
       settings.theme = next.theme;
       applyTheme();
@@ -793,6 +878,22 @@ app.on("second-instance", () => {
   }
 });
 
+// GitHub 릴리스에서 새 버전 확인. 켠 뒤 잠시 있다가 한 번, 그 뒤로 6시간마다. (개발 중인 앱은 자동으로 확인하지 않는다)
+let lastUpdate = null;
+async function runUpdateCheck(manual) {
+  if (!manual && (!app.isPackaged || settings.checkUpdates === false)) return null;
+  const r = await updates.checkForUpdate(app.getVersion(), {
+    fetchJson: async (url) => {
+      const res = await net.fetch(url, { headers: { "User-Agent": "doc-manager", Accept: "application/vnd.github+json" } });
+      if (!res.ok) throw new Error(`GitHub 응답 ${res.status}`);
+      return res.json();
+    },
+  });
+  lastUpdate = r;
+  if (r.available) send("update-available", r);
+  return r;
+}
+
 app.whenReady().then(() => {
   if (process.platform === "win32") app.setAppUserModelId("com.jasonscho.docmanager");
   if (process.platform !== "darwin") Menu.setApplicationMenu(null);
@@ -816,6 +917,8 @@ app.whenReady().then(() => {
     lastFocusScan = Date.now();
     runScan();
   }
+  setTimeout(() => runUpdateCheck(false), 15000);
+  setInterval(() => runUpdateCheck(false), 6 * 3600 * 1000);
 
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

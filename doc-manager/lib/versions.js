@@ -16,18 +16,25 @@ const VERSION_PATTERNS = [
 ];
 
 // 묶음 열쇠: 버전 표시를 지우고, 기호·띄어쓰기를 없앤 소문자 이름
+// 형식 갈래: 같은 이름이라도 PDF 로 내보낸 것과 원본(워드·한글 …)은 버전이 아니라 다른 형식의 사본이다.
+// (.hwp 와 .hwpx, .doc 와 .docx 처럼 같은 프로그램의 옛/새 형식은 같은 문서의 버전으로 본다)
+const FORMAT_CLASS = { ".pdf": "pdf", ".doc": "word", ".docx": "word", ".hwp": "hwp", ".hwpx": "hwp", ".ppt": "ppt", ".pptx": "ppt", ".xls": "excel", ".xlsx": "excel" };
+
 function familyKey(baseName) {
+  const ext = (baseName.match(/\.[^.]+$/) || [""])[0].toLowerCase();
   let s = baseName.replace(/\.[^.]+$/, "");
   for (const re of VERSION_PATTERNS) s = s.replace(re, " ");
   s = s.toLowerCase().replace(/[\s_\-.,·()[\]{}~+]+/g, "");
-  return s;
+  const cls = FORMAT_CLASS[ext] || ext.slice(1);
+  return s && cls ? `${s}|${cls}` : s;
 }
 
 // 너무 짧거나 흔한 이름("보고서", "자료")은 서로 다른 문서일 가능성이 높아 묶지 않는다.
 const GENERIC = new Set(["보고서", "자료", "문서", "발표", "발표자료", "회의록", "메모", "견적서", "계획서", "제안서", "untitled", "document", "presentation", "새문서", "제목없음"]);
 
 function groupable(key) {
-  return key.length >= 4 && !GENERIC.has(key);
+  const name = key.split("|")[0];
+  return name.length >= 4 && !GENERIC.has(name);
 }
 
 /**

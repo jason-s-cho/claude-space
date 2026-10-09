@@ -4,6 +4,7 @@
 const fs = require("fs");
 const path = require("path");
 const { execFile } = require("child_process");
+const crypto = require("crypto");
 
 const DIR_NAME = ".docmanager";
 
@@ -111,4 +112,10 @@ function isOwnFile(filename) {
   return String(filename).split(/[\\/]/)[0] === DIR_NAME;
 }
 
-module.exports = { DIR_NAME, FOLDER_KEYS, paths, ensureDir, loadFolderSettings, saveFolderSettings, migrateLegacyIndex, indexLocation, isOwnFile, writeJson, readJson };
+// 이 PC의 본문 캐시 파일 (문서 폴더마다 하나, 앱 데이터 폴더 안). 동기화되지 않는다.
+function textCacheFile(userDataDir, root) {
+  const id = crypto.createHash("sha1").update(path.resolve(root).toLowerCase()).digest("hex").slice(0, 16);
+  return path.join(userDataDir, "textcache", id + ".json");
+}
+
+module.exports = { textCacheFile, DIR_NAME, FOLDER_KEYS, paths, ensureDir, loadFolderSettings, saveFolderSettings, migrateLegacyIndex, indexLocation, isOwnFile, writeJson, readJson };

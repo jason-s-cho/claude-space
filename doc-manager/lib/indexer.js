@@ -18,16 +18,40 @@ function emptyIndex(root) {
   return { version: INDEX_VERSION, root, files: {}, classifierVersion: CLASSIFIER_VERSION };
 }
 
+// ---- 본문 캐시 ----
+// 문서 본문(text)과 낱말 수(terms)는 파일에서 언제든 다시 뽑을 수 있으므로, 문서 폴더(구글 드라이브 등으로 동기화되는)의
+// 색인에는 넣지 않고 이 PC의 앱 데이터 폴더에 따로 둔다. 그래서 태그 하나를 고쳐도 작은 색인만 다시 쓴다.
+// 다른 PC에서 처음 열면 캐시가 없으므로 본문만 다시 읽는다 (분류·태그·메모는 색인에 있어 그대로).
+const TEXT_FIELDS = ["text", "terms"];
+const stampOf = (e) => `${e.size}:${e.mtimeMs}`;
+
+function readTextCache(file) {
+  try {
+    const data = JSON.parse(fs.readFileSync(file, "utf8"));
+    if (data && data.version === 1 && data.files) return data.files;
+  } catch {}
+  return {};
+}
+
 // opts.anyRoot: 색인이 문서 폴더 안에 있을 때. 폴더를 옮겼거나 다른 PC(드라이브 문자가 다름)에서 열어도
 // 파일 경로는 폴더 기준 상대 경로이므로 그대로 쓴다.
+// opts.textFile: 본문 캐시 파일 / opts.textSource: 이미 메모리에 있는 본문 (rel → { s, text, terms }), 있으면 파일 대신 쓴다
 function loadIndex(file, root, opts = {}) {
   try {
     const data = JSON.parse(fs.readFileSync(file, "utf8"));
     if (data && data.version === INDEX_VERSION && (data.root === root || opts.anyRoot) && data.files) {
       data.root = root;
-      // 키워드 기능이 생기기 전에 만든 색인: 파일을 다시 읽지 않고 저장된 본문으로 센다.
+      const cache = opts.textSource || (opts.textFile ? readTextCache(opts.textFile) : null);
       for (const e of Object.values(data.files)) {
-        if (!e.terms) e.terms = countTerms([e.title, e.text].join("\n"));
+        if (e.text === undefined && cache) {
+          const c = cache[e.rel];
+          if (c && c.s === stampOf(e)) {
+            e.text = c.text;
+            e.terms = c.terms;
+          } else e.needsText = true; // 다음에 훑을 때 본문만 다시 읽는다
+        } else if (e.text !== undefined && opts.textFile) data.textDirty = true; // 본문이 들어 있던 예전 색인 → 캐시로 옮긴다
+        // 키워드 기능이 생기기 전에 만든 색인: 파일을 다시 읽지 않고 저장된 본문으로 센다.
+        if (!e.terms) e.terms = countTerms([e.title, e.text || ""].join("\n"));
         // 이름이 바뀐 분류 (예: 수요조사서 → 공고·수요조사)
         if (e.userCategory && RENAMED[e.userCategory]) e.userCategory = RENAMED[e.userCategory];
         // 예전에 본문을 못 읽었던 형식(.hwp 등)은 다음에 훑을 때 다시 읽게 한다. (직접 고친 내용은 그대로)
@@ -42,10 +66,36 @@ function loadIndex(file, root, opts = {}) {
   return emptyIndex(root);
 }
 
-function saveIndex(file, index) {
-  const tmp = file + ".tmp";
-  fs.writeFileSync(tmp, JSON.stringify(index));
-  fs.renameSync(tmp, file);
+// opts.textFile 을 주면 본문은 그 캐시 파일에 (바뀌었을 때만), 색인 파일에는 나머지만 쓴다.
+function saveIndex(file, index, opts = {}) {
+  const write = (f, data) => {
+    const tmp = f + ".tmp";
+    fs.writeFileSync(tmp, JSON.stringify(data));
+    fs.renameSync(tmp, f);
+  };
+  if (!opts.textFile) return write(file, index);
+  const slim = { ...index, files: {} };
+  delete slim.textDirty;
+  const texts = {};
+  for (const [rel, e] of Object.entries(index.files)) {
+    const o = {};
+    for (const k of Object.keys(e)) if (!TEXT_FIELDS.includes(k) && k !== "needsText") o[k] = e[k];
+    slim.files[rel] = o;
+    if (e.text !== undefined) texts[rel] = { s: stampOf(e), text: e.text, terms: e.terms };
+  }
+  write(file, slim);
+  if (index.textDirty || !fs.existsSync(opts.textFile)) {
+    fs.mkdirSync(path.dirname(opts.textFile), { recursive: true });
+    write(opts.textFile, { version: 1, root: index.root, files: texts });
+    index.textDirty = false;
+  }
+}
+
+// 메모리에 있는 본문 (다른 PC가 고친 색인을 다시 읽을 때 캐시 파일 대신 쓴다)
+function textSourceOf(index) {
+  const out = {};
+  for (const e of Object.values((index && index.files) || {})) if (e.text !== undefined && !e.needsText) out[e.rel] = { s: stampOf(e), text: e.text, terms: e.terms };
+  return out;
 }
 
 // 임시 파일(~$문서.docx 등)과 숨김 파일은 건너뛴다.
@@ -135,6 +185,7 @@ async function addFile(index, full, options) {
   const entry = await buildEntry({ full, rel, size: st.size, mtimeMs: Math.round(st.mtimeMs), birthtimeMs: Math.round(st.birthtimeMs || st.mtimeMs) });
   reclassify(entry, options);
   index.files[rel] = entry;
+  index.textDirty = true;
   return entry;
 }
 
@@ -154,7 +205,7 @@ async function scan(index, options, onProgress) {
 
   const todo = found.filter((f) => {
     const e = old[f.rel];
-    return !e || e.size !== f.size || e.mtimeMs !== f.mtimeMs;
+    return !e || e.size !== f.size || e.mtimeMs !== f.mtimeMs || e.needsText;
   });
 
   let added = 0, updated = 0, done = 0;
@@ -170,6 +221,7 @@ async function scan(index, options, onProgress) {
     if (source) for (const k of USER_FIELDS) if (source[k] !== undefined) entry[k] = source[k];
     reclassify(entry, options);
     old[f.rel] = entry;
+    index.textDirty = true;
     if (prev) updated++; else added++;
     done++;
     // 너무 오래 메인 스레드를 잡지 않도록 가끔 쉰다.
@@ -201,4 +253,4 @@ function upgradeIfNeeded(index, options) {
   return true;
 }
 
-module.exports = { upgradeIfNeeded, loadIndex, saveIndex, emptyIndex, scan, reclassifyAll, effective, nameParts, buildEntry, addFile, walk, isTempName, USER_FIELDS };
+module.exports = { textSourceOf, upgradeIfNeeded, loadIndex, saveIndex, emptyIndex, scan, reclassifyAll, effective, nameParts, buildEntry, addFile, walk, isTempName, USER_FIELDS };

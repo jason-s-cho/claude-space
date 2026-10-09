@@ -108,6 +108,8 @@ function applyState(next) {
   S = next;
   catById = Object.fromEntries(S.categories.map((c) => [c.id, c]));
   byRel = new Map(S.docs.map((d) => [d.rel, d]));
+  // 버전 묶음 목록은 따로 한 번만 온다 → 문서마다 이어 붙인다 (같은 배열을 함께 씀)
+  for (const d of S.docs) if (d.versions) d.versions.order = (S.families || {})[d.versions.key] || [d.rel];
   rebuildDupMap();
   if (selected && !byRel.has(selected)) selected = "";
   document.body.classList.toggle("mac", S.platform === "darwin");
@@ -356,7 +358,7 @@ function renderList() {
   $("activeFilters").innerHTML = f || '<span class="title">전체 문서</span>';
 
   // 버전 묶기: 같은 묶음은 (지금 정렬에서) 처음 나온 문서 하나만 보여 준다.
-  const rows = [];
+  const rows = []; // [{ d, child }] — 글(HTML)은 화면에 그릴 때 만든다
   rowOrder = [];
   const shownFamilies = new Set();
   let families = 0;
@@ -366,27 +368,34 @@ function renderList() {
       if (shownFamilies.has(v.latest)) continue;
       shownFamilies.add(v.latest);
       families++;
-      rows.push(rowHtml(d));
+      rows.push({ d });
       rowOrder.push(d.rel);
       if (expanded.has(v.latest)) {
         for (const rel of v.order) {
           if (rel === d.rel || !byRel.has(rel)) continue;
-          rows.push(rowHtml(byRel.get(rel), { child: true }));
+          rows.push({ d: byRel.get(rel), child: true });
           rowOrder.push(rel);
         }
       }
     } else {
-      rows.push(rowHtml(d));
+      rows.push({ d });
       rowOrder.push(d.rel);
     }
   }
   $("count").textContent = groupVersions && families ? `${visible.length}개 · 버전 묶음 ${families}` : `${visible.length}개`;
   $("count").title = groupVersions && families ? "같은 문서의 여러 버전은 하나로 묶여 있습니다. 숫자 단추를 누르면 펼칩니다." : "";
 
+  // 문서가 많아도 빠르도록 처음엔 앞쪽 몇백 줄만 그리고, 아래로 내리면 이어서 그린다.
   const list = $("list");
   const scroll = list.scrollTop;
-  list.innerHTML = rows.join("");
+  const key = JSON.stringify([filter.view, [...filter.tags], filter.kind, filter.project, query, $("sort").value, groupVersions]);
+  const keep = key === listKey ? listShown : 0; // 같은 목록을 다시 그릴 때는 보던 데까지
+  listKey = key;
+  listRows = rows;
+  listShown = Math.min(rows.length, Math.max(PAGE_ROWS, keep, rowOrder.indexOf(selected) + 30));
+  list.innerHTML = rows.slice(0, listShown).map(rowItemHtml).join("") + moreRowHtml();
   list.scrollTop = scroll;
+  watchMoreRow();
   const empty = $("empty");
   empty.hidden = visible.length > 0;
   list.hidden = !visible.length;
@@ -394,6 +403,39 @@ function renderList() {
     const msg = S.scanning && !S.docs.length ? "문서를 읽는 중입니다…" : S.docs.length ? "조건에 맞는 문서가 없습니다." : "아직 문서가 없습니다. 파일을 이 창에 끌어다 놓아 보세요.";
     empty.innerHTML = `${icon(S.docs.length ? "search" : "inbox")}<div>${msg}</div>`;
   }
+}
+
+const PAGE_ROWS = 200;
+let listRows = [], listShown = 0, listKey = "";
+const rowItemHtml = (r) => rowHtml(r.d, r.child ? { child: true } : {});
+const moreRowHtml = () =>
+  listShown < listRows.length ? `<li class="more-rows" id="moreRows"><button type="button" data-more>아래 문서 더 보기 (${(listRows.length - listShown).toLocaleString()}개 남음)</button></li>` : "";
+
+// 목록 아래쪽에 n 줄을 더 그린다
+function showMoreRows(n = PAGE_ROWS) {
+  if (listShown >= listRows.length) return;
+  const more = $("moreRows");
+  const next = Math.min(listRows.length, listShown + n);
+  const html = listRows.slice(listShown, next).map(rowItemHtml).join("");
+  listShown = next;
+  if (more) more.remove();
+  $("list").insertAdjacentHTML("beforeend", html + moreRowHtml());
+  watchMoreRow();
+}
+
+// '더 보기' 줄이 보이면 저절로 이어서 그린다
+let moreObserver = null;
+function watchMoreRow() {
+  if (!moreObserver) moreObserver = new IntersectionObserver((es) => es.some((e) => e.isIntersecting) && showMoreRows(), { root: $("list"), rootMargin: "600px" });
+  moreObserver.disconnect();
+  const more = $("moreRows");
+  if (more) moreObserver.observe(more);
+}
+
+// 아직 그리지 않은 아래쪽 문서를 고르면(키보드 이동 등) 거기까지 그린다
+function ensureRowShown(rel) {
+  const i = rowOrder.indexOf(rel);
+  if (i >= listShown) showMoreRows(i - listShown + 30);
 }
 
 async function renderDetail() {
@@ -430,13 +472,15 @@ async function renderDetail() {
   if (v) {
     const latest = byRel.get(v.latest);
     if (v.latest !== d.rel && latest) {
-      banner = `<div class="banner">${icon("info")}<div>더 최신 버전이 있습니다: <b>${esc(latest.base)}</b> (${fmtDate(latest.mtimeMs)}) <button data-goto="${esc(latest.rel)}" type="button">보기</button></div></div>`;
+      banner = `<div class="banner">${icon("info")}<div>더 최신 버전이 있습니다: <b>${esc(latest.base)}</b> (${fmtDate(latest.mtimeMs)}) <button data-goto="${esc(latest.rel)}" type="button">보기</button> <button data-compare="${esc(latest.rel)}" type="button">바뀐 곳 비교</button></div></div>`;
     }
     timeline = `<div class="card"><h4>${icon("layers")}버전 기록<small>${v.size}개</small></h4><ul class="timeline">${v.order
       .filter((rel) => byRel.has(rel))
       .map((rel) => {
         const x = byRel.get(rel);
-        return `<li class="${rel === d.rel ? "cur" : ""}"><button data-goto="${esc(rel)}" type="button" title="${esc(rel)}"><span class="tl-dot"></span><span class="tl-name">${esc(x.base)}</span><span class="tl-date">${fmtDate(x.mtimeMs)}</span></button></li>`;
+        return `<li class="${rel === d.rel ? "cur" : ""}"><button data-goto="${esc(rel)}" type="button" title="${esc(rel)}"><span class="tl-dot"></span><span class="tl-name">${esc(x.base)}</span><span class="tl-date">${fmtDate(x.mtimeMs)}</span></button>${
+          rel === d.rel ? "" : `<button class="tl-cmp" data-compare="${esc(rel)}" type="button" title="지금 문서와 바뀐 곳 비교">비교</button>`
+        }</li>`;
       })
       .join("")}</ul></div>`;
   }
@@ -460,6 +504,11 @@ async function renderDetail() {
       <button class="icon-btn${d.starred ? " on" : ""}" data-act="star" type="button" title="${d.starred ? "즐겨찾기 해제" : "즐겨찾기"}" aria-label="즐겨찾기">${d.starred ? '<svg style="fill:currentColor"><use href="#i-star"/></svg>' : icon("star")}</button>
       <button class="icon-btn danger" data-act="delete" type="button" title="지우기 (휴지통으로)" aria-label="지우기">${icon("trash")}</button>
     </div>
+    ${d.convertTo && d.convertTo.length
+      ? `<div class="convert-row"><span>다른 형식으로 저장</span>${d.convertTo
+          .map((to) => `<button class="btn sm" data-convert="${to}" type="button" title="${esc(CONVERT_HINT[to] || "")}">${esc(CONVERT_LABEL[to] || to)}</button>`)
+          .join("")}</div>`
+      : ""}
     <div class="card">
       <h4>${icon("folder")}분류</h4>
       <select class="select" id="catSelect">${opts}</select>
@@ -523,6 +572,7 @@ function allTags() {
 async function patchDoc(rel, patch) {
   const updated = await api.updateDoc(rel, patch);
   if (!updated) return;
+  if (updated.versions) updated.versions.order = (S.families || {})[updated.versions.key] || [rel];
   const i = S.docs.findIndex((d) => d.rel === rel);
   if (i >= 0) S.docs[i] = updated;
   byRel.set(rel, updated);
@@ -546,6 +596,7 @@ async function removeTag(d, tag) {
 
 function select(rel, scroll) {
   selected = rel;
+  ensureRowShown(rel);
   for (const li of $("list").querySelectorAll(".row")) {
     const on = li.dataset.rel === rel;
     li.classList.toggle("sel", on);
@@ -559,6 +610,21 @@ function select(rel, scroll) {
 function goto(rel) {
   const d = byRel.get(rel);
   if (!d) return;
+  // 지금 걸러 보는 조건(방금 넣은 문서·분류·검색 등)에 안 들어가는 문서면 조건을 풀어서 목록에 보이게 한다
+  if (!filtered().some((x) => x.rel === rel)) {
+    filter.view = "all";
+    filter.tags.clear();
+    filter.kind = "";
+    filter.project = "";
+    if (query) {
+      $("q").value = "";
+      query = "";
+      results = null;
+      hlTerms = [];
+      if ($("sort").value === "relevance") $("sort").value = "mtime";
+    }
+    renderSide();
+  }
   if (d.versions && groupVersions) expanded.add(d.versions.latest);
   selected = rel;
   renderList();
@@ -779,6 +845,7 @@ const TOOL_LABEL = {
   library_overview: "둘러보기", search_documents: "검색", read_document: "읽기", list_versions: "버전 기록",
   find_related_documents: "관련 문서", save_new_version: "새 버전 저장", prepare_new_version: "새 버전 복사본",
   get_knowledge: "지식 카드 읽기", save_knowledge_card: "지식 카드 저장",
+  inspect_form: "양식 보기", fill_form: "양식 채우기", convert_document: "형식 바꾸기", compare_versions: "바뀐 곳 비교",
 };
 
 async function renderClaudeTab() {
@@ -909,6 +976,90 @@ $("moveGo").onclick = async () => {
   if (r.failed.length) msg += `\n옮기지 못한 ${r.failed.length}개: ` + r.failed.slice(0, 3).map((f) => `${f.rel.split("/").pop()} (${f.error})`).join(", ") + (r.failed.length > 3 ? " …" : "");
   toast(msg, r.failed.length ? 9000 : 5000);
 };
+
+// ---- 버전 비교 ----
+// relX, relY 중 먼저 고친 것을 '이전', 나중 것을 '나중'으로 놓고 비교한다
+async function openCompare(relX, relY) {
+  const x = byRel.get(relX), y = byRel.get(relY);
+  if (!x || !y) return;
+  const [a, b] = x.mtimeMs <= y.mtimeMs ? [x, y] : [y, x];
+  $("cmpHead").innerHTML = `<div class="cmp-side old"><small>이전</small><b title="${esc(a.rel)}">${esc(a.base)}</b><span>${fmtDate(a.mtimeMs)}</span></div>${icon("chevron", "cmp-arrow")}<div class="cmp-side new"><small>나중</small><b title="${esc(b.rel)}">${esc(b.base)}</b><span>${fmtDate(b.mtimeMs)}</span></div>`;
+  $("cmpStats").innerHTML = "";
+  $("cmpBody").innerHTML = '<p class="hint">두 문서를 읽고 비교하는 중…</p>';
+  $("cmpDlg").showModal();
+  const r = await api.compareDocs(a.rel, b.rel);
+  if (r.error) {
+    $("cmpBody").innerHTML = `<p class="state-warn">${esc(r.error)}</p>`;
+    return;
+  }
+  const st = r.stats;
+  $("cmpStats").innerHTML =
+    (st.changed + st.added + st.removed
+      ? `<span class="cs mod">고친 문단 ${st.changed}</span><span class="cs ins">추가 ${st.added}</span><span class="cs del">삭제 ${st.removed}</span><span class="cs">같음 ${st.same}</span>`
+      : '<span class="cs">본문 글자는 똑같습니다 (서식·그림만 다를 수 있음)</span>') +
+    (r.numbers.length
+      ? `<div class="cmp-numbers">${icon("info")}<b>바뀐 숫자</b> ${r.numbers
+          .slice(0, 12)
+          .map((n) => `<span><del>${esc(n.before)}</del>→<ins>${esc(n.after)}</ins></span>`)
+          .join("")}${r.numbers.length > 12 ? ` <small>외 ${r.numbers.length - 12}곳</small>` : ""}</div>`
+      : "");
+  // 같은 문단이 길게 이어지면 앞뒤 하나씩만 보이고 접는다
+  const html = [];
+  const bl = r.blocks;
+  for (let i = 0; i < bl.length; ) {
+    if (bl[i].t !== "eq") {
+      const x = bl[i];
+      if (x.t === "mod") html.push(`<p class="cb mod">${x.inline.map((s) => (s.t === "eq" ? esc(s.s) : `<${s.t}>${esc(s.s)}</${s.t}>`)).join("")}</p>`);
+      else if (x.t === "ins") html.push(`<p class="cb ins"><ins>${esc(x.b)}</ins></p>`);
+      else html.push(`<p class="cb del"><del>${esc(x.a)}</del></p>`);
+      i++;
+      continue;
+    }
+    let j = i;
+    while (j < bl.length && bl[j].t === "eq") j++;
+    const run = bl.slice(i, j);
+    const keepHead = i === 0 ? 0 : 1, keepTail = j === bl.length ? 0 : 1;
+    if (run.length > keepHead + keepTail + 1) {
+      run.slice(0, keepHead).forEach((e) => html.push(`<p class="cb eq">${esc(e.b)}</p>`));
+      const hidden = run.slice(keepHead, run.length - keepTail);
+      html.push(`<button class="cb-fold" type="button" data-fold="${esc(hidden.map((e) => e.b).join("\n"))}">… 같은 문단 ${hidden.length}개 …</button>`);
+      run.slice(run.length - keepTail).forEach((e) => html.push(`<p class="cb eq">${esc(e.b)}</p>`));
+    } else run.forEach((e) => html.push(`<p class="cb eq">${esc(e.b)}</p>`));
+    i = j;
+  }
+  $("cmpBody").innerHTML = html.join("");
+  const first = $("cmpBody").querySelector(".cb.mod, .cb.ins, .cb.del");
+  if (first) first.scrollIntoView({ block: "center" });
+}
+$("cmpBody").addEventListener("click", (e) => {
+  const b = e.target.closest(".cb-fold");
+  if (!b) return;
+  const frag = b.dataset.fold.split("\n").map((t) => `<p class="cb eq">${esc(t)}</p>`).join("");
+  b.insertAdjacentHTML("afterend", frag);
+  b.remove();
+});
+$("cmpClose").onclick = () => $("cmpDlg").close();
+
+// ---- 다른 형식으로 저장 (한글·워드) ----
+const CONVERT_LABEL = { ".hwpx": "한글 표준(hwpx)", ".docx": "워드(docx)", ".pdf": "PDF" };
+const CONVERT_HINT = {
+  ".hwpx": "한글로 hwpx 사본을 만듭니다. Claude 가 양식을 채울 수 있는 형식입니다.",
+  ".docx": "워드로 docx 사본을 만듭니다. Claude 가 양식을 채울 수 있는 형식입니다.",
+  ".pdf": "제출용 PDF 를 만듭니다.",
+};
+async function convertDoc(d, to, btn) {
+  const app = d.ext === "hwp" || d.ext === "hwpx" ? "한글" : "워드";
+  btn.disabled = true;
+  const label = btn.textContent;
+  btn.textContent = "변환 중…";
+  toast(`${app}로 ${CONVERT_LABEL[to] || to} 파일을 만드는 중입니다.` + (app === "한글" ? "\n한글에서 '접근 허용' 창이 뜨면 [모두 허용]이나 [접근 허용]을 눌러 주세요." : ""), 60000);
+  const r = await api.convertDoc(d.rel, to);
+  btn.disabled = false;
+  btn.textContent = label;
+  if (r.error) return toast("변환하지 못했습니다: " + r.error, 9000);
+  goto(r.rel);
+  toast(`'${r.rel.split("/").pop()}'을(를) 만들었습니다. 원본은 그대로 있습니다.`, 5000);
+}
 
 // ---- 중복 정리 ----
 let dupPlan = [];
@@ -1046,6 +1197,7 @@ function openSettings(tab = "general", group) {
   $("kwGroups").innerHTML = S.keywordGroups.map((g) => `<button type="button" data-group="${g.key}">${esc(g.label)}</button>`).join("");
   renderKwEditor();
   $("aboutVersion").textContent = S.appVersion || "";
+  $("checkUpdatesInput").checked = S.settings.checkUpdates !== false;
   $("aboutRoot").textContent = S.root || "(아직 고르지 않음)";
   $("aboutStore").textContent = !S.root
     ? ""
@@ -1233,6 +1385,7 @@ $("activeFilters").addEventListener("click", (e) => {
 });
 
 $("list").addEventListener("click", (e) => {
+  if (e.target.closest("[data-more]")) return showMoreRows();
   const vb = e.target.closest("[data-family]");
   if (vb) {
     const k = vb.dataset.family;
@@ -1256,6 +1409,7 @@ $("detail").addEventListener("click", async (e) => {
   const act = b.dataset.act;
   if (act === "open") return openDoc(d.rel);
   if (act === "reveal") return api.showInFolder(d.rel);
+  if (b.dataset.compare) return openCompare(b.dataset.compare, d.rel);
   if (b.dataset.goto) return goto(b.dataset.goto);
   if (act === "move") {
     const r = await api.moveToCategory(d.rel);
@@ -1265,6 +1419,7 @@ $("detail").addEventListener("click", async (e) => {
     renderAll(true);
     return toast(`${folderOf(r.rel)} 폴더로 옮겼습니다.`);
   }
+  if (b.dataset.convert) return convertDoc(d, b.dataset.convert, b);
   if (act === "dedupe-one") return openDupDialog([dupOf.get(d.rel)].filter(Boolean));
   if (act === "delete") {
     const r = await api.deleteDoc(d.rel);
@@ -1373,6 +1528,7 @@ $("settingsDlg").addEventListener("close", async () => {
   const checked = (name) => (document.querySelector(`input[name="${name}"]:checked`) || {}).value;
   await api.saveSettings({
     theme: checked("theme"),
+    checkUpdates: $("checkUpdatesInput").checked,
     importLayout: checked("importLayout"),
     techTags: $("techTagsInput").checked,
     projects: linesToNamed($("projectsInput").value),
@@ -1455,6 +1611,32 @@ window.addEventListener("drop", async (e) => {
 });
 
 api.onState(applyState);
+
+// ---- 새 버전 알림 ----
+let updateInfo = null;
+function showUpdate(r) {
+  updateInfo = r;
+  $("updateTitle").textContent = `새 버전 ${r.latest} 이 나왔습니다`;
+  $("updateSub").textContent = `지금 ${r.current} · 받은 설치 파일을 실행하면 문서와 설정은 그대로 두고 바꿉니다`;
+  $("updateBar").hidden = false;
+}
+api.onUpdateAvailable((r) => showUpdate(r));
+$("updateGet").onclick = () => updateInfo && api.openUpdate(updateInfo.url);
+$("updateNotes").onclick = () => updateInfo && api.openUpdate(updateInfo.page);
+$("updateClose").onclick = () => ($("updateBar").hidden = true);
+$("releasesLink").onclick = (e) => {
+  e.preventDefault();
+  api.openUpdate("https://github.com/jason-s-cho/claude-space/releases");
+};
+$("checkUpdateBtn").onclick = async () => {
+  $("updateState").textContent = "확인 중…";
+  const r = await api.checkUpdate();
+  if (r.error) $("updateState").textContent = "확인하지 못했습니다: " + r.error;
+  else if (r.available) {
+    $("updateState").textContent = `새 버전 ${r.latest} 이 있습니다.`;
+    showUpdate(r);
+  } else $("updateState").textContent = r.latest ? `최신 버전입니다 (${r.current}).` : "아직 올라온 릴리스가 없습니다.";
+};
 api.onProgress((p) => {
   S.progress = p;
   S.scanning = true;
