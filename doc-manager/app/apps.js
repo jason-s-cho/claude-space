@@ -116,7 +116,49 @@ function renderAppDetail() {
       <button class="btn sm ghost" data-a-sadd type="button">${icon("plus")}단계 추가</button>
     </div>
     <div class="app-foot"><button class="btn sm ghost danger" data-a-del type="button">${icon("trash")}이 지원 건 지우기</button></div>
-    <datalist id="appDocList">${S.docs.map((d) => `<option value="${esc(d.rel)}"></option>`).join("")}</datalist>`;
+`;
+}
+
+// 문서 고르기: 이름·폴더 일부(띄어쓰기로 여러 단어)를 치면 맞는 문서가 바로 아래에 뜬다. 누르거나 Enter(첫 번째)로 연결.
+function openDocPicker(btn, a, stageName) {
+  const already = new Set((a.stages.find((s) => s.name === stageName) || { docs: [] }).docs);
+  const wrap = document.createElement("div");
+  wrap.className = "doc-picker";
+  wrap.innerHTML = `<input class="doc-pick" placeholder="문서 이름 일부 (예: 탄소 수요조사)" autocomplete="off"><ul class="doc-pick-list"></ul><small class="hint">눌러서 고르거나 Enter 로 첫 번째 문서를 연결합니다 · Esc 로 닫기</small>`;
+  btn.replaceWith(wrap);
+  const input = wrap.querySelector("input");
+  const list = wrap.querySelector("ul");
+  let matches = [];
+  const norm = (t) => t.toLowerCase().replace(/\s+/g, "");
+  const show = () => {
+    const words = input.value.trim().toLowerCase().split(/\s+/).filter(Boolean).map(norm);
+    matches = (words.length ? S.docs.filter((d) => !already.has(d.rel) && words.every((w) => norm(d.rel).includes(w))) : [])
+      .sort((x, y) => y.mtimeMs - x.mtimeMs)
+      .slice(0, 8);
+    list.innerHTML = matches.length
+      ? matches.map((d, i) => `<li><button type="button" data-pick="${i}"><b>${esc(d.base)}</b><small>${esc(d.dir || "최상위 폴더")}</small></button></li>`).join("")
+      : words.length
+        ? '<li class="none">맞는 문서가 없습니다</li>'
+        : "";
+  };
+  const pick = async (d) => {
+    if (!d) return toast("맞는 문서가 없습니다. 이름 일부를 다르게 입력해 보세요.");
+    input.blur(); // 입력 중이면 화면을 다시 그리지 않으므로 먼저 빠져나온다
+    await appsOp({ type: "link", id: a.id, stage: stageName, rel: d.rel }, `'${d.base}'을(를) 연결했습니다.`);
+    renderAppDetail();
+  };
+  input.addEventListener("input", show);
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      pick(matches[0]);
+    } else if (e.key === "Escape") renderAppDetail();
+  });
+  list.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-pick]");
+    if (b) pick(matches[parseInt(b.dataset.pick, 10)]);
+  });
+  input.focus();
 }
 
 // 문서 화면에 붙는 카드: 이 문서가 연결된 지원 건 + 지원 건에 연결하기
@@ -202,22 +244,7 @@ $("detail").addEventListener("click", async (e) => {
     return appsOp({ type: "stages", id: a.id, stages: st });
   }
   if (b.dataset.aUnlink !== undefined) return appsOp({ type: "unlink", id: a.id, stage: a.stages[idx("aUnlink")].name, rel: b.dataset.rel });
-  if (b.dataset.aSlink !== undefined) {
-    // 그 자리에 문서 고르는 칸을 연다 (경로 일부를 치면 목록에서 고를 수 있다)
-    const i = idx("aSlink");
-    const input = document.createElement("input");
-    input.className = "doc-pick";
-    input.setAttribute("list", "appDocList");
-    input.placeholder = "문서 이름 일부를 입력해 고르세요";
-    b.replaceWith(input);
-    input.focus();
-    input.addEventListener("change", async () => {
-      const rel = input.value.trim();
-      if (!byRel.has(rel)) return toast("목록에서 문서를 골라 주세요.");
-      await appsOp({ type: "link", id: a.id, stage: a.stages[i].name, rel });
-    });
-    return;
-  }
+  if (b.dataset.aSlink !== undefined) return openDocPicker(b, a, a.stages[idx("aSlink")].name);
   if (b.hasAttribute("data-a-del")) {
     if (!confirm(`'${appName(a)}' 지원 건을 지울까요? (문서 파일은 지워지지 않습니다)`)) return;
     await appsOp({ type: "delete", id: a.id }, "지원 건을 지웠습니다.");
