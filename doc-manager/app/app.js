@@ -497,6 +497,37 @@ function ensureRowShown(rel) {
   if (i >= listShown) showMoreRows(i - listShown + 30);
 }
 
+// ---------- 상세 화면 탭 (문서·지원 건이 같이 쓴다) ----------
+// 고른 탭은 문서·지원 건을 바꿔도 그대로 (앱을 다시 켜도 기억)
+const tabState = { doc: pref("docTab", "overview"), app: pref("appTab", "stages") };
+// tabs: [[키, 이름, 숫자?]] → { bar, panel(키, html) }
+function detailTabs(group, tabs) {
+  const cur = tabs.some((t) => t[0] === tabState[group]) ? tabState[group] : tabs[0][0];
+  return {
+    bar: `<div class="tabs" role="tablist" data-tabs="${group}">${tabs
+      .map(([k, label, n]) => `<button role="tab" class="tab${k === cur ? " on" : ""}" data-tab="${k}" type="button" aria-selected="${k === cur}">${label}${n ? `<small>${n}</small>` : ""}</button>`)
+      .join("")}</div>`,
+    panel: (k, html) => `<div class="tab-panel" data-panel="${k}" role="tabpanel"${k === cur ? "" : " hidden"}>${html}</div>`,
+  };
+}
+// 다시 그리지 않고 탭만 바꾼다 (입력 중인 글이 사라지지 않게)
+function showTab(group, key) {
+  const bar = document.querySelector(`[data-tabs="${group}"]`);
+  if (!bar) return;
+  tabState[group] = key;
+  setPref(group + "Tab", key);
+  for (const x of bar.querySelectorAll("[data-tab]")) {
+    x.classList.toggle("on", x.dataset.tab === key);
+    x.setAttribute("aria-selected", x.dataset.tab === key);
+  }
+  for (const p of bar.parentElement.querySelectorAll(":scope > .tab-panel")) p.hidden = p.dataset.panel !== key;
+  $("detail").scrollTop = 0;
+}
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-tabs] [data-tab]");
+  if (b) showTab(b.closest("[data-tabs]").dataset.tabs, b.dataset.tab);
+});
+
 async function renderDetail() {
   if (filter.view === "ip") return renderIpDetail();
   if (isAppsView()) return renderAppDetail();
@@ -547,13 +578,68 @@ async function renderDetail() {
   }
 
   const dup = dupOf.get(d.rel);
+  let dupCard = "";
   if (dup) {
     const others = dup.rels.filter((r) => r !== d.rel);
-    banner += `<div class="banner">${icon("copy")}<div>내용이 똑같은 파일이 ${others.length}개 더 있습니다: ${others
-      .slice(0, 3)
-      .map((r) => `<button data-goto="${esc(r)}" type="button" title="${esc(r)}">${esc(r)}</button>`)
-      .join(", ")}${others.length > 3 ? " …" : ""} <button data-act="dedupe-one" type="button">중복 정리</button></div></div>`;
+    banner += `<div class="banner slim">${icon("copy")}<div>내용이 똑같은 파일이 ${others.length}개 더 있습니다 <button data-act="show-dups" type="button">보기</button> · <button data-act="dedupe-one" type="button">중복 정리</button></div></div>`;
+    dupCard = `<div class="card"><h4>${icon("copy")}내용이 똑같은 파일<small>${others.length}개</small></h4><ul class="app-links">${others
+      .map((r) => `<li><button data-goto="${esc(r)}" type="button" title="${esc(r)}"><b>${esc(r.split("/").pop())}</b> <small>${esc(r.split("/").slice(0, -1).join("/") || "최상위 폴더")}</small></button></li>`)
+      .join("")}</ul><button class="btn sm" data-act="dedupe-one" type="button">중복 정리</button></div>`;
   }
+
+  // 탭: 개요(할 일·분류·태그·메모) | 연결(버전·중복·지원 건·지식재산) | 내용(미리보기·키워드·정보)
+  const linkCount =
+    (v ? v.size - 1 : 0) +
+    (dup ? dup.rels.length - 1 : 0) +
+    appsOf().filter((a) => a.stages.some((st) => st.docs.includes(d.rel)) || (a.refs || []).some((r) => r.rel === d.rel)).length +
+    (typeof ipOf === "function" ? ipOf().filter((it) => it.docs.includes(d.rel)).length : 0);
+  const T = detailTabs("doc", [["overview", "개요"], ["links", "연결", linkCount], ["content", "내용"]]);
+
+  const overview = `
+    <div class="card">
+      <h4>${icon("folder")}분류</h4>
+      <select class="select" id="catSelect">${opts}</select>
+      <div class="reason">${reason}</div>
+      ${d.misplaced
+        ? `<div class="move-hint"><span>분류 폴더와 다른 곳에 있습니다.</span><button class="btn sm" data-act="move" type="button" title="문서 폴더 안에서 옮깁니다. 태그·메모는 그대로 따라갑니다.">${icon("move")}${esc(d.expectedDir)} 폴더로 옮기기</button></div>`
+        : ""}
+    </div>
+    ${ocrCardHtml(d)}
+    ${certCardHtml(d)}
+    <div class="card">
+      <h4>${icon("hash")}태그</h4>
+      <div class="tag-edit">${tagChips}<input class="tag-input" id="tagInput" placeholder="+ 태그" list="allTags"></div>
+      <datalist id="allTags">${allTags().map((t) => `<option value="${esc(t)}">`).join("")}</datalist>
+      ${hiddenTags}
+      <label class="ai-toggle" title="켜면 Claude 커넥터가 이 문서를 검색하거나 읽을 수 없습니다 ('AI제외' 태그)"><input type="checkbox" id="aiExcludeToggle" ${d.tags.includes("AI제외") ? "checked" : ""}>${icon("shield")}Claude 에 보내지 않기</label>
+    </div>
+    <div class="card">
+      <h4>${icon("bookmark")}메모</h4>
+      <textarea class="note" id="noteInput" placeholder="예: 2025.3 KEIT 제출본, 대표님 검토 완료">${esc(d.note)}</textarea>
+    </div>`;
+  const links = `
+    ${timeline || ""}
+    ${dupCard}
+    ${appsCardHtml(d) || ""}
+    ${typeof ipCardHtml === "function" ? ipCardHtml(d) : ""}
+    ${!timeline && !dupCard && !appsCardHtml(d) ? '<div class="muted small pad">이 문서와 연결된 것이 없습니다.</div>' : ""}`;
+  const content = `
+    <div class="card">
+      <h4>${icon("files")}본문 미리보기</h4>
+      ${d.error ? `<p class="warn">본문을 읽지 못했습니다 (암호가 걸렸거나 손상된 파일일 수 있습니다). 파일 이름으로만 분류했습니다.</p>` : ""}
+      ${d.protectedText ? `<p class="warn">암호가 걸렸거나 배포용으로 저장된 한글 문서라 앞부분(약 1쪽)만 읽었습니다. 일반 문서로 다시 저장하면 전체를 읽습니다.</p>` : ""}
+      ${d.hasText ? '<pre class="preview" id="preview">불러오는 중…</pre>' : !d.error ? `<div class="muted small">${["ppt", "xls"].includes(d.ext) ? "옛 형식(." + esc(d.ext) + ")은 본문을 읽지 않고 파일 이름으로만 분류합니다. ." + esc(d.ext) + "x 로 저장하면 본문까지 읽습니다." : "본문 글자가 없습니다. (스캔한 PDF, 그림만 있는 문서 등)"}</div>` : ""}
+    </div>
+    <div class="card">
+      <h4>${icon("sparkle")}핵심 키워드<small>누르면 검색 · ＋는 태그로</small></h4>
+      ${d.keywords && d.keywords.length
+        ? `<div class="kw-list">${d.keywords.map((k) => `<span class="kw-chip"><button data-kwsearch="${esc(k)}" type="button">${esc(k)}</button><button class="plus" data-kwtag="${esc(k)}" type="button" title="태그로 붙이기" aria-label="${esc(k)} 태그로 붙이기">＋</button></span>`).join("")}</div>`
+        : '<div class="muted small">뽑을 만한 단어가 없습니다.</div>'}
+    </div>
+    <div class="card">
+      <h4>${icon("info")}정보</h4>
+      <dl class="info">${info}</dl>
+    </div>`;
 
   box.innerHTML = `
     <div class="d-head">${fileIcon(d)}<div><h2>${esc(d.base)}</h2><div class="d-path">${esc(d.dir ? d.dir + "/" : "최상위 폴더")}</div></div></div>
@@ -570,46 +656,10 @@ async function renderDetail() {
           .map((to) => `<button class="btn sm" data-convert="${to}" type="button" title="${esc(CONVERT_HINT[to] || "")}">${esc(CONVERT_LABEL[to] || to)}</button>`)
           .join("")}</div>`
       : ""}
-    <div class="card">
-      <h4>${icon("folder")}분류</h4>
-      <select class="select" id="catSelect">${opts}</select>
-      <div class="reason">${reason}</div>
-      ${d.misplaced
-        ? `<div class="move-hint"><span>분류 폴더와 다른 곳에 있습니다.</span><button class="btn sm" data-act="move" type="button" title="문서 폴더 안에서 옮깁니다. 태그·메모는 그대로 따라갑니다.">${icon("move")}${esc(d.expectedDir)} 폴더로 옮기기</button></div>`
-        : ""}
-    </div>
-    ${timeline}
-    ${ocrCardHtml(d)}
-    ${appsCardHtml(d)}
-    ${typeof ipCardHtml === "function" ? ipCardHtml(d) : ""}
-    ${certCardHtml(d)}
-    <div class="card">
-      <h4>${icon("hash")}태그</h4>
-      <div class="tag-edit">${tagChips}<input class="tag-input" id="tagInput" placeholder="+ 태그" list="allTags"></div>
-      <datalist id="allTags">${allTags().map((t) => `<option value="${esc(t)}">`).join("")}</datalist>
-      ${hiddenTags}
-      <label class="ai-toggle" title="켜면 Claude 커넥터가 이 문서를 검색하거나 읽을 수 없습니다 ('AI제외' 태그)"><input type="checkbox" id="aiExcludeToggle" ${d.tags.includes("AI제외") ? "checked" : ""}>${icon("shield")}Claude 에 보내지 않기</label>
-    </div>
-    <div class="card">
-      <h4>${icon("sparkle")}핵심 키워드<small>누르면 검색 · ＋는 태그로</small></h4>
-      ${d.keywords && d.keywords.length
-        ? `<div class="kw-list">${d.keywords.map((k) => `<span class="kw-chip"><button data-kwsearch="${esc(k)}" type="button">${esc(k)}</button><button class="plus" data-kwtag="${esc(k)}" type="button" title="태그로 붙이기" aria-label="${esc(k)} 태그로 붙이기">＋</button></span>`).join("")}</div>`
-        : '<div class="muted small">뽑을 만한 단어가 없습니다.</div>'}
-    </div>
-    <div class="card">
-      <h4>${icon("bookmark")}메모</h4>
-      <textarea class="note" id="noteInput" placeholder="예: 2025.3 KEIT 제출본, 대표님 검토 완료">${esc(d.note)}</textarea>
-    </div>
-    <div class="card">
-      <h4>${icon("info")}정보</h4>
-      <dl class="info">${info}</dl>
-    </div>
-    <div class="card">
-      <h4>${icon("files")}본문 미리보기</h4>
-      ${d.error ? `<p class="warn">본문을 읽지 못했습니다 (암호가 걸렸거나 손상된 파일일 수 있습니다). 파일 이름으로만 분류했습니다.</p>` : ""}
-      ${d.protectedText ? `<p class="warn">암호가 걸렸거나 배포용으로 저장된 한글 문서라 앞부분(약 1쪽)만 읽었습니다. 일반 문서로 다시 저장하면 전체를 읽습니다.</p>` : ""}
-      ${d.hasText ? '<pre class="preview" id="preview">불러오는 중…</pre>' : !d.error ? `<div class="muted small">${["ppt", "xls"].includes(d.ext) ? "옛 형식(." + esc(d.ext) + ")은 본문을 읽지 않고 파일 이름으로만 분류합니다. ." + esc(d.ext) + "x 로 저장하면 본문까지 읽습니다." : "본문 글자가 없습니다. (스캔한 PDF, 그림만 있는 문서 등)"}</div>` : ""}
-    </div>`;
+    ${T.bar}
+    ${T.panel("overview", overview)}
+    ${T.panel("links", links)}
+    ${T.panel("content", content)}`;
 
   if (d.hasText && d.garbled) {
     const pre = $("preview");
@@ -1529,6 +1579,7 @@ $("detail").addEventListener("click", async (e) => {
   if (b.dataset.compare) return openCompare(b.dataset.compare, d.rel);
   if (b.dataset.goto) return goto(b.dataset.goto);
   if (act === "ocr" || act === "ocr-all") return runOcr(d, act === "ocr-all");
+  if (act === "show-dups") return showTab("doc", "links");
   if (act === "move") {
     const r = await api.moveToCategory(d.rel);
     if (r.error) return toast("옮기지 못했습니다: " + r.error);

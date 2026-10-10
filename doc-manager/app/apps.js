@@ -292,22 +292,38 @@ function renderAppDetail() {
       </li>`;
     })
     .join("");
+  // 탭: 단계 | 자료(사업 자료·이 과제 자료·제출 서류) | 문서 쓰기 | 정보(과제명·사업명 등 고치기)
+  const refCount = (progKey(a) ? programRefs(progKey(a)).length : 0) + (a.refs || []).length;
+  const T = detailTabs("app", [["stages", "단계"], ["refs", "자료", refCount], ["write", "문서 쓰기"], ["info", "정보"]]);
+  const next = nextDueOf(a);
+  const summary = [a.topic && a.title ? a.topic : "", progKey(a), a.agency, a.year].filter(Boolean).map(esc).join(" · ");
   box.innerHTML = `
     <div class="d-head"><span class="ficon app">${icon("briefcase")}</span><div><h2>${esc(appName(a))}</h2>
-      <div class="d-path"><span class="app-state ${APP_STATE_CLASS[a.progress.state] || ""}">${esc(a.progress.state)}${a.progress.stage && a.progress.state !== "선정" ? " · " + esc(a.progress.stage) : ""}</span></div></div></div>
-    <div class="card"><h4>${icon("info")}지원 건</h4>
-      <div class="af-grid">${field("title", "과제명")}${field("topic", "주제(기술)", "예: 그래핀 스텔스 패널")}${field("program", "사업명", "예: 소재부품기술개발")}${field("agency", "전문기관", "예: KEIT")}${field("year", "연도", "", "number")}</div>
-      <label class="af"><span>메모</span><textarea data-a-f="memo" rows="2" placeholder="공동기관, 예산 규모 등">${esc(a.memo || "")}</textarea></label>
-    </div>
-    ${writeCardsHtml(a)}
-    ${bundleCardHtml(a)}
-    ${progKey(a) ? refsCardHtml("p:" + progKey(a), programRefs(progKey(a)), `사업 자료 · ${progKey(a)}`, "이 사업의 공고문·RFP·작성 양식을 넣어 두면 같은 사업의 지원 건 모두가 같이 봅니다.") : ""}
-    ${refsCardHtml("a:" + a.id, a.refs || [], "이 과제만의 자료", "이 지원 건에만 해당하는 자료 (예: 이 과제의 RFP, 수요조사 안내)")}
-    <div class="card"><h4>${icon("layers")}단계<small>${a.template ? esc(a.template) : ""}</small></h4>
-      <ol class="stage-list">${stages}</ol>
-      <button class="btn sm ghost" data-a-sadd type="button">${icon("plus")}단계 추가</button>
-    </div>
-    <div class="app-foot"><button class="btn sm ghost danger" data-a-del type="button">${icon("trash")}이 지원 건 지우기</button></div>
+      <div class="d-path"><span class="app-state ${APP_STATE_CLASS[a.progress.state] || ""}">${esc(a.progress.state)}${a.progress.stage && a.progress.state !== "선정" ? " · " + esc(a.progress.stage) : ""}</span>${
+        next ? ` <span class="dday ${ddayClass(next.daysLeft)}" title="${esc(next.stage)} 마감 ${esc(next.due)}">${esc(next.stage)} ${ddayText(next.daysLeft)}</span>` : ""
+      }</div>
+      ${summary ? `<div class="d-sub">${summary} <button class="link-btn" data-a-edit-info type="button">고치기</button></div>` : `<div class="d-sub"><button class="link-btn" data-a-edit-info type="button">사업명·주제 적기</button></div>`}</div></div>
+    ${T.bar}
+    ${T.panel(
+      "stages",
+      `<ol class="stage-list">${stages}</ol>
+      <button class="btn sm ghost" data-a-sadd type="button">${icon("plus")}단계 추가</button>${a.template ? ` <small class="muted">단계 틀: ${esc(a.template)}</small>` : ""}`
+    )}
+    ${T.panel(
+      "refs",
+      `${progKey(a) ? refsCardHtml("p:" + progKey(a), programRefs(progKey(a)), `사업 자료 · ${progKey(a)}`, "이 사업의 공고문·RFP·작성 양식을 넣어 두면 같은 사업의 지원 건 모두가 같이 봅니다.") : ""}
+      ${refsCardHtml("a:" + a.id, a.refs || [], "이 과제만의 자료", "이 지원 건에만 해당하는 자료 (예: 이 과제의 RFP, 수요조사 안내)")}
+      ${bundleCardHtml(a)}`
+    )}
+    ${T.panel("write", writeCardsHtml(a))}
+    ${T.panel(
+      "info",
+      `<div class="card"><h4>${icon("info")}지원 건</h4>
+        <div class="af-grid">${field("title", "과제명")}${field("topic", "주제(기술)", "예: 그래핀 스텔스 패널")}${field("program", "사업명", "예: 소재부품기술개발")}${field("agency", "전문기관", "예: KEIT")}${field("year", "연도", "", "number")}</div>
+        <label class="af"><span>메모</span><textarea data-a-f="memo" rows="3" placeholder="공동기관, 예산 규모 등">${esc(a.memo || "")}</textarea></label>
+      </div>
+      <div class="app-foot"><button class="btn sm ghost danger" data-a-del type="button">${icon("trash")}이 지원 건 지우기</button></div>`
+    )}
 `;
 }
 
@@ -482,6 +498,7 @@ $("detail").addEventListener("click", async (e) => {
     st.push({ name: `새 단계${n > 1 ? " " + n : ""}` });
     return appsOp({ type: "stages", id: a.id, stages: st });
   }
+  if (b.hasAttribute("data-a-edit-info")) return showTab("app", "info");
   if (b.hasAttribute("data-a-make-bundle")) {
     const r = await api.makeBundle(a.id);
     if (r.error) return toast(r.error, 6000);

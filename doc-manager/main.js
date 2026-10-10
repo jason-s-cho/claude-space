@@ -1,4 +1,6 @@
 const { app, BrowserWindow, Menu, shell, ipcMain, dialog, nativeTheme, net, Notification, clipboard } = require("electron");
+// 날짜 칸(연도-월-일)과 맞춤법 검사 등을 한국어로 (윈도우 언어가 영어여도)
+app.commandLine.appendSwitch("lang", "ko");
 const fs = require("fs");
 const path = require("path");
 const indexer = require("./lib/indexer");
