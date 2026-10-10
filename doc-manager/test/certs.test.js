@@ -33,3 +33,15 @@ test("같은 종류는 발급일이 가장 늦은 것이 최신본, 직접 적�
   assert.deepStrictEqual([info.get("a/벤처.pdf").validUntil, info.get("a/벤처.pdf").validAuto], ["2027-03-01", false]);
   assert.deepStrictEqual(certs.latestByKind(info).map((x) => x.kind), ["벤처기업확인서", "국세완납증명서"]);
 });
+
+test("유효기간이 없는 서류는 본문의 '~까지'를 만료일로 보지 않고, '유효기간 없음'을 고르면 만료일이 없다", () => {
+  const info = certs.analyze([
+    { rel: "a/표준재무제표.pdf", name: "25년 표준재무제표", category: "cert_perf", text: "표준재무상태표\n사업연도 2025.01.01부터 2025.12.31까지" },
+    { rel: "a/납세.pdf", name: "납세증명서", category: "cert_perf", text: "납세증명서\n유효기간 2025.10.30까지", validUntil: "none" },
+    { rel: "a/재무_직접.pdf", name: "재무제표", category: "cert_perf", text: "", validUntil: "2026-01-01" },
+  ]);
+  assert.deepStrictEqual([info.get("a/표준재무제표.pdf").validUntil, info.get("a/표준재무제표.pdf").validAuto], ["", false]);
+  assert.deepStrictEqual([info.get("a/납세.pdf").validUntil, info.get("a/납세.pdf").noExpiry], ["", true]);
+  assert.strictEqual(info.get("a/재무_직접.pdf").validUntil, "2026-01-01");
+  assert.strictEqual(certs.latestByKind(info).find((x) => x.kind === "국세완납증명서").daysLeft, null);
+});

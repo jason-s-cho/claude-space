@@ -376,8 +376,9 @@ function certCardHtml(d) {
     ${latestDoc ? `<p class="hint">같은 종류의 더 새 발급본이 있습니다: <button class="link-btn" data-goto="${esc(latestDoc.rel)}" type="button">${esc(latestDoc.base)}</button></p>` : ""}
     <div class="af-grid">
       <label class="af"><span>발급일${x.issuedAuto ? " <small>(문서에서 찾음)</small>" : ""}</span><input type="date" id="certIssued" value="${esc(d.issuedAt || x.issued || "")}"></label>
-      <label class="af"><span>유효기간 (까지)${x.validAuto ? " <small>(문서에서 찾음)</small>" : ""}</span><input type="date" id="certValid" value="${esc(d.validUntil || x.validUntil || "")}"></label>
+      <label class="af"><span>유효기간 (까지)${x.validAuto ? " <small>(문서에서 찾음)</small>" : ""}</span><input type="date" id="certValid" value="${esc(x.noExpiry ? "" : d.validUntil || x.validUntil || "")}"${x.noExpiry ? " disabled" : ""}></label>
     </div>
+    <label class="check-row"><input type="checkbox" id="certNoExpiry"${x.noExpiry ? " checked" : ""}> 유효기간 없음 <small class="muted">(만료 알림을 받지 않습니다)</small></label>
     ${state ? `<div class="cert-state">${state}</div>` : ""}
     <small class="hint">유효기간이 있으면 만료 30일·7일 전과 당일에 알려 줍니다 (같은 종류의 최신본만). 지원 건의 <b>제출 서류</b>에서 고르면 최신본을 한 폴더에 모아 줍니다.</small>
   </div>`;
@@ -1674,6 +1675,10 @@ $("detail").addEventListener("change", async (e) => {
   if (!d) return;
   if (e.target.id === "certIssued" || e.target.id === "certValid") {
     await patchDoc(d.rel, { [e.target.id === "certIssued" ? "issuedAt" : "validUntil"]: e.target.value });
+    return;
+  }
+  if (e.target.id === "certNoExpiry") {
+    await patchDoc(d.rel, { validUntil: e.target.checked ? "none" : "" });
     return;
   }
   if (e.target.id === "aiExcludeToggle") {

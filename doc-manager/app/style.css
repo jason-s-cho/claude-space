@@ -785,3 +785,5 @@ dialog[open] .move-form { animation: pop 0.16s var(--ease); }
 .todo-list li > button:first-child > b { flex: none; max-width: 48%; }
 .todo-list li > button:first-child > .dday, .todo-list li > button:first-child > small, .todo-list li > button:first-child > .ip-right { flex: none; }
 .todo-list > li { min-width: 0; }
+.cert-card .check-row { display: flex; align-items: center; gap: 6px; margin: 6px 0 2px; font-size: 13px; cursor: pointer; }
+.cert-card .check-row small { font-size: 12px; }
