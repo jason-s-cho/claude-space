@@ -106,6 +106,8 @@ function apply(data, op) {
   const touch = (a) => (a.updatedAt = now);
   const fields = (a, f = {}) => {
     for (const k of ["title", "topic", "program", "agency", "memo"]) if (f[k] !== undefined) a[k] = str(f[k], k === "memo" ? 4000 : 200);
+    // 사업명은 묶음 기준이라 띄어쓰기 차이로 갈라지지 않게 한 칸으로 맞춘다
+    for (const k of ["program", "agency"]) if (f[k] !== undefined) a[k] = a[k].replace(/\s+/g, " ");
     if (f.year !== undefined) {
       const y = parseInt(f.year, 10);
       a.year = y >= 2000 && y <= 2100 ? y : null;

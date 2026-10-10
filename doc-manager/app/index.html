@@ -302,7 +302,7 @@
     <div class="af-grid an-grid">
       <label class="af"><span>과제명</span><input id="anTitle" placeholder="예: 300mm급 무손상 전사 기반 광학투명 스텔스 패널"></label>
       <label class="af"><span>주제(기술)</span><input id="anTopic" placeholder="예: 그래핀 스텔스 패널"></label>
-      <label class="af"><span>사업명</span><input id="anProgram" placeholder="예: 소재부품기술개발"></label>
+      <label class="af"><span>사업명</span><input id="anProgram" list="programList" placeholder="예: 소재부품기술개발 (이미 쓴 사업명은 목록에서 고르기)"></label>
       <label class="af"><span>전문기관</span><input id="anAgency" placeholder="예: KEIT"></label>
       <label class="af"><span>연도</span><input id="anYear" type="number"></label>
       <label class="af"><span>단계 틀</span><select class="select" id="anTemplate"></select></label>
@@ -378,5 +378,6 @@
 
 <script src="app.js"></script>
 <script src="apps.js"></script>
+<datalist id="programList"></datalist>
 </body>
 </html>

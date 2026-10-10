@@ -32,3 +32,9 @@ test("지원 건: 단계 틀로 만들고, 단계 결과·문서를 기록하고
   assert.deepStrictEqual(apps.load(root).templates, [{ name: "바우처", stages: ["신청", "선정"] }]);
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+test("사업명 띄어쓰기는 한 칸으로 맞춘다 (같은 사업으로 묶이게)", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "apps-sp-"));
+  const { id } = apps.update(root, { type: "create", fields: { title: "x", program: " 국방반도체 R&D  사업 " } });
+  assert.strictEqual(apps.load(root).items.find((a) => a.id === id).program, "국방반도체 R&D 사업");
+});

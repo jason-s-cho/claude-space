@@ -156,6 +156,8 @@ function rebuildDupMap() {
 
 // ---------- 걸러내기 ----------
 
+const isAppsView = () => filter.view === "apps" || filter.view.startsWith("apps:");
+
 function matchesView(d, view) {
   if (view === "all") return true;
   if (view === "starred") return d.starred;
@@ -199,6 +201,14 @@ function navItem(view, label, n, opts = {}) {
   return `<button class="nav-item${on}${opts.sub ? " sub" : ""}${n ? "" : " zero"}" data-view="${esc(view)}" type="button">${opts.chev ? icon("chevron", "chev") : ""}${lead}<span class="label">${esc(label)}</span><span class="n">${n}</span></button>`;
 }
 
+// 사업명 → 지원 건 수 (이름순, 사업명 없는 건은 맨 뒤)
+const progKey = (a) => String(a.program || "").replace(/\s+/g, " ").trim();
+function appProgramCounts(items) {
+  const m = new Map();
+  for (const a of items) m.set(progKey(a), (m.get(progKey(a)) || 0) + 1);
+  return [...m.entries()].sort((x, y) => (!x[0]) - (!y[0]) || x[0].localeCompare(y[0], "ko"));
+}
+
 function renderSide() {
   const docs = S.docs;
   const count = (fn) => docs.filter(fn).length;
@@ -208,7 +218,17 @@ function renderSide() {
   h += navItem("all", "전체 문서", docs.length, { icon: "files" });
   h += navItem("starred", "즐겨찾기", count((d) => d.starred), { icon: "star" });
   h += navItem("recent", "최근 30일", count((d) => Date.now() - d.mtimeMs < 30 * DAY), { icon: "clock" });
-  h += navItem("apps", "지원 현황", ((S.applications && S.applications.items) || []).length, { icon: "briefcase" });
+  // 지원 현황: 사업명별 하위 항목 (한 사업에 수요조사를 여러 건 내므로)
+  const appItems = (S.applications && S.applications.items) || [];
+  const programs = appProgramCounts(appItems);
+  if (programs.length) {
+    const open = openGroups.has("apps") || filter.view.startsWith("apps:");
+    h += `<div class="nav-group${open ? " open" : ""}" data-group="apps">`;
+    h += navItem("apps", "지원 현황", appItems.length, { icon: "briefcase", chev: true });
+    h += '<div class="nav-children">';
+    for (const [p, n] of programs) h += navItem("apps:" + p, p || "사업명 없음", n, { sub: true });
+    h += "</div></div>";
+  } else h += navItem("apps", "지원 현황", appItems.length, { icon: "briefcase" });
   if (lastImported.size) h += navItem("imported", "방금 넣은 문서", count((d) => lastImported.has(d.rel)), { icon: "inbox" });
   const misplacedN = count((d) => d.misplaced);
   if (misplacedN || filter.view === "misplaced") h += navItem("misplaced", "제자리가 아닌 문서", misplacedN, { icon: "move" });
@@ -307,6 +327,7 @@ function viewLabel(view) {
   if (view === "imported") return "방금 넣은 문서";
   if (view === "misplaced") return "제자리가 아닌 문서";
   if (view === "apps") return "지원 현황";
+  if (view.startsWith("apps:")) return view.slice(5) || "사업명 없음";
   if (view === "duplicates") return "중복 파일";
   if (view.startsWith("group:")) return view.slice(6);
   if (view.startsWith("cat:")) return catLabel(view.slice(4));
@@ -344,7 +365,7 @@ function rowHtml(d, opts = {}) {
 }
 
 function renderList() {
-  if (filter.view === "apps") return renderAppsView();
+  if (isAppsView()) return renderAppsView();
   if (typeof leaveAppsView === "function") leaveAppsView(); // apps.js 는 app.js 다음에 읽힌다
   visible = filtered();
   let f = "";
@@ -443,7 +464,7 @@ function ensureRowShown(rel) {
 }
 
 async function renderDetail() {
-  if (filter.view === "apps") return renderAppDetail();
+  if (isAppsView()) return renderAppDetail();
   const box = $("detail");
   const d = byRel.get(selected);
   if (!d) {
@@ -1353,8 +1374,8 @@ $("side").addEventListener("click", (e) => {
   else if (b.dataset.view) {
     const v = b.dataset.view;
     // 그룹 줄을 누르면 펼치고, 이미 고른 그룹을 다시 누르면 접는다
-    if (v.startsWith("group:")) {
-      const g = v.slice(6);
+    if (v.startsWith("group:") || (v === "apps" && b.querySelector(".chev"))) {
+      const g = v === "apps" ? "apps" : v.slice(6);
       if (filter.view === v && openGroups.has(g)) openGroups.delete(g);
       else openGroups.add(g);
       setPref("openGroups", [...openGroups]);
@@ -1410,7 +1431,7 @@ $("list").addEventListener("dblclick", (e) => {
 });
 
 $("detail").addEventListener("click", async (e) => {
-  if (filter.view === "apps") return; // 지원 건 화면은 apps.js 가 맡는다
+  if (isAppsView()) return; // 지원 건 화면은 apps.js 가 맡는다
   const b = e.target.closest("button");
   const d = byRel.get(selected);
   if (!b || !d) return;
@@ -1460,7 +1481,7 @@ $("detail").addEventListener("click", async (e) => {
 });
 
 $("detail").addEventListener("change", async (e) => {
-  if (filter.view === "apps") return;
+  if (isAppsView()) return;
   const d = byRel.get(selected);
   if (!d) return;
   if (e.target.id === "aiExcludeToggle") {

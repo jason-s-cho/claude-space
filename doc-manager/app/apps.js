@@ -20,15 +20,40 @@ async function appsOp(op, okMsg) {
   return r;
 }
 
-// 가운데: 지원 건 목록 (단계 흐름 막대)
+// 사업명별 하위 화면이면 그 사업명, 아니면 null
+const appsProgram = () => (filter.view.startsWith("apps:") ? filter.view.slice(5) : null);
+let appsCollapsed = new Set(pref("appsCollapsed", [])); // 목록에서 접어 둔 사업명
+
+function appRowHtml(a) {
+  const p = a.progress;
+  const pipe = a.stages
+    .map((s) => `<li class="${STAGE_CLASS[s.status] || ""}" title="${esc(`${s.name}: ${STATUS_LABEL[s.status] || s.status}${s.date ? " · " + s.date : ""}${s.note ? "\n" + s.note : ""}`)}"><span>${esc(s.name)}</span></li>`)
+    .join("");
+  return `<div class="app-row${a.id === selectedApp ? " sel" : ""}" data-a-id="${esc(a.id)}">
+    <div class="app-main"><div class="app-title">${esc(appName(a))}</div>
+      <div class="app-meta">${[a.topic && a.title ? a.topic : "", a.agency, a.year].filter(Boolean).map(esc).join(" · ")}</div></div>
+    <span class="app-state ${APP_STATE_CLASS[p.state] || ""}">${esc(p.state)}${p.stage && p.state !== "선정" ? ` · ${esc(p.stage)}` : ""}</span>
+    <ol class="pipe">${pipe}</ol>
+  </div>`;
+}
+
+// 가운데: 지원 건 목록 (단계 흐름 막대). 전체 보기에서는 사업명별로 묶는다.
 function renderAppsView() {
-  const all = appsOf();
+  let program = appsProgram();
+  // 그 사업의 지원 건이 다 없어졌으면(사업명을 바꿨거나 지웠으면) 전체로 돌아간다
+  if (program !== null && !appsOf().some((a) => progKey(a) === program)) {
+    filter.view = "apps";
+    program = null;
+    renderSide();
+  }
+  const all = appsOf().filter((a) => program === null || progKey(a) === program);
   const counts = { all: all.length };
   for (const a of all) counts[a.progress.state] = (counts[a.progress.state] || 0) + 1;
   const seg = ["all", "진행 중", "선정", "탈락", "준비"]
     .map((k) => `<button class="seg-btn${appsFilter === k ? " on" : ""}" data-a-filter="${k}" type="button">${k === "all" ? "전체" : k}<small>${counts[k] || 0}</small></button>`)
     .join("");
-  $("activeFilters").innerHTML = `<span class="title">지원 현황</span><div class="seg-group">${seg}</div>
+  const title = program === null ? "지원 현황" : `<span class="crumb" data-a-all role="button" tabindex="0">지원 현황</span> › ${esc(program || "사업명 없음")}`;
+  $("activeFilters").innerHTML = `<span class="title">${title}</span><div class="seg-group">${seg}</div>
     <button class="btn sm primary" data-a-new type="button">${icon("plus")}새 지원 건</button>
     <button class="btn sm ghost" data-a-templates type="button" title="사업 유형별 기본 단계 목록">단계 틀</button>`;
   document.querySelector(".toolbar-right").hidden = true;
@@ -39,6 +64,7 @@ function renderAppsView() {
   const items = all
     .filter((a) => appsFilter === "all" || a.progress.state === appsFilter)
     .sort((x, y) => (y.year || 0) - (x.year || 0) || String(y.updatedAt).localeCompare(String(x.updatedAt)));
+  $("count").textContent = `${items.length}건`;
   if (!all.length) {
     board.innerHTML = `<div class="apps-empty">${icon("briefcase")}<div><b>아직 지원 건이 없습니다.</b><br>
       한 주제(기술)를 한 사업에 낸 것을 '지원 건' 하나로 기록합니다. 수요조사 → RFP → 사업계획서 → 서류·발표평가 → 선정까지 단계마다 결과와 평가 의견, 관련 문서를 남기면,
@@ -46,23 +72,34 @@ function renderAppsView() {
       <button class="btn primary" data-a-new type="button">${icon("plus")}새 지원 건</button></div>`;
     return;
   }
-  board.innerHTML = items.length
-    ? items
-        .map((a) => {
-          const p = a.progress;
-          const pipe = a.stages
-            .map((s) => `<li class="${STAGE_CLASS[s.status] || ""}" title="${esc(`${s.name}: ${STATUS_LABEL[s.status] || s.status}${s.date ? " · " + s.date : ""}${s.note ? "\n" + s.note : ""}`)}"><span>${esc(s.name)}</span></li>`)
-            .join("");
-          return `<div class="app-row${a.id === selectedApp ? " sel" : ""}" data-a-id="${esc(a.id)}">
-            <div class="app-main"><div class="app-title">${esc(appName(a))}</div>
-              <div class="app-meta">${[a.topic && a.title ? a.topic : "", a.program, a.agency, a.year].filter(Boolean).map(esc).join(" · ")}</div></div>
-            <span class="app-state ${APP_STATE_CLASS[p.state] || ""}">${esc(p.state)}${p.stage && p.state !== "선정" ? ` · ${esc(p.stage)}` : ""}</span>
-            <ol class="pipe">${pipe}</ol>
-          </div>`;
-        })
-        .join("")
-    : `<div class="apps-empty"><div>이 조건의 지원 건이 없습니다.</div></div>`;
-  $("count").textContent = `${items.length}건`;
+  if (!items.length) {
+    board.innerHTML = `<div class="apps-empty"><div>이 조건의 지원 건이 없습니다.</div></div>`;
+    return;
+  }
+  if (program !== null) {
+    board.innerHTML = items.map(appRowHtml).join("");
+    return;
+  }
+  // 사업명별 묶음: 왼쪽 메뉴와 같은 순서 (이름순, 사업명 없는 건은 맨 뒤)
+  const groups = new Map(appProgramCounts(items).map(([p]) => [p, []]));
+  for (const a of items) groups.get(progKey(a)).push(a);
+  board.innerHTML = [...groups]
+    .map(([p, list]) => {
+      const st = {};
+      for (const a of list) st[a.progress.state] = (st[a.progress.state] || 0) + 1;
+      const summary = ["선정", "진행 중", "탈락", "준비"].filter((k) => st[k]).map((k) => `<span class="app-state ${APP_STATE_CLASS[k]}">${k} ${st[k]}</span>`).join("");
+      const agencies = [...new Set(list.map((a) => a.agency).filter(Boolean))].join(", ");
+      const closed = appsCollapsed.has(p);
+      return `<section class="app-group${closed ? " closed" : ""}">
+        <div class="app-group-head" data-a-group="${esc(p)}" role="button" tabindex="0">
+          ${icon("chevron", "chev")}<b>${esc(p || "사업명 없음")}</b>${agencies ? `<small>${esc(agencies)}</small>` : ""}
+          <span class="n">${list.length}건</span><span class="app-group-sum">${summary}</span>
+          <button class="link-btn" data-a-only="${esc(p)}" type="button" title="이 사업만 보기">이 사업만</button>
+        </div>
+        <div class="app-group-body">${closed ? "" : list.map(appRowHtml).join("")}</div>
+      </section>`;
+    })
+    .join("");
 }
 
 function leaveAppsView() {
@@ -78,7 +115,8 @@ function renderAppDetail() {
     box.innerHTML = `<div class="detail-empty">${icon("briefcase")}<div>지원 건을 고르면 여기서 단계별 결과와 평가 의견, 관련 문서를 기록합니다.</div></div>`;
     return;
   }
-  const field = (k, label, ph = "", type = "text") => `<label class="af"><span>${label}</span><input type="${type}" data-a-f="${k}" value="${esc(a[k] == null ? "" : a[k])}" placeholder="${esc(ph)}"></label>`;
+  fillProgramList();
+  const field = (k, label, ph = "", type = "text") => `<label class="af"><span>${label}</span><input type="${type}" data-a-f="${k}" value="${esc(a[k] == null ? "" : a[k])}" placeholder="${esc(ph)}"${k === "program" ? ' list="programList"' : ""}></label>`;
   const statusOpts = (cur) => (S.applications.statuses || ["", "진행", "통과", "탈락", "제외"]).map((s) => `<option value="${s}"${s === cur ? " selected" : ""}>${STATUS_LABEL[s] || s}</option>`).join("");
   const stages = a.stages
     .map((s, i) => {
@@ -180,7 +218,9 @@ function appsCardHtml(d) {
 
 function openApp(id) {
   selectedApp = id;
-  filter.view = "apps";
+  const a = appsOf().find((x) => x.id === id);
+  // 지금 보고 있는 사업의 지원 건이면 그 화면에 머문다
+  if (!(a && appsProgram() !== null && progKey(a) === appsProgram())) filter.view = "apps";
   renderSide();
   renderList();
   renderDetail();
@@ -189,18 +229,35 @@ function openApp(id) {
 // ---- 이벤트 ----
 
 $("activeFilters").addEventListener("click", (e) => {
-  const b = e.target.closest("button");
-  if (!b || filter.view !== "apps") return;
+  const b = e.target.closest("button, [data-a-all]");
+  if (!b || !isAppsView()) return;
   if (b.dataset.aFilter) {
     appsFilter = b.dataset.aFilter;
     renderAppsView();
   }
   if (b.hasAttribute("data-a-new")) openNewApp();
+  if (b.hasAttribute("data-a-all")) showProgram(null);
   if (b.hasAttribute("data-a-templates")) openTemplates();
 });
 
+function showProgram(p) {
+  filter.view = p === null ? "apps" : "apps:" + p;
+  renderSide();
+  renderList();
+}
+
+function toggleAppGroup(p) {
+  appsCollapsed.has(p) ? appsCollapsed.delete(p) : appsCollapsed.add(p);
+  setPref("appsCollapsed", [...appsCollapsed]);
+  renderAppsView();
+}
+
 $("appsBoard").addEventListener("click", (e) => {
   if (e.target.closest("[data-a-new]")) return openNewApp();
+  const only = e.target.closest("[data-a-only]");
+  if (only) return showProgram(only.dataset.aOnly);
+  const head = e.target.closest("[data-a-group]");
+  if (head) return toggleAppGroup(head.dataset.aGroup);
   const row = e.target.closest("[data-a-id]");
   if (!row) return;
   selectedApp = row.dataset.aId;
@@ -215,7 +272,7 @@ $("detail").addEventListener("click", async (e) => {
   const b = e.target.closest("button");
   if (!b) return;
   if (b.dataset.aGoto) return openApp(b.dataset.aGoto);
-  if (filter.view !== "apps") return;
+  if (!isAppsView()) return;
   const a = appNow();
   if (!a) return;
   if (b.dataset.aOpenDoc) {
@@ -261,7 +318,7 @@ $("detail").addEventListener("change", async (e) => {
     if (d) await appsOp({ type: "link", id, stage, rel: d.rel }, "지원 건에 연결했습니다.");
     return;
   }
-  if (filter.view !== "apps") return;
+  if (!isAppsView()) return;
   const a = appNow();
   if (!a) return;
   if (t.dataset.aF) return appsOp({ type: "update", id: a.id, fields: { [t.dataset.aF]: t.value } });
@@ -278,15 +335,39 @@ $("detail").addEventListener("change", async (e) => {
   await appsOp({ type: "stage", id: a.id, stage: a.stages[parseInt(i, 10)].name, patch });
 });
 
+$("appsBoard").addEventListener("keydown", (e) => {
+  const head = e.target.closest("[data-a-group]");
+  if (head && (e.key === "Enter" || e.key === " ") && e.target === head) {
+    e.preventDefault();
+    toggleAppGroup(head.dataset.aGroup);
+  }
+});
+
 // ---- 새 지원 건 ----
 function openNewApp() {
   $("anTemplate").innerHTML = templatesOf().map((t) => `<option>${esc(t.name)}</option>`).join("");
   $("anYear").value = new Date().getFullYear();
   for (const id of ["anTitle", "anTopic", "anProgram", "anAgency"]) $(id).value = "";
+  fillProgramList();
+  // 사업명별 화면에서 만들면 그 사업명·전문기관을 미리 넣는다
+  const p = appsProgram();
+  if (p) {
+    $("anProgram").value = p;
+    $("anAgency").value = agencyOf(p);
+  }
   updateNewAppStages();
   $("appNewDlg").showModal();
   $("anTitle").focus();
 }
+// 사업명은 묶음 기준이므로 이미 쓴 이름을 골라 쓰게 한다 (띄어쓰기 하나만 달라도 다른 묶음이 된다)
+function fillProgramList() {
+  $("programList").innerHTML = appProgramCounts(appsOf()).filter(([p]) => p).map(([p]) => `<option value="${esc(p)}">`).join("");
+}
+const agencyOf = (p) => ((appsOf().find((a) => progKey(a) === p && a.agency) || {}).agency || "");
+$("anProgram").addEventListener("change", () => {
+  if (!$("anAgency").value) $("anAgency").value = agencyOf($("anProgram").value.replace(/\s+/g, " ").trim());
+});
+
 function updateNewAppStages() {
   const t = templatesOf().find((x) => x.name === $("anTemplate").value);
   $("anStages").textContent = t ? t.stages.join(" → ") : "";
