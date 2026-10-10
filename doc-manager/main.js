@@ -30,6 +30,8 @@ const claudeConfig = require("./lib/claude-config");
 const knowledge = require("./lib/knowledge");
 const cards = require("./lib/cards");
 const calendar = require("./lib/calendar");
+const ocr = require("./lib/ocr");
+const { countTerms } = require("./lib/keywords");
 const duplicates = require("./lib/duplicates");
 const { convert, targetsFor } = require("./lib/convert");
 const updates = require("./lib/updates");
@@ -62,7 +64,7 @@ const mtimeOf = (file) => {
   }
 };
 
-const DEFAULT_SETTINGS = { root: "", partners: [], tagRules: [], keywordOverrides: {}, savedSearches: [], recentSearches: [], importLayout: "category", projects: [], techTags: true, theme: "system", aiExcludeCategories: [], checkUpdates: true, deadlineAlerts: true, deadlineNotified: {} };
+const DEFAULT_SETTINGS = { root: "", partners: [], tagRules: [], keywordOverrides: {}, savedSearches: [], recentSearches: [], importLayout: "category", projects: [], techTags: true, theme: "system", aiExcludeCategories: [], checkUpdates: true, deadlineAlerts: true, deadlineNotified: {}, ocrAuto: true };
 
 function loadSettings() {
   try {
@@ -228,6 +230,10 @@ function docSummary(e) {
     author: e.author,
     error: e.error,
     hasText: !!e.text,
+    // 스캔 PDF: 글자가 거의 없어 OCR 이 필요한 것. ocr: 읽은 결과 { pages, total }
+    scanned: ocr.needsOcr(e) && !e.ocr,
+    ocr: e.ocr || null,
+    ocrError: e.ocrError || "",
     protectedText: !!e.protectedText,
     category: eff.category,
     autoCategory: e.autoCategory,
@@ -357,6 +363,83 @@ async function runScan() {
     runScan();
   } else {
     refreshDuplicates();
+    queueOcr();
+  }
+}
+
+// ---- 스캔 PDF 글자 읽기 (OCR) ----
+// 훑기가 끝나면 글자가 없는 PDF 를 하나씩 뒤에서 읽는다. 읽은 글자는 색인(검색·분류·Claude)에 들어가고,
+// 문서 폴더의 .docmanager/ocr 에 남아 다른 PC나 다시 색인할 때는 바로 쓴다.
+const ocrQueue = []; // [{ rel, maxPages, manual }]
+let ocrBusy = false;
+let ocrStopped = ""; // 이 PC에서 OCR 을 쓸 수 없으면 이유 (다시 켤 때까지 자동으로 하지 않는다)
+let ocrStateTimer = null;
+const stampOf = (e) => `${e.size}:${e.mtimeMs}`;
+
+function queueOcr() {
+  if (!index || process.platform !== "win32" || settings.ocrAuto === false || ocrStopped) return;
+  for (const e of Object.values(index.files)) {
+    if (e.ocr || e.ocrTried === stampOf(e) || !ocr.needsOcr(e)) continue;
+    if (!ocrQueue.some((q) => q.rel === e.rel)) ocrQueue.push({ rel: e.rel, maxPages: ocr.AUTO_MAX_PAGES });
+  }
+  runOcrQueue();
+}
+
+async function runOcrQueue() {
+  if (ocrBusy) return;
+  ocrBusy = true;
+  try {
+    while (ocrQueue.length) {
+      const job = ocrQueue.shift();
+      const r = await ocrOne(job).catch((err) => ({ error: String(err) }));
+      if (job.done) job.done(r);
+    }
+  } finally {
+    ocrBusy = false;
+    send("ocr-progress", null);
+  }
+}
+
+// 하나 읽기. 결과: { pages, total } 또는 { error }
+async function ocrOne(job) {
+  const e = index && index.files[job.rel];
+  if (!e) return { error: "알 수 없는 파일" };
+  const stamp = stampOf(e);
+  send("ocr-progress", { rel: job.rel, page: 0, of: 0, left: ocrQueue.length });
+  try {
+    const r = await ocr.ocrWithCache(index.root, fullPath(job.rel), {
+      maxPages: job.maxPages,
+      onProgress: (p) => send("ocr-progress", { rel: job.rel, page: p.page, of: p.of, left: ocrQueue.length }),
+    });
+    const cur = index.files[job.rel];
+    if (!cur || stampOf(cur) !== stamp) return { error: "읽는 동안 파일이 바뀌었습니다" };
+    cur.text = r.text.replace(/[ \t]+/g, " ").slice(0, 30000);
+    cur.terms = countTerms([cur.title, cur.text].join("\n"));
+    cur.ocr = { pages: r.pages, total: r.total, lang: r.lang };
+    cur.ocrTried = stamp;
+    delete cur.ocrError;
+    indexer.reclassify(cur, classifyOptions()); // 이제 본문으로 분류·태그를 다시 정한다 (직접 고친 분류는 그대로)
+    index.textDirty = true;
+    keywordCache = versionCache = null;
+    persistIndex();
+    clearTimeout(ocrStateTimer);
+    ocrStateTimer = setTimeout(() => send("state", state()), 400);
+    return { pages: r.pages, total: r.total, fromCache: r.fromCache };
+  } catch (err) {
+    const msg = String((err && err.message) || err);
+    const cur = index.files[job.rel];
+    if (cur) {
+      cur.ocrTried = stamp;
+      cur.ocrError = msg;
+      persistIndex();
+    }
+    // 언어·기능이 없는 PC 면 자동 읽기를 멈추고 한 번만 알린다
+    if (/언어가 없습니다|쓸 수 없습니다|윈도우에서만/.test(msg)) {
+      ocrQueue.length = 0;
+      if (!ocrStopped) send("ocr-unavailable", msg);
+      ocrStopped = msg;
+    }
+    return { error: msg };
   }
 }
 
@@ -738,6 +821,30 @@ function registerIpc() {
     }
   });
 
+  // 문서 화면의 '글자 읽기(OCR)': 앞에 끼워 넣어 바로 읽는다. all 이면 모든 페이지.
+  ipcMain.handle("ocr-doc", async (_e, rel, all) => {
+    if (process.platform !== "win32") return { error: "스캔 PDF 글자 읽기는 윈도우에서만 됩니다." };
+    if (!index || !index.files[rel]) return { error: "알 수 없는 파일" };
+    ocrStopped = "";
+    const job = { rel, maxPages: all ? 5000 : ocr.AUTO_MAX_PAGES, manual: true };
+    // 이미 다른 것을 읽는 중이면 그 다음 차례로
+    const i = ocrQueue.findIndex((q) => q.rel === rel);
+    if (i >= 0) ocrQueue.splice(i, 1);
+    if (ocrBusy) {
+      return new Promise((resolve) => {
+        ocrQueue.unshift({ ...job, done: resolve });
+      });
+    }
+    ocrBusy = true;
+    try {
+      return await ocrOne(job);
+    } finally {
+      ocrBusy = false;
+      send("ocr-progress", null);
+      runOcrQueue();
+    }
+  });
+
   // ---- 마감 → 캘린더 ----
   // target: { id, stage } 하나, how: "google"(브라우저로 구글 캘린더 일정 추가) | "ics"(일정 파일을 열어 아웃룩·윈도우 일정에 추가)
   ipcMain.handle("deadline-calendar", async (_e, target, how) => {
@@ -915,6 +1022,10 @@ function registerIpc() {
     if (Array.isArray(next.aiExcludeCategories)) settings.aiExcludeCategories = next.aiExcludeCategories.filter((x) => typeof x === "string");
     if (typeof next.checkUpdates === "boolean") settings.checkUpdates = next.checkUpdates;
     if (typeof next.deadlineAlerts === "boolean") settings.deadlineAlerts = next.deadlineAlerts;
+    if (typeof next.ocrAuto === "boolean") {
+      settings.ocrAuto = next.ocrAuto;
+      if (next.ocrAuto) setTimeout(queueOcr, 500);
+    }
     if (["system", "light", "dark"].includes(next.theme)) {
       settings.theme = next.theme;
       applyTheme();

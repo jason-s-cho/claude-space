@@ -253,4 +253,4 @@ function upgradeIfNeeded(index, options) {
   return true;
 }
 
-module.exports = { textSourceOf, upgradeIfNeeded, loadIndex, saveIndex, emptyIndex, scan, reclassifyAll, effective, nameParts, buildEntry, addFile, walk, isTempName, USER_FIELDS };
+module.exports = { reclassify, textSourceOf, upgradeIfNeeded, loadIndex, saveIndex, emptyIndex, scan, reclassifyAll, effective, nameParts, buildEntry, addFile, walk, isTempName, USER_FIELDS };

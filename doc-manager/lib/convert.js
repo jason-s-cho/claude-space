@@ -71,8 +71,8 @@ try {
 }
 `;
 
-// PowerShell 로 스크립트 실행. 결과: 마지막 JSON 줄
-function runPowerShell(script, env, { timeoutMs = TIMEOUT_MS, exe = "powershell.exe" } = {}) {
+// PowerShell 로 스크립트 실행. 결과: 마지막 JSON 줄. onLine(객체): 중간에 나오는 JSON 줄마다 (진행 알림)
+function runPowerShell(script, env, { timeoutMs = TIMEOUT_MS, exe = "powershell.exe", onLine } = {}) {
   return new Promise((resolve, reject) => {
     const encoded = Buffer.from(script, "utf16le").toString("base64");
     const child = spawn(exe, ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-EncodedCommand", encoded], {
@@ -82,9 +82,21 @@ function runPowerShell(script, env, { timeoutMs = TIMEOUT_MS, exe = "powershell.
     let out = "", err = "";
     const timer = setTimeout(() => {
       child.kill();
-      reject(new Error("변환이 너무 오래 걸려 멈췄습니다. 한글·워드에 '허용' 창이나 다른 창이 떠 있는지 확인해 주세요."));
+      reject(new Error("너무 오래 걸려 멈췄습니다. 한글·워드에 '허용' 창이나 다른 창이 떠 있는지 확인해 주세요."));
     }, timeoutMs);
-    child.stdout.on("data", (d) => (out += d));
+    let pending = "";
+    child.stdout.on("data", (d) => {
+      out += d;
+      if (!onLine) return;
+      pending += d;
+      const lines = pending.split(/\r?\n/);
+      pending = lines.pop();
+      for (const l of lines)
+        if (l.startsWith("{"))
+          try {
+            onLine(JSON.parse(l));
+          } catch {}
+    });
     child.stderr.on("data", (d) => (err += d));
     child.on("error", (e) => {
       clearTimeout(timer);
