@@ -156,11 +156,14 @@ test("Claude 커넥터: 둘러보기·검색·읽기·버전·관련 문서·새
     const created = (await call("record_application", { action: "create", fields: { title: "광학투명 스텔스 패널", topic: "그래핀 스텔스", program: "소재부품기술개발", year: 2027 }, template: "국가 R&D (수요조사부터)" })).data;
     await call("record_application", { action: "stage", id: created.id, stage: "수요조사 제출", status: "통과", date: "2026-09-11" });
     await call("record_application", { action: "stage", id: created.id, stage: "RFP 반영", status: "탈락", note: "다른 수요와 통합되어 미반영" });
+    await call("record_application", { action: "stage", id: created.id, stage: "사업계획서 제출", due: "2099-03-02 18:00" });
+    assert.match((await call("record_application", { action: "stage", id: created.id, stage: "사업계획서 제출", due: "다음 주" })).text, /YYYY-MM-DD/);
     await call("record_application", { action: "link", id: created.id, stage: "수요조사 제출", path: filled.new_path });
     assert.match((await call("record_application", { action: "link", id: created.id, stage: "수요조사 제출", path: "구매·견적/장비 견적.docx" })).text, /AI 제외/);
     const listed = (await call("list_applications", { query: "그래핀", state: "탈락" })).data;
     assert.strictEqual(listed.total, 1);
     assert.match(listed.applications[0].progress, /탈락 \(RFP 반영\)/);
+    assert.ok(listed.applications[0].stages.some((x) => x.includes("마감 2099-03-02 18:00")));
     const one = (await call("get_application", { id: created.id })).data;
     assert.deepStrictEqual(one.stages[0].docs, [filled.new_path]);
     assert.strictEqual(one.stages[1].note, "다른 수요와 통합되어 미반영");

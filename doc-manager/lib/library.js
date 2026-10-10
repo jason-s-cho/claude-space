@@ -437,9 +437,11 @@ class Library {
         agency: a.agency || undefined,
         year: a.year,
         progress: `${p.state}${p.stage ? " (" + p.stage + ")" : ""}`,
-        stages: a.stages.map((st) => `${st.name}: ${st.status || "-"}${st.date ? " " + st.date : ""}${st.note ? " — " + st.note.slice(0, 80) : ""}`),
+        stages: a.stages.map((st) => `${st.name}: ${st.status || "-"}${st.date ? " " + st.date : ""}${st.due ? " (마감 " + st.due + ")" : ""}${st.note ? " — " + st.note.slice(0, 80) : ""}`),
         own_reference_docs: this.visibleRefs(a.refs).length || undefined,
       })),
+      // 결과가 아직 없는 단계의 마감 (가까운 순, days_left: 0 = 오늘, 음수 = 지남)
+      upcoming_deadlines: appsLib.upcoming(data, { withinDays: 120 }).map((u) => ({ id: u.id, title: u.title, program: u.program || undefined, stage: u.stage, due: u.due, days_left: u.daysLeft })),
       // 사업별 자료(공고문·RFP·작성 양식 등) 개수. 내용은 get_program 으로
       programs: [...new Set(data.items.map((a) => a.program).filter(Boolean))].map((name) => ({ name, applications: data.items.filter((a) => a.program === name).length, reference_docs: this.visibleRefs((data.programs[name] || { refs: [] }).refs).length })),
     };

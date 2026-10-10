@@ -1227,6 +1227,7 @@ function openSettings(tab = "general", group) {
   renderKwEditor();
   $("aboutVersion").textContent = S.appVersion || "";
   $("checkUpdatesInput").checked = S.settings.checkUpdates !== false;
+  $("deadlineAlertsInput").checked = S.settings.deadlineAlerts !== false;
   $("aboutRoot").textContent = S.root || "(아직 고르지 않음)";
   $("aboutStore").textContent = !S.root
     ? ""
@@ -1560,6 +1561,7 @@ $("settingsDlg").addEventListener("close", async () => {
   await api.saveSettings({
     theme: checked("theme"),
     checkUpdates: $("checkUpdatesInput").checked,
+    deadlineAlerts: $("deadlineAlertsInput").checked,
     importLayout: checked("importLayout"),
     techTags: $("techTagsInput").checked,
     projects: linesToNamed($("projectsInput").value),

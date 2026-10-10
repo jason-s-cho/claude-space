@@ -603,6 +603,28 @@ dialog[open] .move-form { animation: pop 0.16s var(--ease); }
 .card-form { width: min(860px, 92vw); }
 .card-form textarea { width: 100%; min-height: 52vh; font: 12.5px/1.6 ui-monospace, "Cascadia Mono", Consolas, monospace; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); color: var(--text); resize: vertical; }
 .settings-actions .spacer { flex: 1; }
+.app-state-wrap { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.dday { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; background: var(--surface-3); color: var(--text-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.dday.dd-near { background: rgba(214, 158, 46, 0.16); color: #9a6a00; }
+.dday.dd-soon { background: rgba(209, 67, 67, 0.14); color: #c03a3a; }
+.dday.dd-over { background: #c03a3a; color: #fff; }
+.stage-due { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; }
+.stage-due .lbl { color: var(--text-3); }
+.stage-due input { border: 1px solid var(--line); border-radius: 8px; padding: 4px 6px; background: var(--surface-2); color: var(--text); font: inherit; font-size: 12.5px; }
+.stage-due input[type="date"] { width: 132px; }
+.stage-due input[type="time"] { width: 96px; }
+.stage-due input:disabled { opacity: 0.45; }
+.due-strip { border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface); padding: 10px 12px; margin-bottom: 6px; }
+.due-head { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.due-head svg { width: 15px; height: 15px; color: var(--accent); }
+.due-head small { color: var(--text-3); }
+.due-head .link-btn { margin-left: auto; }
+.due-strip ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 2px; }
+.due-strip li button { width: 100%; display: flex; align-items: center; gap: 8px; border: 0; background: none; text-align: left; padding: 5px 6px; border-radius: 8px; font-size: 12.5px; color: var(--text); }
+.due-strip li button:hover { background: var(--surface-2); }
+.due-strip .dday { min-width: 54px; text-align: center; }
+.due-strip .due-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
+.due-strip small { color: var(--text-3); white-space: nowrap; }
 .apps-empty { margin: 40px auto; max-width: 560px; display: grid; justify-items: center; gap: 14px; text-align: center; color: var(--text-2); line-height: 1.7; }
 .apps-empty > svg { width: 30px; height: 30px; color: var(--text-3); }
 .seg-group { display: inline-flex; gap: 2px; padding: 2px; border-radius: 10px; background: var(--surface-3); }

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, shell, ipcMain, dialog, nativeTheme, net } = require("electron");
+const { app, BrowserWindow, Menu, shell, ipcMain, dialog, nativeTheme, net, Notification } = require("electron");
 const fs = require("fs");
 const path = require("path");
 const indexer = require("./lib/indexer");
@@ -29,6 +29,7 @@ const store = require("./lib/store");
 const claudeConfig = require("./lib/claude-config");
 const knowledge = require("./lib/knowledge");
 const cards = require("./lib/cards");
+const calendar = require("./lib/calendar");
 const duplicates = require("./lib/duplicates");
 const { convert, targetsFor } = require("./lib/convert");
 const updates = require("./lib/updates");
@@ -61,7 +62,7 @@ const mtimeOf = (file) => {
   }
 };
 
-const DEFAULT_SETTINGS = { root: "", partners: [], tagRules: [], keywordOverrides: {}, savedSearches: [], recentSearches: [], importLayout: "category", projects: [], techTags: true, theme: "system", aiExcludeCategories: [], checkUpdates: true };
+const DEFAULT_SETTINGS = { root: "", partners: [], tagRules: [], keywordOverrides: {}, savedSearches: [], recentSearches: [], importLayout: "category", projects: [], techTags: true, theme: "system", aiExcludeCategories: [], checkUpdates: true, deadlineAlerts: true, deadlineNotified: {} };
 
 function loadSettings() {
   try {
@@ -108,7 +109,7 @@ function appsState() {
   try {
     if (settings.root) cardList = cards.list(settings.root);
   } catch {}
-  return { cards: cardList, templates: appsData.templates, statuses: appsLib.STATUSES, refKinds: appsLib.REF_KINDS, programs: appsData.programs, items: appsData.items.map((a) => ({ ...a, progress: appsLib.progress(a) })) };
+  return { cards: cardList, upcoming: appsLib.upcoming(appsData), templates: appsData.templates, statuses: appsLib.STATUSES, refKinds: appsLib.REF_KINDS, programs: appsData.programs, items: appsData.items.map((a) => ({ ...a, progress: appsLib.progress(a) })) };
 }
 
 // 문서 폴더를 연다: 예전 색인 옮기기 → 분류 규칙 읽기 → 색인 읽기
@@ -692,6 +693,7 @@ function registerIpc() {
       const r = appsLib.update(settings.root, op);
       loadApps(settings.root);
       send("state", state());
+      if (op && op.type === "stage" && op.patch && op.patch.due) setTimeout(checkDeadlines, 1500); // 마감을 가깝게 적었으면 바로 알린다
       return { id: r.id };
     } catch (err) {
       return { error: String((err && err.message) || err) };
@@ -731,6 +733,41 @@ function registerIpc() {
         send("state", state());
       }
       return { linked: rels.length, folder, skipped: r.skipped };
+    } catch (err) {
+      return { error: String((err && err.message) || err) };
+    }
+  });
+
+  // ---- 마감 → 캘린더 ----
+  // target: { id, stage } 하나, how: "google"(브라우저로 구글 캘린더 일정 추가) | "ics"(일정 파일을 열어 아웃룩·윈도우 일정에 추가)
+  ipcMain.handle("deadline-calendar", async (_e, target, how) => {
+    try {
+      const a = appsData.items.find((x) => x.id === (target && target.id));
+      const s = a && a.stages.find((x) => x.name === target.stage);
+      if (!s || !s.due) throw new Error("마감이 적힌 단계가 아닙니다");
+      const ev = calendar.eventOf({ id: a.id, title: a.title || a.topic || "(이름 없음)", program: a.program, stage: s.name, due: s.due });
+      if (how === "google") {
+        await shell.openExternal(calendar.googleUrl(ev, { timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }));
+        return {};
+      }
+      const file = path.join(app.getPath("temp"), `마감_${safeName(s.name)}_${s.due.slice(0, 10)}.ics`);
+      fs.writeFileSync(file, calendar.toIcs([ev]));
+      const err = await shell.openPath(file);
+      return err ? { error: "일정 파일을 열 프로그램이 없습니다. '모든 마감 내보내기'로 저장해 캘린더에서 가져오기 하세요." } : {};
+    } catch (err) {
+      return { error: String((err && err.message) || err) };
+    }
+  });
+  // 다가오는 마감 모두를 .ics 파일로 저장 (구글 캘린더·아웃룩에서 '가져오기')
+  ipcMain.handle("deadlines-export", async () => {
+    try {
+      const list = appsLib.upcoming(appsData, { withinDays: 3650, overdueDays: 0 });
+      if (!list.length) throw new Error("내보낼 마감이 없습니다. 단계에 마감을 적어 주세요.");
+      const r = await dialog.showSaveDialog(win, { title: "마감 일정 저장", defaultPath: path.join(app.getPath("documents"), "지원 마감 일정.ics"), filters: [{ name: "일정 파일", extensions: ["ics"] }] });
+      if (r.canceled || !r.filePath) return { cancelled: true };
+      fs.writeFileSync(r.filePath, calendar.toIcs(list.map(calendar.eventOf)));
+      shell.showItemInFolder(r.filePath);
+      return { count: list.length, file: r.filePath };
     } catch (err) {
       return { error: String((err && err.message) || err) };
     }
@@ -877,6 +914,7 @@ function registerIpc() {
     if (typeof next.techTags === "boolean") settings.techTags = next.techTags;
     if (Array.isArray(next.aiExcludeCategories)) settings.aiExcludeCategories = next.aiExcludeCategories.filter((x) => typeof x === "string");
     if (typeof next.checkUpdates === "boolean") settings.checkUpdates = next.checkUpdates;
+    if (typeof next.deadlineAlerts === "boolean") settings.deadlineAlerts = next.deadlineAlerts;
     if (["system", "light", "dark"].includes(next.theme)) {
       settings.theme = next.theme;
       applyTheme();
@@ -985,6 +1023,45 @@ app.on("second-instance", () => {
   }
 });
 
+// 마감 알림: 7일·3일·1일 전과 당일(지난 것 포함)에 한 번씩 윈도우 알림을 띄운다. 이미 띄운 것은 PC 설정에 적어 둔다.
+function deadlineBucket(left) {
+  if (left <= 0) return 0;
+  if (left <= 1) return 1;
+  if (left <= 3) return 3;
+  if (left <= 7) return 7;
+  return null;
+}
+function checkDeadlines() {
+  if (!settings.root || settings.deadlineAlerts === false || !Notification.isSupported()) return;
+  const sent = settings.deadlineNotified || {};
+  const now = Date.now();
+  let changed = false;
+  for (const u of appsLib.upcoming(appsData, { withinDays: 7, overdueDays: 1 })) {
+    const b = deadlineBucket(u.daysLeft);
+    if (b === null) continue;
+    const key = `${u.id}|${u.stage}|${u.due}|${b}`;
+    if (sent[key]) continue;
+    sent[key] = now;
+    changed = true;
+    const when = u.daysLeft < 0 ? `${-u.daysLeft}일 지났습니다` : u.daysLeft === 0 ? "오늘 마감입니다" : `${u.daysLeft}일 남았습니다`;
+    const n = new Notification({ title: `${u.stage} 마감 · ${when}`, body: `${u.title}${u.program ? " (" + u.program + ")" : ""}\n마감 ${u.due}` });
+    n.on("click", () => {
+      if (!win) return;
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+      send("open-app", u.id);
+    });
+    n.show();
+  }
+  // 오래된 기록은 지운다 (60일)
+  for (const k of Object.keys(sent)) if (now - sent[k] > 60 * 86400000) delete sent[k], (changed = true);
+  if (changed) {
+    settings.deadlineNotified = sent;
+    savePcSettings();
+  }
+}
+
 // GitHub 릴리스에서 새 버전 확인. 켠 뒤 잠시 있다가 한 번, 그 뒤로 6시간마다. (개발 중인 앱은 자동으로 확인하지 않는다)
 let lastUpdate = null;
 async function runUpdateCheck(manual) {
@@ -1024,6 +1101,8 @@ app.whenReady().then(() => {
     lastFocusScan = Date.now();
     runScan();
   }
+  setTimeout(checkDeadlines, 20000);
+  setInterval(checkDeadlines, 3600 * 1000);
   setTimeout(() => runUpdateCheck(false), 15000);
   setInterval(() => runUpdateCheck(false), 6 * 3600 * 1000);
 
