@@ -800,3 +800,28 @@ document.addEventListener("click", async (e) => {
 
 // 마감 알림을 누르면 그 지원 건을 연다
 api.onOpenApp((id) => openApp(id));
+
+// 빈 메모 칸은 다른 곳을 누르거나 Esc 를 누르면 다시 "+ 메모"로 접는다.
+// (화면 전체를 다시 그리지 않고 그 칸만 바꾼다: 바로 누른 단추의 클릭이 사라지지 않게)
+function foldEmptyNote(ta) {
+  if (!ta || !ta.isConnected || ta.value.trim()) return;
+  const i = ta.dataset.aSnote;
+  const a = appNow();
+  if (a) openNotes.delete(`${a.id}|${i}`);
+  const docs = ta.parentElement.querySelector(".stage-docs");
+  ta.remove();
+  if (docs && !docs.querySelector("[data-a-snote-open]")) {
+    const b = document.createElement("button");
+    b.className = "link-btn";
+    b.type = "button";
+    b.dataset.aSnoteOpen = i;
+    b.textContent = "+ 메모";
+    docs.insertBefore(b, docs.querySelector("[data-a-slink]"));
+  }
+}
+$("detail").addEventListener("focusout", (e) => {
+  if (e.target.dataset && e.target.dataset.aSnote !== undefined) setTimeout(() => foldEmptyNote(e.target), 0);
+});
+$("detail").addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && e.target.dataset && e.target.dataset.aSnote !== undefined && !e.target.value.trim()) foldEmptyNote(e.target);
+});
