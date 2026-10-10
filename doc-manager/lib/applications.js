@@ -56,6 +56,15 @@ const str = (v, max = 300) => String(v == null ? "" : v).trim().slice(0, max);
 const programName = (v) => str(v, 200).replace(/\s+/g, " ");
 const today = () => new Date().toISOString().slice(0, 10);
 
+// 마감: "YYYY-MM-DD" 또는 "YYYY-MM-DD HH:MM" (공고의 접수 마감 시각까지)
+function cleanDue(v) {
+  const m = /^(\d{4}-\d{2}-\d{2})(?:[ T](\d{1,2}):(\d{2}))?$/.exec(String(v || "").trim());
+  if (!m) return "";
+  if (m[2] === undefined) return m[1];
+  const h = Math.min(23, parseInt(m[2], 10));
+  return `${m[1]} ${String(h).padStart(2, "0")}:${m[3]}`;
+}
+
 function cleanStage(s) {
   if (typeof s === "string") s = { name: s };
   const name = str(s && s.name, 60);
@@ -63,7 +72,7 @@ function cleanStage(s) {
   const status = STATUSES.includes(s.status) ? s.status : "";
   const date = /^\d{4}-\d{2}-\d{2}$/.test(s.date || "") ? s.date : "";
   const docs = [...new Set((Array.isArray(s.docs) ? s.docs : []).map((d) => str(d, 500)).filter(Boolean))];
-  return { name, status, date, note: str(s.note, 4000), docs };
+  return { name, status, date, due: cleanDue(s.due), note: str(s.note, 4000), docs };
 }
 
 function cleanStages(list) {
@@ -104,7 +113,7 @@ function progress(a) {
  *   { type: "create", fields: { title, topic, program, agency, year, memo }, template?: 틀 이름 | stages?: [...] }
  *   { type: "update", id, fields }
  *   { type: "delete", id }
- *   { type: "stage", id, stage: 이름, patch: { status?, date?, note? } }   — 단계 결과 기록
+ *   { type: "stage", id, stage: 이름, patch: { status?, date?, note?, due? } } — 단계 결과·마감 기록
  *   { type: "stages", id, stages: [...] }                                — 단계 목록 통째로 (더하기·빼기·이름·순서)
  *   { type: "link" | "unlink", id, stage, rel }                          — 문서 연결
  *   { type: "templates", templates: [{ name, stages: [이름…] }] }
@@ -166,6 +175,10 @@ function apply(data, op) {
       }
       if (p.date !== undefined) s.date = /^\d{4}-\d{2}-\d{2}$/.test(p.date || "") ? p.date : "";
       if (p.note !== undefined) s.note = str(p.note, 4000);
+      if (p.due !== undefined) {
+        if (p.due && !cleanDue(p.due)) throw new Error("마감은 YYYY-MM-DD 또는 YYYY-MM-DD HH:MM 으로 적어 주세요");
+        s.due = cleanDue(p.due);
+      }
       touch(a);
       return { data, id: a.id };
     }
@@ -232,6 +245,30 @@ function apply(data, op) {
   }
 }
 
+// 마감까지 남은 날 (오늘 마감 = 0, 지났으면 음수). now 는 시험용
+function daysLeft(due, now = new Date()) {
+  const [d] = String(due).split(" ");
+  const [y, m, dd] = d.split("-").map(Number);
+  const a = new Date(y, m - 1, dd), b = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  return Math.round((a - b) / 86400000);
+}
+
+/**
+ * 다가오는 마감: 아직 결과가 없거나 진행 중인 단계의 마감. 지난 것도 overdueDays 안이면 보여 준다.
+ * 결과: [{ id, title, program, stage, due, daysLeft }] 가까운 순
+ */
+function upcoming(data, { now = new Date(), withinDays = 60, overdueDays = 14 } = {}) {
+  const out = [];
+  for (const a of data.items)
+    for (const s of a.stages) {
+      if (!s.due || !(s.status === "" || s.status === "진행")) continue;
+      const left = daysLeft(s.due, now);
+      if (left > withinDays || left < -overdueDays) continue;
+      out.push({ id: a.id, title: a.title || a.topic || "(이름 없음)", program: a.program || "", stage: s.name, due: s.due, daysLeft: left });
+    }
+  return out.sort((x, y) => x.due.localeCompare(y.due));
+}
+
 // 파일을 새로 읽어 바꾸고 바로 쓴다 (앱과 커넥터가 같이 써도 서로 덮어쓰지 않게)
 function update(root, op) {
   const data = load(root);
@@ -261,4 +298,4 @@ function renameDocs(root, renames) {
   return changed;
 }
 
-module.exports = { REF_KINDS, programName, STATUSES, DEFAULT_TEMPLATES, fileOf, load, save, apply, update, progress, renameDocs, empty };
+module.exports = { cleanDue, daysLeft, upcoming, REF_KINDS, programName, STATUSES, DEFAULT_TEMPLATES, fileOf, load, save, apply, update, progress, renameDocs, empty };

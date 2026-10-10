@@ -20,6 +20,31 @@ async function appsOp(op, okMsg) {
   return r;
 }
 
+// ---- 마감 ----
+const upcomingOf = () => (S.applications && S.applications.upcoming) || [];
+function daysLeftOf(due) {
+  const [y, m, d] = String(due).slice(0, 10).split("-").map(Number);
+  const now = new Date();
+  return Math.round((new Date(y, m - 1, d) - new Date(now.getFullYear(), now.getMonth(), now.getDate())) / 86400000);
+}
+const ddayText = (left) => (left === 0 ? "오늘 마감" : left > 0 ? `D-${left}` : `${-left}일 지남`);
+const ddayClass = (left) => (left < 0 ? "dd-over" : left <= 3 ? "dd-soon" : left <= 7 ? "dd-near" : "");
+const dueShort = (due) => {
+  const [d, t] = String(due).split(" ");
+  const [, m, dd] = d.split("-");
+  return `${+m}/${+dd}${t ? " " + t : ""}`;
+};
+// 결과가 아직 없는 단계의 마감 표시
+function dueBadge(s) {
+  if (!s.due || !(s.status === "" || s.status === "진행")) return "";
+  const left = daysLeftOf(s.due);
+  return `<span class="dday ${ddayClass(left)}">${ddayText(left)}</span>`;
+}
+// 지원 건의 가장 가까운 마감
+function nextDueOf(a) {
+  return upcomingOf().find((u) => u.id === a.id) || null;
+}
+
 // 사업명별 하위 화면이면 그 사업명, 아니면 null
 const appsProgram = () => (filter.view.startsWith("apps:") ? filter.view.slice(5) : null);
 let appsCollapsed = new Set(pref("appsCollapsed", [])); // 목록에서 접어 둔 사업명
@@ -27,17 +52,31 @@ let appsCollapsed = new Set(pref("appsCollapsed", [])); // 목록에서 접어 �
 function appRowHtml(a) {
   const p = a.progress;
   const pipe = a.stages
-    .map((s) => `<li class="${STAGE_CLASS[s.status] || ""}" title="${esc(`${s.name}: ${STATUS_LABEL[s.status] || s.status}${s.date ? " · " + s.date : ""}${s.note ? "\n" + s.note : ""}`)}"><span>${esc(s.name)}</span></li>`)
+    .map((s) => `<li class="${STAGE_CLASS[s.status] || ""}" title="${esc(`${s.name}: ${STATUS_LABEL[s.status] || s.status}${s.date ? " · " + s.date : ""}${s.due ? " · 마감 " + s.due : ""}${s.note ? "\n" + s.note : ""}`)}"><span>${esc(s.name)}</span></li>`)
     .join("");
   return `<div class="app-row${a.id === selectedApp ? " sel" : ""}" data-a-id="${esc(a.id)}">
     <div class="app-main"><div class="app-title">${esc(appName(a))}</div>
       <div class="app-meta">${[a.topic && a.title ? a.topic : "", a.agency, a.year].filter(Boolean).map(esc).join(" · ")}</div></div>
-    <span class="app-state ${APP_STATE_CLASS[p.state] || ""}">${esc(p.state)}${p.stage && p.state !== "선정" ? ` · ${esc(p.stage)}` : ""}</span>
+    <span class="app-state-wrap"><span class="app-state ${APP_STATE_CLASS[p.state] || ""}">${esc(p.state)}${p.stage && p.state !== "선정" ? ` · ${esc(p.stage)}` : ""}</span>${(() => {
+      const u = nextDueOf(a);
+      return u ? `<span class="dday ${ddayClass(u.daysLeft)}" title="${esc(u.stage)} 마감 ${esc(u.due)}">${ddayText(u.daysLeft)}</span>` : "";
+    })()}</span>
     <ol class="pipe">${pipe}</ol>
   </div>`;
 }
 
 // 가운데: 지원 건 목록 (단계 흐름 막대). 전체 보기에서는 사업명별로 묶는다.
+// 목록 위: 다가오는 마감 (30일 안 + 지난 것)
+function deadlinesStripHtml(program) {
+  const list = upcomingOf().filter((u) => u.daysLeft <= 30 && (program === null || progKey(u) === program));
+  if (!list.length) return "";
+  return `<div class="due-strip"><div class="due-head">${icon("calendar")}<b>다가오는 마감</b><small>${list.length}건</small>
+      <button class="link-btn" data-a-export-due type="button" title="모든 마감을 일정 파일(.ics)로 저장해 구글 캘린더·아웃룩에서 가져오기">모든 마감 내보내기</button></div>
+    <ul>${list
+      .map((u) => `<li><button data-a-due-open="${esc(u.id)}" type="button"><span class="dday ${ddayClass(u.daysLeft)}">${ddayText(u.daysLeft)}</span><b>${esc(u.stage)}</b><span class="due-title">${esc(u.title)}</span><small>${esc(dueShort(u.due))}${program === null && u.program ? " · " + esc(u.program) : ""}</small></button></li>`)
+      .join("")}</ul></div>`;
+}
+
 function renderAppsView() {
   let program = appsProgram();
   // 그 사업의 지원 건이 다 없어졌으면(사업명을 바꿨거나 지웠으면) 전체로 돌아간다
@@ -77,14 +116,15 @@ function renderAppsView() {
     board.innerHTML = `<div class="apps-empty"><div>이 조건의 지원 건이 없습니다.</div></div>`;
     return;
   }
+  const strip = deadlinesStripHtml(program);
   if (program !== null) {
-    board.innerHTML = items.map(appRowHtml).join("");
+    board.innerHTML = strip + items.map(appRowHtml).join("");
     return;
   }
   // 사업명별 묶음: 왼쪽 메뉴와 같은 순서 (이름순, 사업명 없는 건은 맨 뒤)
   const groups = new Map(appProgramCounts(items).map(([p]) => [p, []]));
   for (const a of items) groups.get(progKey(a)).push(a);
-  board.innerHTML = [...groups]
+  board.innerHTML = strip + [...groups]
     .map(([p, list]) => {
       const st = {};
       for (const a of list) st[a.progress.state] = (st[a.progress.state] || 0) + 1;
@@ -234,12 +274,18 @@ function renderAppDetail() {
         <div class="stage-head">
           <input class="stage-name" data-a-sname="${i}" value="${esc(s.name)}" aria-label="단계 이름">
           <select class="select" data-a-sstatus="${i}" aria-label="결과">${statusOpts(s.status)}</select>
-          <input type="date" data-a-sdate="${i}" value="${esc(s.date)}" aria-label="날짜">
+          <input type="date" data-a-sdate="${i}" value="${esc(s.date)}" aria-label="결과 날짜" title="결과 날짜 (제출·발표·통보한 날)">
           <span class="stage-tools">
             <button class="icon-btn" data-a-sup="${i}" type="button" title="위로"${i ? "" : " disabled"}>↑</button>
             <button class="icon-btn" data-a-sdown="${i}" type="button" title="아래로"${i < a.stages.length - 1 ? "" : " disabled"}>↓</button>
             <button class="icon-btn danger" data-a-sdel="${i}" type="button" title="이 단계 빼기">${icon("x")}</button>
           </span>
+        </div>
+        <div class="stage-due">
+          <span class="lbl">마감</span>
+          <input type="date" data-a-sdue="${i}" value="${esc((s.due || "").slice(0, 10))}" aria-label="마감 날짜">
+          <input type="time" data-a-sduetime="${i}" value="${esc((s.due || "").slice(11, 16))}" aria-label="마감 시각"${s.due ? "" : " disabled"}>
+          ${s.due ? `${dueBadge(s)}<button class="link-btn" data-a-cal="${i}" data-how="google" type="button" title="브라우저로 구글 캘린더 일정 추가 화면을 엽니다">구글 캘린더</button><button class="link-btn" data-a-cal="${i}" data-how="ics" type="button" title="일정 파일을 열어 아웃룩·윈도우 일정에 추가">일정 파일</button>` : ""}
         </div>
         <textarea data-a-snote="${i}" rows="${s.note ? 3 : 1}" placeholder="평가 의견 · 탈락 사유 · 메모">${esc(s.note)}</textarea>
         <div class="stage-docs">${docs}<button class="link-btn" data-a-slink="${i}" type="button">+ 문서 연결</button></div>
@@ -370,8 +416,16 @@ function toggleAppGroup(p) {
   renderAppsView();
 }
 
-$("appsBoard").addEventListener("click", (e) => {
+$("appsBoard").addEventListener("click", async (e) => {
   if (e.target.closest("[data-a-new]")) return openNewApp();
+  const dueOpen = e.target.closest("[data-a-due-open]");
+  if (dueOpen) return openApp(dueOpen.dataset.aDueOpen);
+  if (e.target.closest("[data-a-export-due]")) {
+    const r = await api.deadlinesExport();
+    if (r.error) return toast(r.error, 5000);
+    if (!r.cancelled) toast(`마감 ${r.count}건을 일정 파일로 저장했습니다.\n구글 캘린더: 설정 > 가져오기, 아웃룩: 파일을 두 번 누르기`, 7000);
+    return;
+  }
   const only = e.target.closest("[data-a-only]");
   if (only) {
     selectedApp = "";
@@ -427,6 +481,11 @@ $("detail").addEventListener("click", async (e) => {
     st.push({ name: `새 단계${n > 1 ? " " + n : ""}` });
     return appsOp({ type: "stages", id: a.id, stages: st });
   }
+  if (b.dataset.aCal !== undefined) {
+    const r = await api.deadlineCalendar({ id: a.id, stage: a.stages[idx("aCal")].name }, b.dataset.how);
+    if (r && r.error) toast(r.error, 6000);
+    return;
+  }
   if (b.dataset.aUnlink !== undefined) return appsOp({ type: "unlink", id: a.id, stage: a.stages[idx("aUnlink")].name, rel: b.dataset.rel });
   if (b.dataset.aSlink !== undefined) {
     const s = a.stages[idx("aSlink")];
@@ -458,6 +517,13 @@ $("detail").addEventListener("change", async (e) => {
     const r = await appsOp({ type: "stages", id: a.id, stages: st });
     if (!r) t.value = a.stages[parseInt(t.dataset.aSname, 10)].name;
     return;
+  }
+  if (t.dataset.aSdue !== undefined || t.dataset.aSduetime !== undefined) {
+    const k = parseInt(t.dataset.aSdue !== undefined ? t.dataset.aSdue : t.dataset.aSduetime, 10);
+    const day = document.querySelector(`[data-a-sdue="${k}"]`).value;
+    const time = document.querySelector(`[data-a-sduetime="${k}"]`).value;
+    await appsOp({ type: "stage", id: a.id, stage: a.stages[k].name, patch: { due: day ? (time ? `${day} ${time}` : day) : "" } });
+    return renderAppDetail();
   }
   const i = [t.dataset.aSstatus, t.dataset.aSdate, t.dataset.aSnote].find((v) => v !== undefined);
   if (i === undefined) return;
@@ -663,3 +729,6 @@ document.addEventListener("click", async (e) => {
     toast("복사하지 못했습니다. 글자를 직접 선택해 복사해 주세요.");
   }
 });
+
+// 마감 알림을 누르면 그 지원 건을 연다
+api.onOpenApp((id) => openApp(id));

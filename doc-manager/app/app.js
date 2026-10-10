@@ -544,6 +544,7 @@ async function renderDetail() {
         : ""}
     </div>
     ${timeline}
+    ${ocrCardHtml(d)}
     ${appsCardHtml(d)}
     <div class="card">
       <h4>${icon("hash")}태그</h4>
@@ -593,6 +594,50 @@ function allTags() {
   for (const d of S.docs) for (const t of d.tags) set.add(t);
   return [...set].sort((a, b) => a.localeCompare(b, "ko"));
 }
+
+// ---------- 스캔 PDF 글자 읽기 (OCR) ----------
+let ocrNow = null; // { rel, page, of, left } 지금 읽는 중인 것
+function ocrCardHtml(d) {
+  if (d.ext !== "pdf" || (!d.scanned && !d.ocr && !d.ocrError)) return "";
+  const win = S.platform === "win32";
+  const reading = ocrNow && ocrNow.rel === d.rel;
+  let body;
+  if (reading) body = `<p class="hint">글자를 읽는 중… ${ocrNow.of ? `${ocrNow.page}/${ocrNow.of}쪽` : ""}</p>`;
+  else if (d.ocr) {
+    const partial = d.ocr.total > d.ocr.pages;
+    body = `<p class="hint">스캔본이라 윈도우 글자 인식(OCR)으로 읽었습니다 · ${d.ocr.pages}${partial ? `/${d.ocr.total}` : ""}쪽. 인식 결과라 틀린 글자가 있을 수 있습니다.</p>
+      ${partial ? `<button class="btn sm" data-act="ocr-all" type="button">나머지 ${d.ocr.total - d.ocr.pages}쪽도 읽기</button>` : ""}`;
+  } else if (d.ocrError) body = `<p class="warn">글자를 읽지 못했습니다: ${esc(d.ocrError)}</p>${win ? '<button class="btn sm" data-act="ocr" type="button">다시 읽기</button>' : ""}`;
+  else
+    body = win
+      ? `<p class="hint">글자가 없는 스캔 PDF 입니다. 글자를 읽어 두면 검색·자동 분류가 되고 Claude 도 내용을 읽을 수 있습니다.${S.settings.ocrAuto !== false ? " (차례대로 자동으로 읽는 중)" : ""}</p><button class="btn sm primary" data-act="ocr" type="button">지금 글자 읽기</button>`
+      : '<p class="hint">글자가 없는 스캔 PDF 입니다. 글자 읽기(OCR)는 윈도우에서만 됩니다.</p>';
+  return `<div class="card ocr-card"><h4>${icon("search")}스캔 PDF</h4>${body}</div>`;
+}
+
+async function runOcr(d, all) {
+  const r = await api.ocrDoc(d.rel, all);
+  if (r.error) return toast(r.error, 7000);
+  toast(r.fromCache ? "예전에 읽어 둔 글자를 불러왔습니다." : `${r.pages}쪽의 글자를 읽었습니다.`);
+}
+
+api.onOcrProgress((p) => {
+  ocrNow = p;
+  const pill = $("ocrPill");
+  if (!p) {
+    pill.hidden = true;
+  } else {
+    const d = byRel.get(p.rel);
+    pill.textContent = `스캔 PDF 글자 읽는 중 · ${d ? d.base : p.rel.split("/").pop()}${p.of ? ` ${p.page}/${p.of}쪽` : ""}${p.left ? ` · 남은 문서 ${p.left}` : ""}`;
+    pill.hidden = false;
+  }
+  if (selected && (!p || p.rel === selected) && !isAppsView()) {
+    const card = document.querySelector(".ocr-card");
+    const d = byRel.get(selected);
+    if (card && d) card.outerHTML = ocrCardHtml(d);
+  }
+});
+api.onOcrUnavailable((msg) => toast(msg, 12000));
 
 // ---------- 문서 고치기 ----------
 
@@ -1227,6 +1272,8 @@ function openSettings(tab = "general", group) {
   renderKwEditor();
   $("aboutVersion").textContent = S.appVersion || "";
   $("checkUpdatesInput").checked = S.settings.checkUpdates !== false;
+  $("deadlineAlertsInput").checked = S.settings.deadlineAlerts !== false;
+  $("ocrAutoInput").checked = S.settings.ocrAuto !== false;
   $("aboutRoot").textContent = S.root || "(아직 고르지 않음)";
   $("aboutStore").textContent = !S.root
     ? ""
@@ -1441,6 +1488,7 @@ $("detail").addEventListener("click", async (e) => {
   if (act === "reveal") return api.showInFolder(d.rel);
   if (b.dataset.compare) return openCompare(b.dataset.compare, d.rel);
   if (b.dataset.goto) return goto(b.dataset.goto);
+  if (act === "ocr" || act === "ocr-all") return runOcr(d, act === "ocr-all");
   if (act === "move") {
     const r = await api.moveToCategory(d.rel);
     if (r.error) return toast("옮기지 못했습니다: " + r.error);
@@ -1560,6 +1608,8 @@ $("settingsDlg").addEventListener("close", async () => {
   await api.saveSettings({
     theme: checked("theme"),
     checkUpdates: $("checkUpdatesInput").checked,
+    deadlineAlerts: $("deadlineAlertsInput").checked,
+    ocrAuto: $("ocrAutoInput").checked,
     importLayout: checked("importLayout"),
     techTags: $("techTagsInput").checked,
     projects: linesToNamed($("projectsInput").value),

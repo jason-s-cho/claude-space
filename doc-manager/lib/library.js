@@ -15,6 +15,7 @@ const { CATEGORIES, migrateOverrides } = require("./classify");
 const { docFrequency, topKeywords } = require("./keywords");
 const knowledge = require("./knowledge");
 const cards = require("./cards");
+const ocr = require("./ocr");
 const forms = require("./forms");
 const convertLib = require("./convert");
 const { compareTexts } = require("./diff");
@@ -201,7 +202,13 @@ class Library {
     const v = this.visible(rel);
     const full = path.join(this.root(), ...v.rel.split("/"));
     const x = await extract(full, { maxText: READ_MAX });
-    const text = x.text || "";
+    let text = x.text || "";
+    // 스캔 PDF: 앱이 윈도우 글자 인식으로 읽어 둔 글자가 있으면 그것을 쓴다
+    let fromOcr = null;
+    if (/\.pdf$/i.test(v.rel) && ocr.needsOcr({ rel: v.rel, pages: x.pages, text })) {
+      fromOcr = await ocr.cachedText(this.root(), full);
+      if (fromOcr) text = fromOcr.text.slice(0, READ_MAX);
+    }
     const start = Math.max(0, Math.min(offset, text.length));
     const end = Math.min(text.length, start + PAGE);
     return {
@@ -213,9 +220,13 @@ class Library {
       truncated_at_limit: text.length >= READ_MAX || undefined,
       note_for_ai: x.protected
         ? "암호·배포용 한글 문서라 앞부분(미리보기)만 읽을 수 있습니다."
-        : !text
-          ? "본문 글자를 읽을 수 없는 문서입니다(스캔 PDF, 옛 형식 .ppt/.xls 등)."
-          : undefined,
+        : fromOcr
+          ? `스캔 PDF 를 글자 인식(OCR)으로 읽은 글자입니다 (${fromOcr.pages}/${fromOcr.total}쪽). 인식 오류가 있을 수 있으니 수치·고유명사는 사용자에게 확인하세요.${fromOcr.total > fromOcr.pages ? " 나머지 쪽은 앱의 문서 화면에서 '나머지 쪽도 읽기'를 누르면 읽힙니다." : ""}`
+          : !text && /\.pdf$/i.test(v.rel)
+            ? "글자가 없는 스캔 PDF 입니다. 문서 보관함 앱(윈도우)이 글자 인식(OCR)으로 읽는 중이거나 아직 읽지 않았습니다. 사용자에게 앱에서 이 문서를 열어 '지금 글자 읽기'를 눌러 달라고 하세요."
+            : !text
+              ? "본문 글자를 읽을 수 없는 문서입니다(옛 형식 .ppt/.xls, 그림만 있는 문서 등)."
+              : undefined,
     };
   }
 
@@ -437,9 +448,11 @@ class Library {
         agency: a.agency || undefined,
         year: a.year,
         progress: `${p.state}${p.stage ? " (" + p.stage + ")" : ""}`,
-        stages: a.stages.map((st) => `${st.name}: ${st.status || "-"}${st.date ? " " + st.date : ""}${st.note ? " — " + st.note.slice(0, 80) : ""}`),
+        stages: a.stages.map((st) => `${st.name}: ${st.status || "-"}${st.date ? " " + st.date : ""}${st.due ? " (마감 " + st.due + ")" : ""}${st.note ? " — " + st.note.slice(0, 80) : ""}`),
         own_reference_docs: this.visibleRefs(a.refs).length || undefined,
       })),
+      // 결과가 아직 없는 단계의 마감 (가까운 순, days_left: 0 = 오늘, 음수 = 지남)
+      upcoming_deadlines: appsLib.upcoming(data, { withinDays: 120 }).map((u) => ({ id: u.id, title: u.title, program: u.program || undefined, stage: u.stage, due: u.due, days_left: u.daysLeft })),
       // 사업별 자료(공고문·RFP·작성 양식 등) 개수. 내용은 get_program 으로
       programs: [...new Set(data.items.map((a) => a.program).filter(Boolean))].map((name) => ({ name, applications: data.items.filter((a) => a.program === name).length, reference_docs: this.visibleRefs((data.programs[name] || { refs: [] }).refs).length })),
     };

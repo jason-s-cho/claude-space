@@ -40,6 +40,7 @@ const INSTRUCTIONS = `이 서버는 사용자가 직접 작성한 업무 문서(
 - 기본 검색 결과는 각 문서의 최신 버전만 보여 줍니다. 이전 버전이 필요하면 list_versions 를 쓰세요.
 - '주제 카드'·'사업 카드'·'작성 가이드'는 이 보관함의 작성 카드입니다. 만들거나 고쳐 달라고 하면 get_card 로 양식을 받아 그 구조대로 채워 save_card 로 저장하세요 (작성 가이드는 문서 종류마다 한 장, 수요조사서·사업계획서의 항목 종류별 쓰는 법입니다).
 - 사업에 내는 문서(수요조사서·사업계획서·발표자료)는 양식(inspect_form) × 주제 카드 × 사업 카드 × 작성 가이드(get_card)를 함께 보고 씁니다. 자세한 순서는 'write_application_document' 프롬프트와 같습니다: 바탕 자료 읽기 → 칸별 요약을 사용자에게 확인 → fill_form → record_application.
+- 공고문·RFP·안내문을 읽다가 접수 마감·수요조사 마감 같은 날짜를 찾으면, 해당 지원 건 단계에 마감(record_application action: stage, due)을 적어 둘지 사용자에게 묻고 적으세요. 앱이 마감 전에 알려 줍니다.
 - 사업에 내는 문서를 쓸 때는 list_applications 로 같은 주제·같은 사업의 지원 건을 찾아, 단계별 결과와 탈락 사유(평가 의견)를 읽고 같은 약점을 피하세요. 통과한 건의 표현은 다시 써도 됩니다. 수요조사가 RFP 에 반영됐으면 계획서는 그 RFP 문구에 맞춥니다. 쓰기 전에 get_program(또는 get_application 의 program_reference_docs)으로 그 사업의 공고문·RFP·평가 기준·작성 양식을 먼저 읽고, 공고의 요구 사항과 평가 항목에 맞춰 쓰세요. 문서를 다 쓰면 record_application 으로 지원 건과 단계 결과를 기록하세요.
 - 새 버전을 저장했으면 compare_versions 로 원본과 바뀐 곳(특히 바뀐 숫자)을 확인해 사용자에게 짧게 알려 주세요.
 - 새 문서나 계획서를 쓸 때는 find_related_documents 로 재사용할 만한 이전 자료(같은 과제·기술·키워드)를 찾으세요.
@@ -273,7 +274,7 @@ tool(
     title: "지원 건 목록",
     description:
       "사업 지원 이력: 한 주제(기술)를 한 사업에 낸 '지원 건'마다 단계(예: 수요조사 제출 → RFP 반영 → 사업계획서 제출 → 서류평가 → 발표평가 → 선정·협약)별 결과(통과·탈락·진행)·날짜·평가 의견을 보여 줍니다. " +
-      "비슷한 주제를 다른 사업에 낸 이력, 어느 단계에서 왜 떨어졌는지 확인할 때 씁니다. 자세한 의견과 연결 문서는 get_application.",
+      "비슷한 주제를 다른 사업에 낸 이력, 어느 단계에서 왜 떨어졌는지, 다가오는 마감(upcoming_deadlines)을 확인할 때 씁니다. 자세한 의견과 연결 문서는 get_application.",
     inputSchema: {
       query: z.string().optional().describe("과제명·주제·사업명·기관·메모에서 찾을 글자 (예: 그래핀 스텔스, 소재부품)"),
       state: z.enum(["준비", "진행 중", "탈락", "선정"]).optional(),
@@ -317,7 +318,7 @@ tool(
     title: "지원 건 기록",
     description:
       "지원 건을 만들거나 고칩니다. action: " +
-      "create(새 지원 건: fields 와 template 또는 stages) · update(fields 고치기) · stage(단계 결과 기록: stage, status, date, note) · " +
+      "create(새 지원 건: fields 와 template 또는 stages) · update(fields 고치기) · stage(단계 결과·마감 기록: stage, status, date, note, due) · " +
       "stages(단계 목록 통째로 바꾸기: 더하기·빼기·이름·순서) · link/unlink(단계에 문서 연결: stage, path) · templates(단계 틀 목록 바꾸기) · " +
       "ref_link/ref_unlink(공고문·RFP 같은 참고 자료 연결: path, kind, 사업 전체면 program, 이 건만이면 id). " +
       "결과(status)는 진행·통과·탈락·제외(이 건에는 없는 단계) 중 하나. 탈락했으면 note 에 사유·평가 의견을 꼭 남기세요. 사용자에게 확인받은 사실만 기록하세요.",
@@ -335,6 +336,7 @@ tool(
       status: z.enum(["", "진행", "통과", "탈락", "제외"]).optional(),
       date: z.string().optional().describe("YYYY-MM-DD"),
       note: z.string().optional().describe("평가 의견·탈락 사유·메모"),
+      due: z.string().optional().describe("stage 의 마감: YYYY-MM-DD 또는 YYYY-MM-DD HH:MM (공고의 접수 마감 등). 빈 문자열이면 지움"),
       path: z.string().optional().describe("link/unlink 할 문서 경로 (search_documents 의 path 또는 fill_form 의 new_path)"),
       stages: z.array(z.object({ name: z.string(), status: z.string().optional(), date: z.string().optional(), note: z.string().optional(), docs: z.array(z.string()).optional() })).optional(),
       templates: z.array(z.object({ name: z.string(), stages: z.array(z.string()) })).optional(),
@@ -345,7 +347,7 @@ tool(
     const op = { type: a.action, id: a.id };
     if (a.action === "create") Object.assign(op, { fields: a.fields || {}, template: a.template, stages: a.stages });
     else if (a.action === "update") op.fields = a.fields || {};
-    else if (a.action === "stage") Object.assign(op, { stage: a.stage, patch: { status: a.status, date: a.date, note: a.note } });
+    else if (a.action === "stage") Object.assign(op, { stage: a.stage, patch: { status: a.status, date: a.date, note: a.note, due: a.due } });
     else if (a.action === "stages") op.stages = a.stages;
     else if (a.action === "link" || a.action === "unlink") {
       // 연결은 보관함에 있는(그리고 AI 에 보여도 되는) 문서나 방금 만든 문서만

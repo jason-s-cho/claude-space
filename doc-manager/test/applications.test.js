@@ -62,3 +62,23 @@ test("사업 자료: 사업 전체·지원 건 하나에 붙이고, 종류를 �
   apps.update(root, { type: "ref_unlink", program: "암묵지 기반 AI 사업", rel: "공고/양식.hwpx" });
   assert.ok(!apps.load(root).programs["암묵지 기반 AI 사업"]); // 비면 정리
 });
+
+test("마감: 단계에 적고, 남은 날을 세고, 결과가 나온 단계는 다가오는 마감에서 뺀다", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "apps-due-"));
+  const { id } = apps.update(root, { type: "create", fields: { title: "x", program: "암묵지 사업" } });
+  assert.throws(() => apps.update(root, { type: "stage", id, stage: "수요조사 제출", patch: { due: "10월 14일" } }), /YYYY-MM-DD/);
+  apps.update(root, { type: "stage", id, stage: "수요조사 제출", patch: { due: "2026-10-14 9:30" } });
+  apps.update(root, { type: "stage", id, stage: "사업계획서 제출", patch: { due: "2026-11-20" } });
+  let d = apps.load(root);
+  assert.strictEqual(d.items[0].stages[0].due, "2026-10-14 09:30");
+  const now = new Date(2026, 9, 10, 23, 0);
+  assert.strictEqual(apps.daysLeft("2026-10-14 09:30", now), 4);
+  assert.strictEqual(apps.daysLeft("2026-10-09", now), -1);
+  assert.deepStrictEqual(apps.upcoming(d, { now }).map((u) => [u.stage, u.daysLeft]), [["수요조사 제출", 4], ["사업계획서 제출", 41]]);
+  apps.update(root, { type: "stage", id, stage: "수요조사 제출", patch: { status: "통과" } });
+  d = apps.load(root);
+  assert.deepStrictEqual(apps.upcoming(d, { now }).map((u) => u.stage), ["사업계획서 제출"]);
+  assert.deepStrictEqual(apps.upcoming(d, { now, withinDays: 30 }), []);
+  apps.update(root, { type: "stage", id, stage: "사업계획서 제출", patch: { due: "" } });
+  assert.strictEqual(apps.load(root).items[0].stages[2].due, "");
+});
