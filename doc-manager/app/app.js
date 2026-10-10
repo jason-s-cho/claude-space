@@ -5,7 +5,7 @@ const $ = (id) => document.getElementById(id);
 
 const KIND_LABEL = { word: "Word", ppt: "PowerPoint", excel: "Excel", pdf: "PDF", hwp: "한글" };
 const KIND_SHORT = { word: "DOC", ppt: "PPT", excel: "XLS", pdf: "PDF", hwp: "HWP" };
-const GROUP_ICON = { "국가과제·지원사업": "landmark", 회사소개: "building", 홍보: "megaphone" };
+const GROUP_ICON = { "국가과제·지원사업": "landmark", "회사 증빙": "badge", 지식재산: "bulb", 회사소개: "building", 홍보: "megaphone" };
 const CAT_ICON = { analysis: "chart", request: "users", purchase: "cart", other: "question" };
 const YEAR_RE = /^20\d{2}$/;
 const DAY = 86400000;
@@ -157,6 +157,7 @@ function rebuildDupMap() {
 // ---------- 걸러내기 ----------
 
 const isAppsView = () => filter.view === "apps" || filter.view.startsWith("apps:");
+const isBoardView = () => isAppsView() || filter.view === "ip"; // 문서 목록 대신 대장 화면을 쓰는 보기
 
 function matchesView(d, view) {
   if (view === "all") return true;
@@ -229,6 +230,7 @@ function renderSide() {
     for (const [p, n] of programs) h += navItem("apps:" + p, p || "사업명 없음", n, { sub: true });
     h += "</div></div>";
   } else h += navItem("apps", "지원 현황", appItems.length, { icon: "briefcase" });
+  h += navItem("ip", "지식재산 대장", ((S.ip && S.ip.items) || []).length, { icon: "bulb" });
   if (lastImported.size) h += navItem("imported", "방금 넣은 문서", count((d) => lastImported.has(d.rel)), { icon: "inbox" });
   const misplacedN = count((d) => d.misplaced);
   if (misplacedN || filter.view === "misplaced") h += navItem("misplaced", "제자리가 아닌 문서", misplacedN, { icon: "move" });
@@ -328,6 +330,7 @@ function viewLabel(view) {
   if (view === "misplaced") return "제자리가 아닌 문서";
   if (view === "apps") return "지원 현황";
   if (view.startsWith("apps:")) return view.slice(5) || "사업명 없음";
+  if (view === "ip") return "지식재산 대장";
   if (view === "duplicates") return "중복 파일";
   if (view.startsWith("group:")) return view.slice(6);
   if (view.startsWith("cat:")) return catLabel(view.slice(4));
@@ -336,6 +339,35 @@ function viewLabel(view) {
 
 function fileIcon(d) {
   return `<span class="ficon ${d.kind}">${KIND_SHORT[d.kind] || esc(d.ext.toUpperCase())}</span>`;
+}
+
+// 회사 증빙: 만료 임박·만료·이전 발급본 표시
+function certBadge(d) {
+  const x = d.cert;
+  if (!x) return "";
+  if (!x.latest) return '<span class="old-pill" title="같은 종류의 더 새 발급본이 있습니다">이전 발급본</span>';
+  if (x.daysLeft === null) return "";
+  if (x.daysLeft < 0) return `<span class="dday dd-over" title="유효기간 ${esc(x.validUntil)}">만료됨</span>`;
+  if (x.daysLeft <= 30) return `<span class="dday ${x.daysLeft <= 7 ? "dd-soon" : "dd-near"}" title="유효기간 ${esc(x.validUntil)}">만료 D-${x.daysLeft}</span>`;
+  return "";
+}
+
+// 문서 화면: 증빙 종류·발급일·유효기간
+function certCardHtml(d) {
+  const x = d.cert;
+  if (!x) return "";
+  const latestDoc = !x.latest && byRel.get(x.latestRel);
+  const state =
+    x.daysLeft === null ? "" : x.daysLeft < 0 ? `<span class="dday dd-over">${-x.daysLeft}일 전 만료</span>` : `<span class="dday ${x.daysLeft <= 7 ? "dd-soon" : x.daysLeft <= 30 ? "dd-near" : ""}">${x.daysLeft === 0 ? "오늘 만료" : `만료까지 ${x.daysLeft}일`}</span>`;
+  return `<div class="card cert-card"><h4>${icon("badge")}회사 증빙<small>${x.kind ? esc(x.kind) : "종류를 알아보지 못함"}${x.kind ? (x.latest ? " · 최신본" : "") : ""}</small></h4>
+    ${latestDoc ? `<p class="hint">같은 종류의 더 새 발급본이 있습니다: <button class="link-btn" data-goto="${esc(latestDoc.rel)}" type="button">${esc(latestDoc.base)}</button></p>` : ""}
+    <div class="af-grid">
+      <label class="af"><span>발급일${x.issuedAuto ? " <small>(문서에서 찾음)</small>" : ""}</span><input type="date" id="certIssued" value="${esc(d.issuedAt || x.issued || "")}"></label>
+      <label class="af"><span>유효기간 (까지)${x.validAuto ? " <small>(문서에서 찾음)</small>" : ""}</span><input type="date" id="certValid" value="${esc(d.validUntil || x.validUntil || "")}"></label>
+    </div>
+    ${state ? `<div class="cert-state">${state}</div>` : ""}
+    <small class="hint">유효기간이 있으면 만료 30일·7일 전과 당일에 알려 줍니다 (같은 종류의 최신본만). 지원 건의 <b>제출 서류</b>에서 고르면 최신본을 한 폴더에 모아 줍니다.</small>
+  </div>`;
 }
 
 function rowHtml(d, opts = {}) {
@@ -359,12 +391,14 @@ function rowHtml(d, opts = {}) {
     </div>
     <div class="row-side">
       ${opts.child ? "" : `<span class="badge${d.userCategory ? " manual" : ""}"><span class="dot" style="background:${c.color}"></span>${esc(c.label)}</span>`}
+      ${certBadge(d)}
       ${vb}
     </div>
   </li>`;
 }
 
 function renderList() {
+  if (filter.view === "ip") return renderIpView(); // ip.js
   if (isAppsView()) return renderAppsView();
   if (typeof leaveAppsView === "function") leaveAppsView(); // apps.js 는 app.js 다음에 읽힌다
   visible = filtered();
@@ -464,6 +498,7 @@ function ensureRowShown(rel) {
 }
 
 async function renderDetail() {
+  if (filter.view === "ip") return renderIpDetail();
   if (isAppsView()) return renderAppDetail();
   const box = $("detail");
   const d = byRel.get(selected);
@@ -546,6 +581,8 @@ async function renderDetail() {
     ${timeline}
     ${ocrCardHtml(d)}
     ${appsCardHtml(d)}
+    ${typeof ipCardHtml === "function" ? ipCardHtml(d) : ""}
+    ${certCardHtml(d)}
     <div class="card">
       <h4>${icon("hash")}태그</h4>
       <div class="tag-edit">${tagChips}<input class="tag-input" id="tagInput" placeholder="+ 태그" list="allTags"></div>
@@ -574,7 +611,10 @@ async function renderDetail() {
       ${d.hasText ? '<pre class="preview" id="preview">불러오는 중…</pre>' : !d.error ? `<div class="muted small">${["ppt", "xls"].includes(d.ext) ? "옛 형식(." + esc(d.ext) + ")은 본문을 읽지 않고 파일 이름으로만 분류합니다. ." + esc(d.ext) + "x 로 저장하면 본문까지 읽습니다." : "본문 글자가 없습니다. (스캔한 PDF, 그림만 있는 문서 등)"}</div>` : ""}
     </div>`;
 
-  if (d.hasText) {
+  if (d.hasText && d.garbled) {
+    const pre = $("preview");
+    if (pre) pre.textContent = "(PDF 안의 글자가 깨져 있어 보여 드리지 않습니다. 위의 '지금 글자 읽기'로 다시 읽어 주세요.)";
+  } else if (d.hasText) {
     const rel = d.rel;
     const text = await api.getText(rel);
     const pre = $("preview");
@@ -610,9 +650,9 @@ function ocrCardHtml(d) {
   } else if (d.ocrError) body = `<p class="warn">글자를 읽지 못했습니다: ${esc(d.ocrError)}</p>${win ? '<button class="btn sm" data-act="ocr" type="button">다시 읽기</button>' : ""}`;
   else
     body = win
-      ? `<p class="hint">글자가 없는 스캔 PDF 입니다. 글자를 읽어 두면 검색·자동 분류가 되고 Claude 도 내용을 읽을 수 있습니다.${S.settings.ocrAuto !== false ? " (차례대로 자동으로 읽는 중)" : ""}</p><button class="btn sm primary" data-act="ocr" type="button">지금 글자 읽기</button>`
-      : '<p class="hint">글자가 없는 스캔 PDF 입니다. 글자 읽기(OCR)는 윈도우에서만 됩니다.</p>';
-  return `<div class="card ocr-card"><h4>${icon("search")}스캔 PDF</h4>${body}</div>`;
+      ? `<p class="hint">${d.garbled ? "화면에는 제대로 보이지만 PDF 안의 글자 정보가 깨져 있습니다(글꼴 글자표 없음). 글자 인식으로 다시 읽어야 검색·분류가 되고 Claude 도 읽을 수 있습니다." : "글자가 없는 스캔 PDF 입니다. 글자를 읽어 두면 검색·자동 분류가 되고 Claude 도 내용을 읽을 수 있습니다."}${S.settings.ocrAuto !== false ? " (차례대로 자동으로 읽는 중)" : ""}</p><button class="btn sm primary" data-act="ocr" type="button">지금 글자 읽기</button>`
+      : `<p class="hint">${d.garbled ? "PDF 안의 글자 정보가 깨져 있습니다." : "글자가 없는 스캔 PDF 입니다."} 글자 읽기(OCR)는 윈도우에서만 됩니다.</p>`;
+  return `<div class="card ocr-card"><h4>${icon("search")}${d.garbled ? "글자가 깨진 PDF" : "스캔 PDF"}</h4>${body}</div>`;
 }
 
 async function runOcr(d, all) {
@@ -631,7 +671,7 @@ api.onOcrProgress((p) => {
     pill.textContent = `스캔 PDF 글자 읽는 중 · ${d ? d.base : p.rel.split("/").pop()}${p.of ? ` ${p.page}/${p.of}쪽` : ""}${p.left ? ` · 남은 문서 ${p.left}` : ""}`;
     pill.hidden = false;
   }
-  if (selected && (!p || p.rel === selected) && !isAppsView()) {
+  if (selected && (!p || p.rel === selected) && !isBoardView()) {
     const card = document.querySelector(".ocr-card");
     const d = byRel.get(selected);
     if (card && d) card.outerHTML = ocrCardHtml(d);
@@ -918,7 +958,7 @@ const TOOL_LABEL = {
   find_related_documents: "관련 문서", save_new_version: "새 버전 저장", prepare_new_version: "새 버전 복사본",
   get_knowledge: "지식 카드 읽기", save_knowledge_card: "지식 카드 저장",
   inspect_form: "양식 보기", fill_form: "양식 채우기", convert_document: "형식 바꾸기", compare_versions: "바뀐 곳 비교",
-  list_applications: "지원 건 목록", get_application: "지원 건 보기", record_application: "지원 건 기록", get_program: "사업 자료 보기", get_card: "카드 읽기", save_card: "카드 저장",
+  list_applications: "지원 건 목록", get_application: "지원 건 보기", record_application: "지원 건 기록", get_program: "사업 자료 보기", get_card: "카드 읽기", save_card: "카드 저장", list_ip: "지식재산 대장", list_certificates: "회사 증빙 목록", record_ip: "지식재산 기록",
 };
 
 async function renderClaudeTab() {
@@ -1479,7 +1519,7 @@ $("list").addEventListener("dblclick", (e) => {
 });
 
 $("detail").addEventListener("click", async (e) => {
-  if (isAppsView()) return; // 지원 건 화면은 apps.js 가 맡는다
+  if (isBoardView()) return; // 지원 건·지식재산 대장 화면은 apps.js·ip.js 가 맡는다
   const b = e.target.closest("button");
   const d = byRel.get(selected);
   if (!b || !d) return;
@@ -1530,9 +1570,13 @@ $("detail").addEventListener("click", async (e) => {
 });
 
 $("detail").addEventListener("change", async (e) => {
-  if (isAppsView()) return;
+  if (isBoardView()) return;
   const d = byRel.get(selected);
   if (!d) return;
+  if (e.target.id === "certIssued" || e.target.id === "certValid") {
+    await patchDoc(d.rel, { [e.target.id === "certIssued" ? "issuedAt" : "validUntil"]: e.target.value });
+    return;
+  }
   if (e.target.id === "aiExcludeToggle") {
     if (e.target.checked) await addTag(d, "AI제외");
     else await removeTag(d, "AI제외");
@@ -1736,3 +1780,9 @@ api.onScanError((msg) => toast(msg));
 api.onImportProgress(showProgress);
 
 api.getState().then(applyState);
+
+// 증빙 만료 알림을 누르면 그 문서를 연다
+api.onOpenDoc((rel) => {
+  filter.view = "all";
+  goto(rel);
+});

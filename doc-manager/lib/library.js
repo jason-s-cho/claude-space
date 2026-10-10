@@ -16,6 +16,9 @@ const { docFrequency, topKeywords } = require("./keywords");
 const knowledge = require("./knowledge");
 const cards = require("./cards");
 const ocr = require("./ocr");
+const { garbledText } = require("./textcheck");
+const ipLib = require("./ip");
+const certs = require("./certs");
 const forms = require("./forms");
 const convertLib = require("./convert");
 const { compareTexts } = require("./diff");
@@ -209,6 +212,9 @@ class Library {
       fromOcr = await ocr.cachedText(this.root(), full);
       if (fromOcr) text = fromOcr.text.slice(0, READ_MAX);
     }
+    // 글자 정보가 깨진 PDF 의 기호 덩어리는 보내지 않는다 (읽어도 뜻이 없고 오해만 부른다)
+    const garbled = !fromOcr && /\.pdf$/i.test(v.rel) && garbledText(text);
+    if (garbled) text = "";
     const start = Math.max(0, Math.min(offset, text.length));
     const end = Math.min(text.length, start + PAGE);
     return {
@@ -222,7 +228,9 @@ class Library {
         ? "암호·배포용 한글 문서라 앞부분(미리보기)만 읽을 수 있습니다."
         : fromOcr
           ? `스캔 PDF 를 글자 인식(OCR)으로 읽은 글자입니다 (${fromOcr.pages}/${fromOcr.total}쪽). 인식 오류가 있을 수 있으니 수치·고유명사는 사용자에게 확인하세요.${fromOcr.total > fromOcr.pages ? " 나머지 쪽은 앱의 문서 화면에서 '나머지 쪽도 읽기'를 누르면 읽힙니다." : ""}`
-          : !text && /\.pdf$/i.test(v.rel)
+          : garbled
+            ? "PDF 안의 글자 정보가 깨져 있어(글꼴 글자표 없음) 본문을 읽을 수 없습니다. 문서 보관함 앱(윈도우)이 글자 인식(OCR)으로 다시 읽는 중이거나 아직 읽지 않았습니다. 사용자에게 앱에서 이 문서를 열어 '지금 글자 읽기'를 눌러 달라고 하세요."
+            : !text && /\.pdf$/i.test(v.rel)
             ? "글자가 없는 스캔 PDF 입니다. 문서 보관함 앱(윈도우)이 글자 인식(OCR)으로 읽는 중이거나 아직 읽지 않았습니다. 사용자에게 앱에서 이 문서를 열어 '지금 글자 읽기'를 눌러 달라고 하세요."
             : !text
               ? "본문 글자를 읽을 수 없는 문서입니다(옛 형식 .ppt/.xls, 그림만 있는 문서 등)."
@@ -488,6 +496,7 @@ class Library {
     if (!a) throw new Error("없는 지원 건입니다: " + id + " (list_applications 로 id 를 확인하세요)");
     return {
       ...a,
+      bundle: undefined,
       progress: appsLib.progress(a),
       stages: a.stages.map((st) => ({ ...st, docs: this.visibleDocs(st.docs) })),
       refs: undefined,
@@ -495,7 +504,17 @@ class Library {
       program_reference_docs: this.visibleRefs((data.programs[a.program] || { refs: [] }).refs),
       own_reference_docs: this.visibleRefs(a.refs),
       cards: this.cardStatus(a.topic, a.program),
+      // 제출 서류 꾸러미로 고른 증빙과 지금 상태
+      submission_documents: (a.bundle || []).length ? this.bundleStatus(a.bundle) : undefined,
     };
+  }
+
+  bundleStatus(kinds) {
+    const list = new Map(this.listCertificates().certificates.map((c) => [c.kind, c]));
+    return kinds.map((k) => {
+      const c = list.get(k);
+      return c ? { kind: k, path: c.path, valid_until: c.valid_until, expired: c.expired } : { kind: k, missing: true };
+    });
   }
 
   // 이 주제·사업으로 문서를 쓸 때 읽을 카드가 있는지
@@ -510,6 +529,63 @@ class Library {
     const guides = {};
     for (const g of cards.GUIDE_NAMES) guides[g] = one("guide", g);
     return { topic: one("topic", topic), program: one("program", program), guides };
+  }
+
+  // ---- 회사 증빙 ----
+
+  // 종류별 최신본과 발급일·유효기간. AI 제외 문서(등기부등본 등)는 있다는 것만 알리고 경로는 주지 않는다.
+  certificateInfo() {
+    const { views } = this.load();
+    const docs = [...views.values()].filter((v) => /^cert_/.test(v.category)).map((v) => ({ rel: v.rel, name: indexer.nameParts(v.rel).name, text: v.entry.text, category: v.category, mtimeMs: v.entry.mtimeMs, issuedAt: v.entry.issuedAt, validUntil: v.entry.validUntil }));
+    return { views, info: certs.analyze(docs) };
+  }
+
+  listCertificates() {
+    const { views, info } = this.certificateInfo();
+    const list = certs.latestByKind(info).map((c) => {
+      const hidden = views.get(c.rel).excluded;
+      return {
+        kind: c.kind,
+        path: hidden ? undefined : c.rel,
+        hidden_from_ai: hidden || undefined,
+        issued: c.issued || undefined,
+        valid_until: c.validUntil || undefined,
+        days_left: c.daysLeft === null ? undefined : c.daysLeft,
+        expired: c.daysLeft !== null && c.daysLeft < 0 ? true : undefined,
+      };
+    });
+    const have = new Set(list.map((c) => c.kind));
+    return {
+      certificates: list,
+      not_in_library: certs.KINDS.map((k) => k[0]).filter((k) => !have.has(k)),
+      note_for_ai: "양식의 사업자등록번호·설립일·인증번호 같은 칸은 path 의 문서를 read_document 로 읽어 채우세요. expired 인 서류는 새로 발급받아야 한다고 알려 주세요. hidden_from_ai 는 사용자가 Claude 에 보내지 않기로 한 서류입니다.",
+    };
+  }
+
+  // ---- 지식재산 대장 ----
+
+  listIp({ query = "", right = "", status = "", topic = "" } = {}) {
+    const data = ipLib.load(this.root());
+    const q = String(query || "").toLowerCase().replace(/\s+/g, "");
+    const tq = String(topic || "").toLowerCase().replace(/\s+/g, "");
+    const flat = (it) => [it.title, it.appNo, it.regNo, it.pubNo, it.applicants, it.inventors, it.topic, it.project, it.memo].join(" ").toLowerCase().replace(/\s+/g, "");
+    const items = data.items
+      .filter((it) => (!q || flat(it).includes(q)) && (!right || it.right === right) && (!status || it.status === status) && (!tq || String(it.topic || "").toLowerCase().replace(/\s+/g, "").includes(tq)))
+      .sort((a, b) => String(b.appDate || "").localeCompare(String(a.appDate || "")));
+    return {
+      total: items.length,
+      items: items.map((it) => ({ ...it, docs: this.visibleDocs(it.docs), createdAt: undefined, updatedAt: undefined })),
+      // 사업계획서 '지식재산 보유 현황' 표에 그대로 쓸 수 있는 탭 구분 표
+      table_tsv: items.length ? ipLib.toTsv(items) : undefined,
+      note_for_ai: items.length ? undefined : "대장이 비었거나 맞는 건이 없습니다. 지식재산 분류 문서(search_documents)를 읽어 record_ip 로 채울 수 있습니다.",
+    };
+  }
+
+  saveIp(op) {
+    const r = ipLib.update(this.root(), op);
+    if (!r.id) return { done: true };
+    const it = ipLib.load(this.root()).items.find((x) => x.id === r.id);
+    return { ...it, docs: this.visibleDocs(it.docs) };
   }
 
   // ---- 주제 카드·사업 카드·작성 가이드 ----

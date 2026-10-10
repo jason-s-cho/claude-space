@@ -40,6 +40,8 @@ const INSTRUCTIONS = `이 서버는 사용자가 직접 작성한 업무 문서(
 - 기본 검색 결과는 각 문서의 최신 버전만 보여 줍니다. 이전 버전이 필요하면 list_versions 를 쓰세요.
 - '주제 카드'·'사업 카드'·'작성 가이드'는 이 보관함의 작성 카드입니다. 만들거나 고쳐 달라고 하면 get_card 로 양식을 받아 그 구조대로 채워 save_card 로 저장하세요 (작성 가이드는 문서 종류마다 한 장, 수요조사서·사업계획서의 항목 종류별 쓰는 법입니다).
 - 사업에 내는 문서(수요조사서·사업계획서·발표자료)는 양식(inspect_form) × 주제 카드 × 사업 카드 × 작성 가이드(get_card)를 함께 보고 씁니다. 자세한 순서는 'write_application_document' 프롬프트와 같습니다: 바탕 자료 읽기 → 칸별 요약을 사용자에게 확인 → fill_form → record_application.
+- 사업계획서의 지식재산·선행 실적 표나 주제 카드의 실적은 list_ip(지식재산 대장)에서 가져오세요. 지식재산 분류 문서에서 번호를 읽으면 record_ip 로 대장에 기록할 수 있습니다.
+- 회사 증빙(사업자등록증·인증서·수출실적 등)은 list_certificates 로 최신본을 찾아, 양식의 사업자등록번호·설립일·인증번호 같은 칸을 채울 때 읽으세요. 공고의 제출 서류 목록과 비교해 없거나 만료된 서류를 알려 주세요. 'AI제외'인 등기부등본·주주명부는 볼 수 없습니다.
 - 공고문·RFP·안내문을 읽다가 접수 마감·수요조사 마감 같은 날짜를 찾으면, 해당 지원 건 단계에 마감(record_application action: stage, due)을 적어 둘지 사용자에게 묻고 적으세요. 앱이 마감 전에 알려 줍니다.
 - 사업에 내는 문서를 쓸 때는 list_applications 로 같은 주제·같은 사업의 지원 건을 찾아, 단계별 결과와 탈락 사유(평가 의견)를 읽고 같은 약점을 피하세요. 통과한 건의 표현은 다시 써도 됩니다. 수요조사가 RFP 에 반영됐으면 계획서는 그 RFP 문구에 맞춥니다. 쓰기 전에 get_program(또는 get_application 의 program_reference_docs)으로 그 사업의 공고문·RFP·평가 기준·작성 양식을 먼저 읽고, 공고의 요구 사항과 평가 항목에 맞춰 쓰세요. 문서를 다 쓰면 record_application 으로 지원 건과 단계 결과를 기록하세요.
 - 새 버전을 저장했으면 compare_versions 로 원본과 바뀐 곳(특히 바뀐 숫자)을 확인해 사용자에게 짧게 알려 주세요.
@@ -393,6 +395,81 @@ tool(
   },
   async ({ content }) => lib.saveKnowledge(content),
   (a) => ({ path: `${knowledge.DIR_NAME}/${knowledge.CARD_NAME}`, change_summary: a.change_summary })
+);
+
+tool(
+  "list_certificates",
+  {
+    title: "회사 증빙 목록",
+    description:
+      "회사 증빙(사업자등록증, 법인등기부등본, 벤처기업확인서, 기업부설연구소 인정서, 이노비즈, 수출실적증명서, 재무제표, 국세·지방세 완납증명 등)의 종류별 최신본 경로와 발급일·유효기간·만료 여부를 보여 줍니다. " +
+      "양식에 회사 기본 정보(사업자등록번호, 설립일, 인증번호 등)를 채우거나, 공고의 제출 서류를 갖췄는지 확인할 때 씁니다.",
+    inputSchema: {},
+    annotations: { readOnlyHint: true },
+  },
+  async () => lib.listCertificates(),
+  (a, r) => ({ results: r ? r.certificates.length : undefined })
+);
+
+tool(
+  "list_ip",
+  {
+    title: "지식재산 대장",
+    description:
+      "회사의 특허·실용신안·상표·디자인 대장: 명칭, 출원번호·출원일, 공개번호, 등록번호·등록일, 상태(출원/공개/등록/거절/포기/소멸), 출원인, 발명자, 관련 주제·과제, 연결 문서. " +
+      "사업계획서의 '지식재산 보유 현황'·'선행 연구 실적' 표나 주제 카드의 실적을 쓸 때 부르세요. table_tsv 는 표로 붙여 넣을 수 있는 형태입니다.",
+    inputSchema: {
+      query: z.string().optional().describe("명칭·번호·출원인·발명자·주제·과제·메모에서 찾을 글자"),
+      right: z.enum(["특허", "실용신안", "상표", "디자인"]).optional(),
+      status: z.enum(["출원", "공개", "등록", "거절", "포기", "소멸"]).optional(),
+      topic: z.string().optional().describe("관련 주제(기술)로 거르기"),
+    },
+    annotations: { readOnlyHint: true },
+  },
+  async (a) => lib.listIp(a),
+  (a, r) => ({ query: a.query || a.topic, results: r ? r.total : undefined })
+);
+
+tool(
+  "record_ip",
+  {
+    title: "지식재산 대장 기록",
+    description:
+      "지식재산 대장에 건을 넣거나 고칩니다. action: create(fields) · update(id, fields) · link/unlink(id, path: 출원서·명세서·등록증 등 문서). " +
+      "번호는 10-2024-0123456 / 10-1234567 처럼 적습니다(숫자만 적어도 맞춰 줌). 등록번호를 적으면 상태가 등록으로 바뀝니다. 문서(출원번호통지서·특허증 등)에서 읽은 값만 기록하고, 모르는 칸은 비워 두세요. 지우기는 앱에서만 됩니다.",
+    inputSchema: {
+      action: z.enum(["create", "update", "link", "unlink"]),
+      id: z.string().optional().describe("update·link·unlink 때 건 id (list_ip 의 id)"),
+      fields: z
+        .object({
+          right: z.enum(["특허", "실용신안", "상표", "디자인"]).optional(),
+          title: z.string().optional(),
+          appNo: z.string().optional(),
+          appDate: z.string().optional().describe("YYYY-MM-DD"),
+          pubNo: z.string().optional(),
+          pubDate: z.string().optional(),
+          regNo: z.string().optional(),
+          regDate: z.string().optional(),
+          status: z.enum(["출원", "공개", "등록", "거절", "포기", "소멸"]).optional(),
+          applicants: z.string().optional(),
+          inventors: z.string().optional(),
+          country: z.string().optional(),
+          topic: z.string().optional().describe("관련 주제(지원 건의 주제·주제 카드 이름과 같게)"),
+          project: z.string().optional().describe("이 건이 나온 국가과제"),
+          memo: z.string().optional(),
+        })
+        .optional(),
+      path: z.string().optional().describe("link/unlink 할 문서 경로"),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+  },
+  async (a) => {
+    const op = { type: a.action, id: a.id };
+    if (a.action === "create" || a.action === "update") op.fields = a.fields || {};
+    else op.rel = a.action === "link" ? lib.formSource(a.path).v.rel : String(a.path || "");
+    return lib.saveIp(op);
+  },
+  (a, r) => ({ path: a.id || (r && r.id), action: a.action })
 );
 
 const cardKind = z.enum(["topic", "program", "guide"]).describe("topic: 주제 카드(주제마다), program: 사업 카드(사업마다), guide: 작성 가이드(문서 종류마다: 수요조사서, 사업계획서)");

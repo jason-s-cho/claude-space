@@ -139,7 +139,7 @@ function hasUserEdits(entry) {
   return entry.userCategory || (entry.userTags && entry.userTags.length) || (entry.hiddenTags && entry.hiddenTags.length) || entry.note || entry.starred;
 }
 
-const USER_FIELDS = ["userCategory", "userTags", "hiddenTags", "note", "starred"];
+const USER_FIELDS = ["userCategory", "userTags", "hiddenTags", "note", "starred", "issuedAt", "validUntil"]; // issuedAt·validUntil: 증빙 발급일·유효기간을 직접 적은 것
 
 function reclassify(entry, options) {
   const p = nameParts(entry.rel);
