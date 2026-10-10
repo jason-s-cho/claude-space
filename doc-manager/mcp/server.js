@@ -25,11 +25,11 @@ function findUserData() {
     process.platform === "win32" ? process.env.APPDATA || path.join(os.homedir(), "AppData", "Roaming")
     : process.platform === "darwin" ? path.join(os.homedir(), "Library", "Application Support")
     : process.env.XDG_CONFIG_HOME || path.join(os.homedir(), ".config");
-  for (const name of ["문서 보관함", "doc-manager"]) {
+  for (const name of ["doc-manager", "문서 보관함"]) {
     const dir = path.join(base, name);
     if (fs.existsSync(path.join(dir, "settings.json"))) return dir;
   }
-  return path.join(base, "문서 보관함");
+  return path.join(base, "doc-manager");
 }
 
 const lib = new Library({ userDataDir: findUserData() });

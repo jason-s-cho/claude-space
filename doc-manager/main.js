@@ -3,8 +3,8 @@ const { app, BrowserWindow, Menu, shell, ipcMain, dialog, nativeTheme, net, Noti
 app.commandLine.appendSwitch("lang", "ko");
 const fs = require("fs");
 const path = require("path");
-// 앱 이름을 '문서 보관함'에서 '워크데스크'로 바꿨지만, 설정(문서 폴더 위치 등)과 Claude 연결은 옛 앱 데이터 폴더를 그대로 쓴다
-if (app.isPackaged) app.setPath("userData", path.join(app.getPath("appData"), "문서 보관함"));
+// 앱 데이터 폴더는 package.json 의 name("doc-manager")으로 정해진다 (build.productName 은 실행 중 이름에 쓰이지 않음).
+// 그래서 앱 이름(워크데스크)을 바꿔도 설정·문서 폴더 위치는 그대로 이어진다. name 은 바꾸지 말 것.
 const indexer = require("./lib/indexer");
 const { CATEGORIES, KEYWORDS, KEYWORD_GROUPS, TECH_TAGS, migrateOverrides } = require("./lib/classify");
 const { docFrequency, topKeywords } = require("./lib/keywords");

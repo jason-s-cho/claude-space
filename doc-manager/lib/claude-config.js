@@ -59,7 +59,7 @@ function status(entry, paths = configPaths()) {
         path: p,
         exists: fs.existsSync(p),
         connected: !!cur,
-        matches: !!cur && cur.command === entry.command && JSON.stringify(cur.args) === JSON.stringify(entry.args),
+        matches: !!cur && cur.command === entry.command && JSON.stringify(cur.args) === JSON.stringify(entry.args) && ((cur.env || {}).DOCMANAGER_USERDATA || "") === ((entry.env || {}).DOCMANAGER_USERDATA || ""),
       };
     } catch (e) {
       return { path: p, exists: true, connected: false, matches: false, error: e.message };
