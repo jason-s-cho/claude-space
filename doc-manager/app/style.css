@@ -133,8 +133,9 @@ body.mac .titlebar { padding-left: 84px; }
 /* 위쪽 막대는 빈 곳 어디를 잡아도 창이 움직인다. 누를 수 있는 것(단추·검색창·펼친 메뉴)만 뺀다 */
 .no-drag, .titlebar button, .titlebar input, .titlebar .menu, .titlebar .split { -webkit-app-region: no-drag; }
 .tb-left { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.app-mark { width: 26px; height: 26px; border-radius: 8px; background: linear-gradient(135deg, #6d6df0, #4a4ac4); color: #fff; display: grid; place-items: center; box-shadow: 0 2px 6px rgba(91, 91, 214, 0.35); flex: none; }
-.app-mark svg { width: 15px; height: 15px; }
+/* 앱 아이콘(assets/icon.svg)과 같은 그림 */
+.app-mark { width: 26px; height: 26px; border-radius: 7px; box-shadow: 0 2px 6px rgba(91, 91, 214, 0.35); flex: none; overflow: hidden; }
+.app-mark svg { display: block; width: 100%; height: 100%; stroke: none; }
 .app-name { font-weight: 700; font-size: 14px; letter-spacing: -0.02em; white-space: nowrap; }
 .folder-chip {
   display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 260px; height: 26px; padding: 0 10px;
@@ -802,3 +803,41 @@ dialog[open] .move-form { animation: pop 0.16s var(--ease); }
 .todo-card .card-row-main span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; }
 .todo-card .card-row-main small { display: none; }
 .todo-card .card-row-act { flex: none; display: flex; gap: 8px; white-space: nowrap; }
+
+/* ---------- 왼쪽 메뉴 접기 (아이콘 줄) ---------- */
+.side-toggle { border: 0; background: none; color: var(--text-3); width: 24px; height: 22px; margin: -4px -6px -4px 0; border-radius: 6px; display: grid; place-items: center; cursor: pointer; }
+.side-toggle svg { width: 15px; height: 15px; }
+.side-toggle:hover { background: var(--surface-3); color: var(--text); }
+.side-rail .layout { grid-template-columns: 60px minmax(0, 1fr) 400px; }
+@media (max-width: 1180px) { .side-rail .layout { grid-template-columns: 60px minmax(0, 1fr) 340px; } }
+.side-rail .sidebar { position: relative; z-index: 30; width: 60px; overflow-x: hidden; }
+.side-rail .sidebar.peek { width: 252px; box-shadow: 8px 0 24px rgba(0, 0, 0, 0.12); }
+.side-rail .sidebar:not(.peek) { padding: 10px 8px 28px; }
+.side-rail .sidebar:not(.peek) .side-label { font-size: 0; height: 1px; margin: 10px 4px; background: var(--line); }
+.side-rail .sidebar:not(.peek) .side-label:first-child { height: auto; margin: 0 0 8px; background: none; justify-content: center; }
+.side-rail .sidebar:not(.peek) .side-toggle { margin: 0; width: 40px; height: 28px; }
+.side-rail .sidebar:not(.peek) .nav-item { justify-content: center; padding: 0; height: 38px; position: relative; }
+.side-rail .sidebar:not(.peek) .nav-item .label,
+.side-rail .sidebar:not(.peek) .nav-item .chev,
+.side-rail .sidebar:not(.peek) .nav-children,
+.side-rail .sidebar:not(.peek) .saved-row .x { display: none; }
+.side-rail .sidebar:not(.peek) .nav-item .n { display: none; }
+/* '할 일' 숫자는 접어도 빨간 점으로 */
+.side-rail .sidebar:not(.peek) .nav-item[data-view="todo"]:not(.zero) .n { display: block; position: absolute; top: 3px; right: 4px; min-width: 16px; padding: 0 4px; border-radius: 999px; background: var(--danger, #c0392b); color: #fff; font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; }
+.side-rail .sidebar:not(.peek) .nav-item .dot { margin: 0; }
+.side-rail .sidebar:not(.peek) .nav-item svg.nav-icon { width: 17px; height: 17px; }
+
+/* ---------- 촘촘하게 보기 ---------- */
+#denseBtn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent-text); }
+.list-dense .row { grid-template-columns: 22px minmax(0, 1fr) auto; gap: 10px; padding: 5px 10px; border-radius: 8px; contain-intrinsic-size: auto 36px; }
+.list-dense .row .ficon { width: 22px; height: 26px; font-size: 0; padding: 0; border-radius: 5px; }
+.list-dense .row .ficon::before { width: 7px; height: 7px; }
+.list-dense .row.child { margin-left: 26px; grid-template-columns: 18px minmax(0, 1fr) auto; padding-top: 3px; padding-bottom: 3px; }
+.list-dense .row.child .ficon { width: 18px; height: 22px; }
+.list-dense .row-main { display: flex; align-items: center; gap: 12px; }
+.list-dense .row-title { flex: 1; min-width: 0; font-size: 13px; font-weight: 550; }
+.list-dense .row-meta { flex: none; max-width: 40%; font-size: 11.5px; }
+.list-dense .row-tags { display: none; }
+.list-dense .row-main:has(.snippet) { flex-wrap: wrap; row-gap: 2px; }
+.list-dense .snippet { flex-basis: 100%; font-size: 12px; } /* 검색 결과는 찾은 문장을 둘째 줄에 */
+.list-dense .row-side { display: flex; align-items: center; gap: 6px; }

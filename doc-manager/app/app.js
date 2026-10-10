@@ -40,6 +40,27 @@ function setPref(key, value) {
   } catch {}
 }
 let groupVersions = pref("groupVersions", true);
+
+// ---- 왼쪽 메뉴 접기 (아이콘 줄) ----
+// 직접 접거나 펼친 것(sideRail: true/false)을 기억하고, 고른 적이 없으면 창이 좁을 때(SIDE_RAIL_WIDTH 미만)만 접는다.
+const SIDE_RAIL_WIDTH = 1100;
+const isSideRail = () => pref("sideRail", null) ?? window.innerWidth < SIDE_RAIL_WIDTH;
+function applySideMode() {
+  const rail = isSideRail();
+  if (document.body.classList.contains("side-rail") === rail) return;
+  document.body.classList.toggle("side-rail", rail);
+  const t = document.getElementById("sideToggle");
+  if (t) t.title = rail ? "메뉴 펼치기" : "메뉴 접기 (아이콘만)";
+}
+window.addEventListener("resize", applySideMode);
+
+// ---- 촘촘하게 보기 (문서 한 줄) ----
+let listDense = pref("listDense", false);
+function applyDense() {
+  document.body.classList.toggle("list-dense", listDense);
+  const b = document.getElementById("denseBtn");
+  if (b) b.setAttribute("aria-pressed", String(listDense));
+}
 const openGroups = new Set(pref("openGroups2", [])); // 분류 묶음은 처음엔 접어 둔다 (메뉴가 한 화면에 들어오게)
 
 // ---------- 작은 도구 ----------
@@ -123,6 +144,8 @@ function applyState(next) {
   $("rootPath").title = S.root ? S.root + "\n(누르면 폴더 열기)" : "";
   for (const id of ["rescanBtn", "addBtn"]) $(id).disabled = !S.root;
   $("groupToggle").checked = groupVersions;
+  applySideMode();
+  applyDense();
   renderStatus();
   if (query) runSearch();
   else renderAll();
@@ -199,7 +222,7 @@ function renderAll(force = false) {
 function navItem(view, label, n, opts = {}) {
   const on = filter.view === view ? " on" : "";
   const lead = opts.color ? `<span class="dot" style="background:${opts.color}"></span>` : opts.icon ? icon(opts.icon, "nav-icon") : "";
-  return `<button class="nav-item${on}${opts.sub ? " sub" : ""}${n ? "" : " zero"}" data-view="${esc(view)}" type="button">${opts.chev ? icon("chevron", "chev") : ""}${lead}<span class="label">${esc(label)}</span><span class="n">${n}</span></button>`;
+  return `<button class="nav-item${on}${opts.sub ? " sub" : ""}${n ? "" : " zero"}" data-view="${esc(view)}" type="button" title="${esc(label)}">${opts.chev ? icon("chevron", "chev") : ""}${lead}<span class="label">${esc(label)}</span><span class="n">${n}</span></button>`;
 }
 
 // 사업명 → 지원 건 수 (이름순, 사업명 없는 건은 맨 뒤)
@@ -216,7 +239,7 @@ function renderSide() {
   let h = "";
 
   // 업무: 할 일 · 지원 현황(사업명별) · 지식재산 대장
-  h += '<div class="side-label">업무</div>';
+  h += `<div class="side-label">업무<button class="side-toggle" id="sideToggle" type="button" title="${isSideRail() ? "메뉴 펼치기" : "메뉴 접기 (아이콘만)"}" aria-label="메뉴 접기·펼치기">${icon("panel")}</button></div>`;
   h += navItem("todo", "할 일", typeof todoCount === "function" ? todoCount() : 0, { icon: "check" });
   const appItems = (S.applications && S.applications.items) || [];
   const programs = appProgramCounts(appItems);
@@ -1472,6 +1495,23 @@ function showProgress(p) {
   toastTimer = setTimeout(() => (t.hidden = true), 60000);
 }
 $("sort").onchange = renderList;
+// 접힌 메뉴(아이콘 줄)에 마우스를 잠시 올리면 펼친 메뉴가 목록 위에 겹쳐 나온다
+let peekTimer = null;
+$("side").addEventListener("mouseenter", () => {
+  if (!document.body.classList.contains("side-rail")) return;
+  clearTimeout(peekTimer);
+  peekTimer = setTimeout(() => $("side").classList.add("peek"), 250);
+});
+$("side").addEventListener("mouseleave", () => {
+  clearTimeout(peekTimer);
+  $("side").classList.remove("peek");
+});
+$("denseBtn").onclick = () => {
+  listDense = !listDense;
+  setPref("listDense", listDense);
+  applyDense();
+};
+
 $("groupToggle").onchange = (e) => {
   groupVersions = e.target.checked;
   setPref("groupVersions", groupVersions);
@@ -1522,6 +1562,13 @@ $("suggest").addEventListener("click", (e) => {
 $("side").addEventListener("click", (e) => {
   const b = e.target.closest("button");
   if (!b) return;
+  if (b.id === "sideToggle") {
+    setPref("sideRail", !isSideRail());
+    $("side").classList.remove("peek");
+    return applySideMode();
+  }
+  // 접힌 메뉴를 펼쳐 보던 중이면, 고른 뒤 다시 접는다
+  if (document.body.classList.contains("side-rail") && !b.querySelector(".chev")) $("side").classList.remove("peek");
   if (b.dataset.saved !== undefined) return applySaved(S.settings.savedSearches[+b.dataset.saved]);
   if (b.dataset.unsave !== undefined) return removeSaved(+b.dataset.unsave);
   if (b.dataset.view) {
@@ -1533,7 +1580,16 @@ $("side").addEventListener("click", (e) => {
       else openGroups.add(g);
       setPref("openGroups2", [...openGroups]);
     }
+    // 오른쪽 칸 종류: 할 일 / 지식재산 대장 / 지원 현황 / 문서
+    const pane = () => (filter.view === "todo" || filter.view === "ip" ? filter.view : isAppsView() ? "apps" : "docs");
+    const before = pane();
     filter.view = v;
+    if (before !== pane()) {
+      // 할 일·지원 현황·대장 ↔ 문서 목록: 오른쪽 칸도 바꾼다
+      renderSide();
+      renderList();
+      return renderDetail();
+    }
   }
   renderSide();
   renderList();

@@ -1,16 +1,28 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <rect x="64" y="64" width="896" height="896" rx="200" fill="#2b59c3"/>
-  <!-- 뒤쪽 문서 -->
-  <rect x="300" y="200" width="420" height="540" rx="36" fill="#9fb6ec" transform="rotate(-8 510 470)"/>
-  <!-- 앞쪽 문서 -->
-  <rect x="320" y="240" width="420" height="560" rx="36" fill="#ffffff"/>
-  <rect x="380" y="320" width="300" height="34" rx="17" fill="#2b59c3"/>
-  <rect x="380" y="400" width="250" height="26" rx="13" fill="#c9d4ee"/>
-  <rect x="380" y="456" width="280" height="26" rx="13" fill="#c9d4ee"/>
-  <rect x="380" y="512" width="210" height="26" rx="13" fill="#c9d4ee"/>
-  <!-- 태그 -->
-  <g transform="rotate(-20 660 680)">
-    <path d="M560 610 h170 a30 30 0 0 1 30 30 v100 a30 30 0 0 1 -30 30 h-170 l-70 -80 z" fill="#f2b33d"/>
-    <circle cx="560" cy="690" r="18" fill="#ffffff"/>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6d6df0"/>
+      <stop offset="1" stop-color="#4040b8"/>
+    </linearGradient>
+  </defs>
+  <rect x="64" y="64" width="896" height="896" rx="200" fill="url(#bg)"/>
+  <g transform="translate(0 -40)">
+    <!-- 책상 위 문서 -->
+    <rect x="240" y="250" width="280" height="350" rx="30" fill="#ffffff"/>
+    <rect x="290" y="318" width="180" height="30" rx="15" fill="#5b5bd6"/>
+    <rect x="290" y="386" width="150" height="24" rx="12" fill="#cfd0f5"/>
+    <rect x="290" y="438" width="170" height="24" rx="12" fill="#cfd0f5"/>
+    <rect x="290" y="490" width="120" height="24" rx="12" fill="#cfd0f5"/>
+    <!-- 할 일 카드 -->
+    <rect x="566" y="380" width="200" height="220" rx="30" fill="#f2b33d"/>
+    <path d="M618 492 l44 44 l76 -90" fill="none" stroke="#ffffff" stroke-width="38" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- 책상: 상판(앞면은 조금 어둡게) · 왼쪽 다리 · 오른쪽 서랍장 -->
+    <rect x="170" y="600" width="684" height="64" rx="18" fill="#ffffff"/>
+    <rect x="170" y="636" width="684" height="28" rx="14" fill="#dcdcfa"/>
+    <rect x="214" y="664" width="52" height="196" rx="14" fill="#ffffff"/>
+    <rect x="580" y="664" width="230" height="196" rx="20" fill="#ffffff"/>
+    <rect x="580" y="756" width="230" height="12" fill="#c4c5f3"/>
+    <rect x="655" y="700" width="80" height="22" rx="11" fill="#5b5bd6"/>
+    <rect x="655" y="796" width="80" height="22" rx="11" fill="#5b5bd6"/>
   </g>
 </svg>

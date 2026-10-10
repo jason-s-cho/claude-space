@@ -34,6 +34,8 @@
     <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3 9 5-9 5-9-5z"/><path d="m3 13 9 5 9-5"/></symbol>
     <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
     <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+    <symbol id="i-rows" viewBox="0 0 24 24"><path d="M4 6h16M4 10h16M4 14h16M4 18h16"/></symbol>
+    <symbol id="i-panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></symbol>
     <symbol id="i-external" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4"/></symbol>
     <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></symbol>
     <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M6 3h12v18l-6-4-6 4z"/></symbol>
@@ -52,7 +54,7 @@
 
 <header class="titlebar" id="titlebar">
   <div class="tb-left">
-    <div class="app-mark" aria-hidden="true"><svg><use href="#i-files"/></svg></div>
+    <div class="app-mark" aria-hidden="true"><svg viewBox="64 64 896 896"><defs><linearGradient id="appMarkBg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6d6df0"/><stop offset="1" stop-color="#4040b8"/></linearGradient></defs><rect x="64" y="64" width="896" height="896" rx="200" fill="url(#appMarkBg)"/><g transform="translate(0 -40)"><rect x="240" y="250" width="280" height="350" rx="30" fill="#ffffff"/><rect x="290" y="318" width="180" height="30" rx="15" fill="#5b5bd6"/><rect x="290" y="386" width="150" height="24" rx="12" fill="#cfd0f5"/><rect x="290" y="438" width="170" height="24" rx="12" fill="#cfd0f5"/><rect x="290" y="490" width="120" height="24" rx="12" fill="#cfd0f5"/><rect x="566" y="380" width="200" height="220" rx="30" fill="#f2b33d"/><path d="M618 492 l44 44 l76 -90" fill="none" stroke="#ffffff" stroke-width="38" stroke-linecap="round" stroke-linejoin="round"/><rect x="170" y="600" width="684" height="64" rx="18" fill="#ffffff"/><rect x="170" y="636" width="684" height="28" rx="14" fill="#dcdcfa"/><rect x="214" y="664" width="52" height="196" rx="14" fill="#ffffff"/><rect x="580" y="664" width="230" height="196" rx="20" fill="#ffffff"/><rect x="580" y="756" width="230" height="12" fill="#c4c5f3"/><rect x="655" y="700" width="80" height="22" rx="11" fill="#5b5bd6"/><rect x="655" y="796" width="80" height="22" rx="11" fill="#5b5bd6"/></g></svg></div>
     <div class="app-name">워크데스크</div>
     <button class="folder-chip no-drag" id="rootPath" type="button" title="문서 폴더 열기" hidden>
       <svg><use href="#i-folder"/></svg><span id="rootName"></span>
@@ -107,6 +109,7 @@
           <button class="btn sm ghost" id="filterBtn" type="button" title="과제·연도·파일 형식·태그·키워드로 거르기"><svg><use href="#i-hash"/></svg>거르기<b id="filterBtnN"></b></button>
           <div class="filter-pop" id="filterPop" hidden></div>
         </span>
+        <button class="btn sm ghost" id="denseBtn" type="button" aria-pressed="false" title="촘촘하게 보기: 문서 하나를 한 줄로 (태그는 문서를 고르면 오른쪽에서)"><svg><use href="#i-rows"/></svg>촘촘</button>
         <label class="switch" title="초안·v01·날짜만 다른 같은 문서를 하나로 묶어 최신본만 보여 줍니다">
           <input type="checkbox" id="groupToggle" checked><span class="switch-track"></span><span>버전 묶기</span>
         </label>
