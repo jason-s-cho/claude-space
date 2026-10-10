@@ -153,3 +153,14 @@ test("개인정보 서류(등기부등본·주주명부, 주민등록번호)는 
   assert.ok(!tags("사업자등록증").includes("AI제외"));
   assert.ok(!tags("출원번호통지서", "출원번호 10-2024-0123456").includes("AI제외"));
 });
+
+test("회사 증빙 · 인사: 직원 서류, 급여·계약 서류는 기본으로 Claude 제외", () => {
+  const r = (name, text = "") => classify({ name, dir: "", text });
+  for (const n of ["재직증명서_홍길동", "경력증명서", "졸업증명서_김철수", "국가기술자격증 사본", "이력서_연구원", "건강보험 자격득실확인서"]) assert.strictEqual(r(n).category, "cert_hr", n);
+  for (const n of ["근로계약서_홍길동", "2025 급여명세서", "원천징수영수증_2024"]) {
+    assert.strictEqual(r(n).category, "cert_hr", n);
+    assert.ok(r(n).tags.includes("AI제외"), n);
+  }
+  assert.ok(!r("재직증명서_홍길동").tags.includes("AI제외"));
+  assert.strictEqual(r("사업자등록증").category, "cert_basic"); // 다른 증빙은 그대로
+});

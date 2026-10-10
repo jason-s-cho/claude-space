@@ -4,7 +4,7 @@
 const { garbledText } = require("./textcheck");
 
 // 분류가 바뀌면 이 숫자를 올린다. 앱을 켤 때 색인의 숫자와 다르면 모든 문서를 다시 분류한다.
-const CLASSIFIER_VERSION = 5;
+const CLASSIFIER_VERSION = 6;
 
 // folder: 문서 폴더 안에서 이 분류가 들어갈 하위 폴더 이름 (group 폴더 아래)
 const CATEGORIES = [
@@ -18,6 +18,7 @@ const CATEGORIES = [
   { id: "cert_basic", group: "회사 증빙", label: "기본 서류", folder: "기본 서류", color: "#0f766e" },
   { id: "cert_auth", group: "회사 증빙", label: "인증·확인서", folder: "인증·확인서", color: "#14857b" },
   { id: "cert_perf", group: "회사 증빙", label: "실적·재무", folder: "실적·재무", color: "#2a9a8f" },
+  { id: "cert_hr", group: "회사 증빙", label: "인사", folder: "인사", color: "#44ab9f" },
   { id: "ip_patent_app", group: "지식재산", label: "특허 출원", folder: "특허 출원", color: "#7c3aed" },
   { id: "ip_patent_reg", group: "지식재산", label: "특허 등록", folder: "특허 등록", color: "#8b5cf6" },
   { id: "ip_mark", group: "지식재산", label: "상표·디자인", folder: "상표·디자인", color: "#a78bfa" },
@@ -34,7 +35,7 @@ const CATEGORIES = [
 // 예전 분류 이름 → 새 분류 이름 (직접 고친 분류, 분류 키워드 설정을 옮길 때)
 const RENAMED = { gov_demand: "gov_notice" };
 
-const CERT_IP = ["cert_basic", "cert_auth", "cert_perf", "ip_patent_app", "ip_patent_reg", "ip_mark"];
+const CERT_IP = ["cert_basic", "cert_auth", "cert_perf", "cert_hr", "ip_patent_app", "ip_patent_reg", "ip_mark"];
 const GOV_SUBTYPES = ["gov_notice", "gov_plan", "gov_agreement", "gov_meeting", "gov_report", "gov_settle"];
 
 // [키워드, 가중치]. 영문 키워드는 단어 단위로 찾고, 대문자 약어(IR, RAM, NDA)는 대소문자까지 맞아야 한다.
@@ -97,6 +98,14 @@ const KEYWORDS = {
     ["완납증명서", 8], ["부가가치세과세표준증명", 8], ["과세표준증명", 7], ["4대보험 가입자명부", 8], ["가입자명부", 7],
     ["사업장가입자명부", 8], ["고용보험 피보험자", 6], ["매출액 증명", 6], ["기업신용평가", 7], ["신용평가등급", 6], ["신용평가", 4],
     ["원천징수이행상황", 6], ["사업자 소득금액", 4],
+  ],
+  // 인사: 직원 서류 (참여연구원 증빙·채용·재직)
+  cert_hr: [
+    ["재직증명서", 8], ["경력증명서", 8], ["경력확인서", 7], ["근로계약서", 8], ["연봉계약서", 8], ["졸업증명서", 8],
+    ["학위증명서", 8], ["학위기", 6], ["성적증명서", 7], ["자격증", 6], ["자격증명서", 7], ["국가기술자격", 7], ["이력서", 7],
+    ["인사기록카드", 8], ["인사기록", 6], ["입사지원서", 7], ["채용공고", 5], ["사직서", 7], ["퇴직증명서", 8], ["급여명세서", 8],
+    ["급여대장", 8], ["원천징수영수증", 8], ["건강보험 자격득실", 7], ["자격득실확인서", 8], ["취업규칙", 7], ["조직도", 3],
+    ["연구원 이력", 5], ["연구원 경력", 5], ["보안서약서", 3], ["겸직", 4], ["인사발령", 7], ["임명장", 6],
   ],
   // 지식재산: 특허는 출원·등록을 나누고, 상표·디자인은 한곳에
   ip_patent_app: [
@@ -241,7 +250,9 @@ const STAGE_TAGS = [
   ["수정본", ["수정본", "수정", "rev", "revised"]],
 ];
 
-const PRIVATE_DOC = ["등기부등본", "등기사항전부증명서", "등기사항일부증명서", "법인등기부", "주주명부"];
+const PRIVATE_DOC = ["등기부등본", "등기사항전부증명서", "등기사항일부증명서", "법인등기부", "주주명부",
+  // 인사 서류 가운데 급여·계약 같은 민감한 것
+  "근로계약서", "연봉계약서", "급여명세서", "급여대장", "원천징수영수증", "인사기록카드"];
 // 가리지 않은 주민등록번호 (YYMMDD-[1-4]NNNNNN). 앞뒤가 다른 숫자에 붙어 있으면 아니다.
 const RRN = /(?<!\d)\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\s?-\s?[1-4]\d{6}(?!\d)/;
 

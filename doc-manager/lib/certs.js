@@ -87,7 +87,7 @@ function analyze(docs) {
   const info = new Map();
   const byKind = new Map();
   for (const d of docs) {
-    if (!/^cert_/.test(d.category || "")) continue;
+    if (!/^cert_/.test(d.category || "") || d.category === "cert_hr") continue; // 인사 서류는 사람마다라 종류·유효기간으로 보지 않는다
     const kind = kindOf(d.name, d.text);
     const auto = datesOf(d.text);
     const issued = d.issuedAt || auto.issued;
