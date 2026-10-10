@@ -5,7 +5,7 @@ const $ = (id) => document.getElementById(id);
 
 const KIND_LABEL = { word: "Word", ppt: "PowerPoint", excel: "Excel", pdf: "PDF", hwp: "한글" };
 const KIND_SHORT = { word: "DOC", ppt: "PPT", excel: "XLS", pdf: "PDF", hwp: "HWP" };
-const GROUP_ICON = { "국가과제·지원사업": "landmark", 회사소개: "building", 홍보: "megaphone" };
+const GROUP_ICON = { "국가과제·지원사업": "landmark", "회사 증빙": "badge", 지식재산: "bulb", 회사소개: "building", 홍보: "megaphone" };
 const CAT_ICON = { analysis: "chart", request: "users", purchase: "cart", other: "question" };
 const YEAR_RE = /^20\d{2}$/;
 const DAY = 86400000;
