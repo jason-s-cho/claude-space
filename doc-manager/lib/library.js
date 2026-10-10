@@ -1,4 +1,4 @@
-// Claude 커넥터(MCP 서버)가 문서 보관함을 보는 창구.
+// Claude 커넥터(MCP 서버)가 워크데스크을 보는 창구.
 // 앱이 만든 색인(.docmanager/index.json)과 설정을 읽기만 하고, 새 파일은 '새 버전'으로만 만든다.
 // 기존 파일을 고치거나 지우는 기능은 일부러 두지 않는다.
 //
@@ -55,7 +55,7 @@ class Library {
 
   settings() {
     const pc = readJson(path.join(this.userDataDir, "settings.json")) || {};
-    if (!pc.root) throw new Error("문서 보관함에서 아직 문서 폴더를 고르지 않았습니다. 앱을 열어 폴더를 골라 주세요.");
+    if (!pc.root) throw new Error("워크데스크에서 아직 문서 폴더를 고르지 않았습니다. 앱을 열어 폴더를 골라 주세요.");
     if (!fs.existsSync(pc.root)) throw new Error("문서 폴더를 찾을 수 없습니다: " + pc.root);
     const folder = readJson(store.paths(pc.root).settings) || {};
     const s = { ...pc, ...folder };
@@ -229,9 +229,9 @@ class Library {
         : fromOcr
           ? `스캔 PDF 를 글자 인식(OCR)으로 읽은 글자입니다 (${fromOcr.pages}/${fromOcr.total}쪽). 인식 오류가 있을 수 있으니 수치·고유명사는 사용자에게 확인하세요.${fromOcr.total > fromOcr.pages ? " 나머지 쪽은 앱의 문서 화면에서 '나머지 쪽도 읽기'를 누르면 읽힙니다." : ""}`
           : garbled
-            ? "PDF 안의 글자 정보가 깨져 있어(글꼴 글자표 없음) 본문을 읽을 수 없습니다. 문서 보관함 앱(윈도우)이 글자 인식(OCR)으로 다시 읽는 중이거나 아직 읽지 않았습니다. 사용자에게 앱에서 이 문서를 열어 '지금 글자 읽기'를 눌러 달라고 하세요."
+            ? "PDF 안의 글자 정보가 깨져 있어(글꼴 글자표 없음) 본문을 읽을 수 없습니다. 워크데스크 앱(윈도우)이 글자 인식(OCR)으로 다시 읽는 중이거나 아직 읽지 않았습니다. 사용자에게 앱에서 이 문서를 열어 '지금 글자 읽기'를 눌러 달라고 하세요."
             : !text && /\.pdf$/i.test(v.rel)
-            ? "글자가 없는 스캔 PDF 입니다. 문서 보관함 앱(윈도우)이 글자 인식(OCR)으로 읽는 중이거나 아직 읽지 않았습니다. 사용자에게 앱에서 이 문서를 열어 '지금 글자 읽기'를 눌러 달라고 하세요."
+            ? "글자가 없는 스캔 PDF 입니다. 워크데스크 앱(윈도우)이 글자 인식(OCR)으로 읽는 중이거나 아직 읽지 않았습니다. 사용자에게 앱에서 이 문서를 열어 '지금 글자 읽기'를 눌러 달라고 하세요."
             : !text
               ? "본문 글자를 읽을 수 없는 문서입니다(옛 형식 .ppt/.xls, 그림만 있는 문서 등)."
               : undefined,

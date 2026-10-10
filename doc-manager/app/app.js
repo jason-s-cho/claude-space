@@ -1039,7 +1039,7 @@ async function renderClaudeTab() {
     : connected
       ? stale
         ? `<span class="state-warn">연결되어 있지만 예전 위치를 가리킵니다. '다시 연결'을 눌러 주세요.</span>`
-        : `<span class="state-on">연결됨</span> · Claude 앱을 다시 켜면 '문서 보관함' 도구가 보입니다.`
+        : `<span class="state-on">연결됨</span> · Claude 앱을 다시 켜면 '워크데스크' 도구가 보입니다.`
       : `연결되어 있지 않습니다. <span class="muted">(${esc(main.path || "")})</span>`;
   $("claudeConnectBtn").textContent = connected ? "다시 연결" : "연결";
   $("claudeDisconnectBtn").hidden = !connected;
@@ -1071,7 +1071,7 @@ async function renderClaudeTab() {
 $("claudeConnectBtn").onclick = async () => {
   const r = await api.claudeConnect();
   if (r.error) toast(r.error, 7000);
-  else toast("Claude 데스크톱 설정에 문서 보관함을 넣었습니다.\nClaude 앱을 완전히 종료했다가 다시 켜 주세요.", 7000);
+  else toast("Claude 데스크톱 설정에 워크데스크을 넣었습니다.\nClaude 앱을 완전히 종료했다가 다시 켜 주세요.", 7000);
   renderClaudeTab();
 };
 $("claudeDisconnectBtn").onclick = async () => {

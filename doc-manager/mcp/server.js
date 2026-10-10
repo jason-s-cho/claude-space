@@ -1,8 +1,8 @@
-// 문서 보관함 Claude 커넥터 (MCP 서버, stdio).
+// 워크데스크 Claude 커넥터 (MCP 서버, stdio).
 // Claude 데스크톱 앱이나 Claude Code 가 이 프로그램을 실행해서 보관함을 검색·읽기·새 버전 저장한다.
 //
 // 실행: 앱 실행 파일을 Node 처럼 돌린다.
-//   ELECTRON_RUN_AS_NODE=1  DOCMANAGER_USERDATA=<앱 데이터 폴더>  "<문서 보관함.exe>" "<app.asar>/mcp/server.js"
+//   ELECTRON_RUN_AS_NODE=1  DOCMANAGER_USERDATA=<앱 데이터 폴더>  "<워크데스크.exe>" "<app.asar>/mcp/server.js"
 // (설정 → Claude 연결 에서 '연결' 을 누르면 Claude 데스크톱 설정에 이 내용이 자동으로 들어간다)
 //
 // 표준 출력(stdout)은 MCP 통신 전용이므로 여기서는 console.log 를 쓰지 않는다.
@@ -34,7 +34,7 @@ function findUserData() {
 
 const lib = new Library({ userDataDir: findUserData() });
 
-const INSTRUCTIONS = `이 서버는 사용자가 직접 작성한 업무 문서(국가과제·지원사업 계획서/보고서, IR·회사소개, 홍보, 기술·시장 분석, 고객사 자료, 견적 등)를 모아 둔 '문서 보관함'입니다.
+const INSTRUCTIONS = `이 서버는 사용자가 직접 작성한 업무 문서(국가과제·지원사업 계획서/보고서, IR·회사소개, 홍보, 기술·시장 분석, 고객사 자료, 견적 등)를 모아 둔 '워크데스크'입니다.
 - 문서를 새로 쓰거나 고치기 전에는 get_knowledge 로 '회사 지식 카드'(회사 개요·기술·성능 수치·과제 이력·고객사·자주 쓰는 표현)를 먼저 읽고, 그 사실과 표현을 우선 쓰세요.
 - 먼저 library_overview 로 분류·과제·태그를 보고, search_documents 로 찾은 뒤 read_document 로 본문을 읽으세요. 긴 문서는 next_offset 으로 이어 읽습니다.
 - 기본 검색 결과는 각 문서의 최신 버전만 보여 줍니다. 이전 버전이 필요하면 list_versions 를 쓰세요.
@@ -52,7 +52,7 @@ const INSTRUCTIONS = `이 서버는 사용자가 직접 작성한 업무 문서(
 - 기관 양식(워드 .docx, 한글 .hwpx)을 채울 때는 파일을 새로 만들지 말고 inspect_form 으로 칸 번호(p3, t1.r2.c3 …)와 표 제목을 확인한 뒤 fill_form 으로 글자만 채우세요. 서식·표·칸 크기가 그대로 유지되어 바로 제출할 수 있는 파일이 됩니다. 한글 .hwp·워드 .doc 양식은 convert_document 로 .hwpx/.docx 사본을 먼저 만드세요. 제출용 PDF 도 convert_document 로 만듭니다.
 - 'AI제외' 태그나 사용자가 제외한 분류의 문서는 보이지 않습니다. 사용자가 그런 문서를 찾으면 제외 설정 때문일 수 있다고 알려 주세요.`;
 
-const server = new McpServer({ name: "doc-manager", title: "문서 보관함", version: pkg.version }, { instructions: INSTRUCTIONS });
+const server = new McpServer({ name: "doc-manager", title: "워크데스크", version: pkg.version }, { instructions: INSTRUCTIONS });
 
 const asText = (obj) => ({ content: [{ type: "text", text: JSON.stringify(obj, null, 2) }] });
 
@@ -76,7 +76,7 @@ tool(
   "library_overview",
   {
     title: "보관함 둘러보기",
-    description: "문서 보관함의 분류별 문서 수, 등록된 과제·고객사, 많이 쓰인 태그, 검색 문법을 보여 줍니다. 처음에 한 번 부르면 무엇이 있는지 알 수 있습니다.",
+    description: "워크데스크의 분류별 문서 수, 등록된 과제·고객사, 많이 쓰인 태그, 검색 문법을 보여 줍니다. 처음에 한 번 부르면 무엇이 있는지 알 수 있습니다.",
     inputSchema: {},
     annotations: { readOnlyHint: true },
   },
@@ -148,7 +148,7 @@ tool(
     title: "새 버전으로 저장",
     description:
       "고친 문서 파일을 원본과 같은 폴더에 다음 버전 이름(…_v02, 오늘 날짜, …_v2)으로 저장합니다. 원본과 기존 파일은 절대 덮어쓰지 않습니다. " +
-      "파일 전체 내용을 base64 로 보냅니다. 형식을 바꿔 저장하려면 file_extension 을 줍니다 (예: PDF 를 보고 docx 로 다시 쓴 경우). 저장하면 문서 보관함이 자동으로 분류하고 버전 기록에 묶습니다.",
+      "파일 전체 내용을 base64 로 보냅니다. 형식을 바꿔 저장하려면 file_extension 을 줍니다 (예: PDF 를 보고 docx 로 다시 쓴 경우). 저장하면 워크데스크이 자동으로 분류하고 버전 기록에 묶습니다.",
     inputSchema: {
       path: pathArg.describe("고친 원본 문서의 경로"),
       content_base64: z.string().describe("새 파일 전체 내용 (base64)"),
@@ -511,12 +511,12 @@ tool(
 // Claude 데스크톱의 '+' 메뉴에서 고를 수 있는 작업
 server.registerPrompt(
   "build_knowledge_card",
-  { title: "회사 지식 카드 만들기", description: "문서 보관함의 자료를 읽고 회사 지식 카드를 만들거나 새로 고칩니다." },
+  { title: "회사 지식 카드 만들기", description: "워크데스크의 자료를 읽고 회사 지식 카드를 만들거나 새로 고칩니다." },
   () => ({
     messages: [
       {
         role: "user",
-        content: { type: "text", text: "문서 보관함의 자료로 회사 지식 카드를 만들어 줘(이미 있으면 새로 고쳐 줘).\n\n" + knowledge.BUILD_STEPS },
+        content: { type: "text", text: "워크데스크의 자료로 회사 지식 카드를 만들어 줘(이미 있으면 새로 고쳐 줘).\n\n" + knowledge.BUILD_STEPS },
       },
     ],
   })
@@ -543,7 +543,7 @@ server.registerPrompt(
     description: "통과한 수요조사서·사업계획서와 탈락 사유를 읽고 그 문서 종류의 항목별 작성 가이드를 만들거나 새로 고칩니다.",
     argsSchema: { document: z.string().describe("문서 종류: 수요조사서 또는 사업계획서") },
   },
-  ({ document }) => userPrompt(`문서 보관함 자료로 '${document}' 작성 가이드를 만들어 줘(이미 있으면 새로 고쳐 줘).\n\n` + cards.BUILD_STEPS.guide)
+  ({ document }) => userPrompt(`워크데스크 자료로 '${document}' 작성 가이드를 만들어 줘(이미 있으면 새로 고쳐 줘).\n\n` + cards.BUILD_STEPS.guide)
 );
 
 server.registerPrompt(
@@ -565,6 +565,6 @@ async function main() {
 }
 
 main().catch((e) => {
-  process.stderr.write("문서 보관함 커넥터를 시작하지 못했습니다: " + ((e && e.stack) || e) + "\n");
+  process.stderr.write("워크데스크 커넥터를 시작하지 못했습니다: " + ((e && e.stack) || e) + "\n");
   process.exit(1);
 });
