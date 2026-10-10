@@ -747,3 +747,41 @@ dialog[open] .move-form { animation: pop 0.16s var(--ease); }
 .mini-btn:hover { color: var(--accent-text); border-color: var(--accent); }
 .stage .stage-docs { gap: 4px 8px; }
 .stage .stage-docs .link-btn { font-size: 12px; padding: 0 2px; }
+
+/* ---- 거르기 창 ---- */
+.filter-wrap { position: relative; }
+#filterBtn svg { width: 14px; height: 14px; }
+#filterBtn b { font-size: 11px; background: var(--accent); color: #fff; border-radius: 999px; padding: 0 6px; margin-left: 4px; }
+#filterBtn b:empty { display: none; }
+#filterBtn.on { color: var(--accent-text); }
+.filter-pop { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; width: min(420px, 80vw); max-height: min(70vh, 560px); overflow-y: auto; padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); }
+.filter-pop[hidden] { display: none; }
+.fp-label { font-size: 11.5px; font-weight: 650; color: var(--text-3); margin: 10px 2px 6px; }
+.fp-label:first-child { margin-top: 0; }
+.filter-pop .chip-btn svg { width: 12px; height: 12px; margin-right: 3px; }
+
+/* ---- 할 일 ---- */
+.todo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; align-items: start; }
+.todo-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 12px 14px; }
+.todo-card h3 { display: flex; align-items: center; gap: 7px; font-size: 13.5px; margin: 0 0 8px; }
+.todo-card h3 svg { width: 15px; height: 15px; color: var(--accent); }
+.todo-card h3 small { font-size: 11.5px; color: var(--text-3); font-weight: 600; background: var(--surface-3); border-radius: 999px; padding: 0 7px; }
+.todo-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.todo-list li { display: flex; align-items: center; gap: 6px; }
+.todo-list li > button:first-child { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; border: 0; background: none; text-align: left; padding: 5px 6px; border-radius: 8px; font-size: 12.5px; color: var(--text); }
+.todo-list li > button:first-child:hover { background: var(--surface-2); }
+.todo-list li > button svg { width: 14px; height: 14px; color: var(--text-3); flex: none; }
+.todo-list b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.todo-list .t-sub { flex: 1; min-width: 0; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.todo-list small { color: var(--text-3); white-space: nowrap; margin-left: auto; }
+.todo-list .dday { min-width: 52px; text-align: center; }
+.todo-list .ai-row { padding: 4px 6px; font-size: 12px; gap: 8px; }
+.todo-list .t-tool { font-weight: 600; color: var(--text-2); white-space: nowrap; }
+.todo-foot { margin-top: 8px; font-size: 11.5px; color: var(--text-3); }
+.todo-calm { display: flex; align-items: center; gap: 10px; padding: 12px 14px; margin-bottom: 12px; border-radius: var(--r-lg); background: rgba(31, 138, 76, 0.08); color: var(--text-2); font-size: 13px; }
+.todo-calm svg { width: 18px; height: 18px; color: #1f8a4c; }
+.todo-card { min-width: 0; overflow: hidden; }
+.todo-list li > button:first-child > * { min-width: 0; }
+.todo-list li > button:first-child > b { flex: none; max-width: 48%; }
+.todo-list li > button:first-child > .dday, .todo-list li > button:first-child > small, .todo-list li > button:first-child > .ip-right { flex: none; }
+.todo-list > li { min-width: 0; }

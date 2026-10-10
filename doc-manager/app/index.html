@@ -103,6 +103,10 @@
       <div class="filters" id="activeFilters"></div>
       <div class="toolbar-right">
         <span class="count" id="count"></span>
+        <span class="filter-wrap">
+          <button class="btn sm ghost" id="filterBtn" type="button" title="과제·연도·파일 형식·태그·키워드로 거르기"><svg><use href="#i-hash"/></svg>거르기<b id="filterBtnN"></b></button>
+          <div class="filter-pop" id="filterPop" hidden></div>
+        </span>
         <label class="switch" title="초안·v01·날짜만 다른 같은 문서를 하나로 묶어 최신본만 보여 줍니다">
           <input type="checkbox" id="groupToggle" checked><span class="switch-track"></span><span>버전 묶기</span>
         </label>
@@ -403,6 +407,7 @@
 <script src="app.js"></script>
 <script src="apps.js"></script>
 <script src="ip.js"></script>
+<script src="home.js"></script>
 <datalist id="programList"></datalist>
 </body>
 </html>
