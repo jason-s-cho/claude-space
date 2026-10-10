@@ -38,6 +38,7 @@ const INSTRUCTIONS = `이 서버는 사용자가 직접 작성한 업무 문서(
 - 문서를 새로 쓰거나 고치기 전에는 get_knowledge 로 '회사 지식 카드'(회사 개요·기술·성능 수치·과제 이력·고객사·자주 쓰는 표현)를 먼저 읽고, 그 사실과 표현을 우선 쓰세요.
 - 먼저 library_overview 로 분류·과제·태그를 보고, search_documents 로 찾은 뒤 read_document 로 본문을 읽으세요. 긴 문서는 next_offset 으로 이어 읽습니다.
 - 기본 검색 결과는 각 문서의 최신 버전만 보여 줍니다. 이전 버전이 필요하면 list_versions 를 쓰세요.
+- '주제 카드'·'사업 카드'·'작성 가이드'는 이 보관함의 작성 카드입니다. 만들거나 고쳐 달라고 하면 get_card 로 양식을 받아 그 구조대로 채워 save_card 로 저장하세요 (작성 가이드는 사업계획서·수요조사서의 항목 종류별 쓰는 법입니다).
 - 사업에 내는 문서(수요조사서·사업계획서·발표자료)는 양식(inspect_form) × 주제 카드 × 사업 카드 × 작성 가이드(get_card)를 함께 보고 씁니다. 자세한 순서는 'write_application_document' 프롬프트와 같습니다: 바탕 자료 읽기 → 칸별 요약을 사용자에게 확인 → fill_form → record_application.
 - 사업에 내는 문서를 쓸 때는 list_applications 로 같은 주제·같은 사업의 지원 건을 찾아, 단계별 결과와 탈락 사유(평가 의견)를 읽고 같은 약점을 피하세요. 통과한 건의 표현은 다시 써도 됩니다. 수요조사가 RFP 에 반영됐으면 계획서는 그 RFP 문구에 맞춥니다. 쓰기 전에 get_program(또는 get_application 의 program_reference_docs)으로 그 사업의 공고문·RFP·평가 기준·작성 양식을 먼저 읽고, 공고의 요구 사항과 평가 항목에 맞춰 쓰세요. 문서를 다 쓰면 record_application 으로 지원 건과 단계 결과를 기록하세요.
 - 새 버전을 저장했으면 compare_versions 로 원본과 바뀐 곳(특히 바뀐 숫자)을 확인해 사용자에게 짧게 알려 주세요.

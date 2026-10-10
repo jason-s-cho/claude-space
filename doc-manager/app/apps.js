@@ -540,8 +540,13 @@ const CARD_LABEL = { topic: "주제 카드", program: "사업 카드", guide: "�
 const cardKey = (n) => String(n || "").replace(/\s+/g, " ").trim();
 const cardsOf = () => (S.applications && S.applications.cards) || [];
 const cardFind = (kind, name) => cardsOf().find((c) => c.kind === kind && (kind === "guide" || c.name === cardKey(name)));
-const cardPrompt = (kind, name) =>
-  kind === "guide" ? "문서 보관함 자료로 작성 가이드를 만들어 줘" : `문서 보관함 자료로 '${cardKey(name)}' ${CARD_LABEL[kind]}를 만들어 줘`;
+// Claude 에게 보낼 요청: 어떤 카드인지, 어디에 무엇을 정리하는지까지 적어야 되묻지 않는다
+const CARD_ASK = {
+  topic: (n) => `문서 보관함의 '${n}' 주제 카드를 만들어 줘(이미 있으면 새로 고쳐 줘). get_card(kind: topic, name: "${n}")로 양식을 받아 그 구조대로, 이 주제의 수요조사서·계획서·보고서·IR 문서와 지원 이력을 읽고 핵심 수치·차별점·실적·검증된 문장을 출처와 함께 정리해 save_card로 저장해 줘.`,
+  program: (n) => `문서 보관함의 '${n}' 사업 카드를 만들어 줘(이미 있으면 새로 고쳐 줘). get_card(kind: program, name: "${n}")로 양식을 받아 그 구조대로, get_program의 사업 자료(공고문·RFP·평가 기준)와 이 사업 지원 건의 결과·탈락 사유를 읽고 평가 항목·강조점·양식 특징·교훈을 출처와 함께 정리해 save_card로 저장해 줘.`,
+  guide: () => `문서 보관함의 작성 가이드를 만들어 줘(이미 있으면 새로 고쳐 줘). get_card(kind: guide)로 양식을 받아 그 구조대로, 우리 회사가 낸 사업계획서·수요조사서(선정된 것 먼저)와 작성 안내 자료를 읽고 요약·목표·필요성·국내외 현황·개발 내용·수행 역량·추진 체계·사업화·기대 효과·연구비 같은 항목 종류마다 쓰는 법과 예시를 정리해 save_card로 저장해 줘. 탈락 사유는 '탈락 사유에서 배운 점'에 넣어 줘.`,
+};
+const cardPrompt = (kind, name) => CARD_ASK[kind](cardKey(name));
 
 // 카드 한 줄: 이름·있는지·고치기·Claude 에게 보낼 문장 복사
 function cardRowHtml(kind, name) {
