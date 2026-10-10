@@ -1,10 +1,11 @@
 // 작성용 카드: 회사 지식 카드 옆에 두는 세 가지.
 //   - 주제 카드 (주제마다 한 장): 기술의 핵심 내용·수치·차별점·실적·검증된 문장. 같은 주제를 여러 사업에 낼 때 다시 쓴다.
 //   - 사업 카드 (사업마다 한 장): 사업의 목적·자격·평가 항목·강조점·양식 특징·우리 지원 교훈.
-//   - 작성 가이드 (한 장): 양식이 달라도 비슷한 '항목 종류'(목표·필요성·개발 내용·사업화 …)마다 쓰는 법.
+//   - 작성 가이드 (문서 종류마다 한 장: 수요조사서, 사업계획서 …): 양식이 달라도 비슷한 '항목 종류'마다 쓰는 법.
+//     수요조사서는 짧고 RFP 에 반영되는 것이 목표, 사업계획서는 평가 배점에 맞춘 긴 문서라 쓰는 법이 다르다.
 // Claude 는 문서를 쓸 때 양식(inspect_form) × 주제 카드 × 사업 카드 × 작성 가이드를 함께 본다.
 //
-// 위치: <문서 폴더>/Claude 지식/주제/<주제>.md, …/사업/<사업명>.md, …/작성 가이드.md
+// 위치: <문서 폴더>/Claude 지식/주제/<주제>.md, …/사업/<사업명>.md, …/작성 가이드/<문서 종류>.md
 // 저장·기록·'## 사용자 메모' 보호는 회사 지식 카드와 같다 (knowledge.js).
 const fs = require("fs");
 const path = require("path");
@@ -13,26 +14,39 @@ const knowledge = require("./knowledge");
 const KINDS = {
   topic: { label: "주제 카드", dir: "주제" },
   program: { label: "사업 카드", dir: "사업" },
-  guide: { label: "작성 가이드", file: "작성 가이드.md" },
+  guide: { label: "작성 가이드", dir: "작성 가이드" },
 };
+const GUIDE_NAMES = ["수요조사서", "사업계획서"]; // 기본으로 보여 주는 작성 가이드
+const LEGACY_GUIDE = "작성 가이드.md"; // 예전(한 장짜리) 작성 가이드
 
 // 사업명은 지원 건과 같은 규칙으로 맞춘다 (띄어쓰기 한 칸)
 const cleanName = (n) => String(n == null ? "" : n).replace(/\s+/g, " ").trim().slice(0, 100);
 // 파일 이름으로 못 쓰는 글자는 비슷한 글자로 바꾼다 (원래 이름은 카드 첫 줄에 남는다)
 const fileSafe = (n) => n.replace(/[\\/:*?"<>|]/g, "_").replace(/^\.+/, "_").replace(/[. ]+$/, "");
 
+const NAME_OF = { topic: "주제", program: "사업명", guide: "문서 종류(예: 수요조사서, 사업계획서)" };
 function check(kind, name) {
   if (!KINDS[kind]) throw new Error("카드 종류는 topic(주제)·program(사업)·guide(작성 가이드) 중 하나입니다");
-  if (kind === "guide") return "";
   const n = cleanName(name);
-  if (!n) throw new Error(`${KINDS[kind].label} 이름(${kind === "topic" ? "주제" : "사업명"})이 필요합니다`);
+  if (!n) throw new Error(`${KINDS[kind].label} 이름(${NAME_OF[kind]})이 필요합니다`);
   return n;
 }
 
 function fileOf(root, kind, name) {
-  const base = path.join(root, knowledge.DIR_NAME);
-  if (kind === "guide") return path.join(base, KINDS.guide.file);
-  return path.join(base, KINDS[kind].dir, fileSafe(check(kind, name)) + ".md");
+  return path.join(root, knowledge.DIR_NAME, KINDS[kind].dir, fileSafe(check(kind, name)) + ".md");
+}
+
+// 예전 한 장짜리 작성 가이드는 사업계획서 가이드로 옮긴다 (그 양식이 사업계획서 항목이었다)
+function migrateLegacyGuide(root) {
+  const old = path.join(root, knowledge.DIR_NAME, LEGACY_GUIDE);
+  if (!fs.existsSync(old)) return false;
+  const dest = fileOf(root, "guide", "사업계획서");
+  if (fs.existsSync(dest)) return false;
+  fs.mkdirSync(path.dirname(dest), { recursive: true });
+  const text = fs.readFileSync(old, "utf8").replace(/^# 작성 가이드\s*$/m, "# 작성 가이드: 사업계획서");
+  fs.writeFileSync(dest, text);
+  fs.unlinkSync(old);
+  return true;
 }
 
 const relOf = (root, file) => path.relative(root, file).split(path.sep).join("/");
@@ -110,20 +124,55 @@ ${U}`;
 ## 8. 확인 필요
 
 ${U}`;
-  return `# 작성 가이드
+  if (/수요조사/.test(name))
+    return `# 작성 가이드: ${name}
 
-> 양식은 사업마다 달라도 칸의 종류는 비슷합니다. Claude 는 양식의 칸마다 어떤 종류인지 보고 이 가이드대로 씁니다.
-> 우리 회사 문서 가운데 통과한 것을 기준으로 정리합니다.
+> 수요조사서를 쓸 때 Claude 가 따르는 가이드입니다. 수요조사서는 짧고, 목표는 '우리 기술이 RFP(과제 공고)로 반영되는 것'입니다.
+> 양식은 사업마다 달라도 칸의 종류는 비슷합니다. 칸마다 어떤 종류인지 보고 아래 쓰는 법을 따릅니다. 우리 회사 수요조사서 가운데 RFP 에 반영된 것을 기준으로 정리합니다.
 
 ## 공통 원칙
-(문체: 개조식/서술식, 문장 길이, 수치에는 근거·출처, 용어 표기 규칙, 피할 표현)
+(분량, 문체, RFP 문구처럼 쓰기: 기업 고유 제품명보다 기술·목표 중심, 너무 좁지 않게 범위 잡기, 수치에는 근거)
+
+## 항목별 쓰는 법
+### 기술명·과제명
+(RFP 제목이 될 수 있게: 핵심 기술 + 성능 + 적용처)
+
+### 개요·필요성
+(정책·산업 수요, 왜 지금 국가가 지원해야 하는지)
+
+### 개발 목표 (정량 목표)
+(측정 가능한 지표·단위·목표치, 세계 최고 수준과 비교)
+
+### 개발 내용·범위
+(세부 내용, 기간·TRL 시작/종료)
+
+### 국내외 동향·차별성
+(경쟁 기술, 국내 기술 수준, 차별점)
+
+### 활용·기대 효과
+(수요처, 시장 규모, 파급 효과)
+
+### 지원 규모·기간
+(예산·기간 제안 방식)
+
+## RFP 반영·탈락에서 배운 점
+(반영된 수요조사서의 공통점, 반영 안 된 이유)
+
+${U}`;
+  return `# 작성 가이드: ${name}
+
+> ${name}를 쓸 때 Claude 가 따르는 가이드입니다. 양식은 사업마다 달라도 칸의 종류는 비슷합니다. 칸마다 어떤 종류인지 보고 아래 쓰는 법을 따릅니다.
+> 우리 회사 ${name} 가운데 선정된 것을 기준으로 정리합니다. 평가 항목·배점은 사업 카드를 따릅니다.
+
+## 공통 원칙
+(문체: 개조식/서술식, 문장 길이, 수치에는 근거·출처, 용어 표기 규칙, 피할 표현, 평가 항목에 맞춘 소제목)
 
 ## 항목별 쓰는 법
 ### 요약·초록
 (분량, 꼭 넣을 것: 목표·핵심 기술·차별점·기대 효과)
 
 ### 연구개발 목표 (최종 목표·정량 목표)
-(정량 목표 표 쓰는 법: 항목·단위·현재 수준·목표·세계 최고 수준·측정 방법)
+(정량 목표 표 쓰는 법: 항목·단위·현재 수준·목표·세계 최고 수준·측정 방법·공인 시험 기관)
 
 ### 필요성·배경
 (정책·시장·기술 측면 순서, 근거 통계)
@@ -156,6 +205,7 @@ ${U}`;
 }
 
 function read(root, kind, name) {
+  if (kind === "guide") migrateLegacyGuide(root);
   const n = check(kind, name);
   const k = knowledge.readFile(fileOf(root, kind, n));
   return { kind, name: n, label: KINDS[kind].label, rel: relOf(root, k.path), ...k };
@@ -165,7 +215,7 @@ function read(root, kind, name) {
 function save(root, kind, name, content, opts = {}) {
   const n = check(kind, name);
   const file = fileOf(root, kind, n);
-  const r = knowledge.saveFile(root, file, kind === "guide" ? "작성 가이드" : `${KINDS[kind].label}_${fileSafe(n)}`, content, opts);
+  const r = knowledge.saveFile(root, file, `${KINDS[kind].label}_${fileSafe(n)}`, content, opts);
   return { ...r, rel: relOf(root, file), kind, name: n };
 }
 
@@ -173,7 +223,8 @@ function save(root, kind, name, content, opts = {}) {
 function list(root) {
   const base = path.join(root, knowledge.DIR_NAME);
   const out = [];
-  for (const kind of ["topic", "program"]) {
+  migrateLegacyGuide(root);
+  for (const kind of ["topic", "program", "guide"]) {
     let files = [];
     try {
       files = fs.readdirSync(path.join(base, KINDS[kind].dir)).filter((f) => f.endsWith(".md"));
@@ -184,15 +235,13 @@ function list(root) {
       let name = f.slice(0, -3);
       try {
         const head = fs.readFileSync(file, "utf8").slice(0, 300);
-        const m = /^#\s*(?:주제|사업) 카드:\s*(.+)$/m.exec(head);
+        const m = /^#\s*(?:주제 카드|사업 카드|작성 가이드):\s*(.+)$/m.exec(head);
         if (m) name = cleanName(m[1]);
       } catch {}
       const st = fs.statSync(file);
       out.push({ kind, name, label: KINDS[kind].label, rel: relOf(root, file), updated: st.mtime.toISOString(), size: st.size });
     }
   }
-  const g = knowledge.readFile(fileOf(root, "guide"));
-  if (g.exists) out.push({ kind: "guide", name: "", label: KINDS.guide.label, rel: relOf(root, g.path), updated: g.updated, size: Buffer.byteLength(g.content) });
   return out;
 }
 
@@ -210,11 +259,11 @@ const BUILD_STEPS = {
 3. 공고문에서 개요·일정·자격·평가 항목과 배점·강조점·양식 특징을 뽑는다. 사업 자료가 없으면 search_documents 로 그 사업의 공고·안내 문서를 찾고, 그래도 없으면 사용자에게 공고문을 '사업 자료'에 넣어 달라고 한다.
 4. 그 사업의 지원 건(get_program 의 applications → get_application)에서 결과와 평가 의견을 '우리 지원 이력과 교훈'에 정리하고 다음에 바꿀 점을 적는다.
 5. 사실마다 [출처] 를 붙이고, '## 사용자 메모' 는 그대로 두고 save_card 로 저장한 뒤 짧게 알려 준다.`,
-  guide: `작성 가이드를 만들거나 새로 고치는 순서:
-1. get_card(kind: guide) 로 지금 가이드를 읽는다 (없으면 빈 양식). 사용자가 고친 내용은 살린다.
-2. list_applications(state: 선정) 등으로 통과·선정된 지원 건을 찾고, 그 단계에 연결된 사업계획서·수요조사서를 read_document 로 읽는다. 없으면 search_documents 로 최근 사업계획서를 읽는다.
-3. 항목 종류(요약, 목표, 필요성, 현황·차별성, 개발 내용, 역량, 추진 체계, 사업화, 기대 효과, 연구비)마다 우리 문서가 어떻게 썼는지 공통점을 뽑아 '쓰는 법'으로 정리한다. 짧은 예시 문장과 [출처] 를 붙인다.
-4. 탈락한 지원 건의 평가 의견에서 되풀이되는 지적을 '탈락 사유에서 배운 점'에 정리한다.
+  guide: `작성 가이드를 만들거나 새로 고치는 순서 (문서 종류마다 한 장: 수요조사서, 사업계획서):
+1. get_card(kind: guide, name: 문서 종류) 로 지금 가이드를 읽는다 (없으면 그 문서 종류에 맞는 빈 양식). 사용자가 고친 내용은 살린다.
+2. 그 종류의 우리 문서를 읽는다. 수요조사서: 'RFP 반영' 단계가 통과한 지원 건의 수요조사서를 먼저(list_applications → get_application 의 단계 문서). 사업계획서: 선정(state: 선정)된 지원 건의 계획서를 먼저. 없으면 search_documents 로 최근 것을 읽는다. 보관함의 작성 안내·작성 요령 자료도 참고한다.
+3. 항목 종류마다 우리 문서가 어떻게 썼는지 공통점을 뽑아 '쓰는 법'으로 정리하고, 짧은 예시 문장과 [출처] 를 붙인다.
+4. 탈락하거나 반영되지 않은 지원 건의 평가 의견에서 되풀이되는 지적을 '배운 점'에 정리한다.
 5. '## 사용자 메모' 는 그대로 두고 save_card 로 저장한 뒤 짧게 알려 준다.`,
 };
 
@@ -225,7 +274,7 @@ const WRITE_STEPS = `사업에 낼 문서(수요조사서·사업계획서 등)�
    - get_knowledge: 회사 지식 카드
    - get_application: 단계별 결과와 탈락 사유, 이 건만의 자료
    - get_program: 그 사업의 공고문·RFP·평가 기준·작성 양식 → read_document 로 읽는다
-   - get_card: 주제 카드(topic), 사업 카드(program), 작성 가이드(guide). 없으면 사용자에게 알리고, 원하면 먼저 만든다.
+   - get_card: 주제 카드(topic), 사업 카드(program), 쓸 문서 종류의 작성 가이드(guide, name: 수요조사서 또는 사업계획서). 없으면 사용자에게 알리고, 원하면 먼저 만든다.
    - 같은 주제를 다른 사업에 낸 지원 건(list_applications(query: 주제))의 문서와 평가 의견
 3. 양식을 본다: inspect_form. .hwp/.doc 이면 convert_document 로 hwpx/docx 로 바꾼 뒤 본다. 양식이 사업 자료에 없으면 사용자에게 묻는다.
 4. 칸마다 쓴다: 칸의 안내 문구로 항목 종류를 정하고 작성 가이드의 그 항목 쓰는 법을 따른다. 사실·수치는 주제 카드와 회사 지식 카드에서, 강조점과 평가 항목은 사업 카드와 공고문에서 가져온다. 지난 탈락 사유가 되풀이되지 않게 한다. RFP 가 있으면 그 문구와 목표에 맞춘다. 근거 없는 수치는 만들지 말고 [확인 필요] 로 남긴다.
@@ -234,4 +283,4 @@ const WRITE_STEPS = `사업에 낼 문서(수요조사서·사업계획서 등)�
 7. record_application 으로 새 파일을 해당 단계에 연결하고(link) 단계 결과를 '진행'으로 기록한다.
 8. 이번에 새로 확인한 사실·표현이 있으면 주제 카드·사업 카드에 넣을지 사용자에게 묻는다.`;
 
-module.exports = { KINDS, cleanName, fileOf, template, read, save, list, BUILD_STEPS, WRITE_STEPS };
+module.exports = { GUIDE_NAMES, KINDS, cleanName, fileOf, template, read, save, list, BUILD_STEPS, WRITE_STEPS };

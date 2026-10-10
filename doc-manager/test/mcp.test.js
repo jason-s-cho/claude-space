@@ -186,7 +186,9 @@ test("Claude 커넥터: 둘러보기·검색·읽기·버전·관련 문서·새
     assert.match((await call("get_card", { kind: "topic", name: "그래핀 스텔스" })).data.card, /광학투명 전자파 차폐/);
     assert.deepStrictEqual((await call("get_card", { kind: "topic" })).data.cards.map((c) => c.name), ["그래핀 스텔스"]);
     const cardsOf = (await call("get_application", { id: created.id })).data.cards;
-    assert.deepStrictEqual([cardsOf.topic.exists, cardsOf.program.exists, cardsOf.guide.exists], [true, false, false]);
+    assert.deepStrictEqual([cardsOf.topic.exists, cardsOf.program.exists, cardsOf.guides["수요조사서"].exists, cardsOf.guides["사업계획서"].exists], [true, false, false, false]);
+    assert.match((await call("get_card", { kind: "guide" })).data.note_for_ai, /수요조사서, 사업계획서/);
+    assert.match((await call("get_card", { kind: "guide", name: "수요조사서" })).data.card, /^# 작성 가이드: 수요조사서/);
     assert.match((await call("save_card", { kind: "program", content: "x" })).text, /이름/);
     // 카드 폴더는 문서 목록에 섞이지 않는다
     assert.ok(!(await call("search_documents", { query: "광학투명 전자파 차폐" })).text.includes("Claude 지식"));

@@ -149,7 +149,7 @@ function renderProgramPanel(p) {
   $("detail").innerHTML = `
     <div class="d-head"><span class="ficon app">${icon("briefcase")}</span><div><h2>${esc(p)}</h2>
       <div class="d-path">${esc([agencies, `지원 건 ${list.length}개`].filter(Boolean).join(" · "))}</div></div></div>
-    <div class="card"><h4>${icon("sparkle")}사업 카드<small>Claude 가 이 사업 문서를 쓸 때 읽는 카드</small></h4><ul class="card-rows">${cardRowHtml("program", p)}${cardRowHtml("guide")}</ul>
+    <div class="card"><h4>${icon("sparkle")}사업 카드<small>Claude 가 이 사업 문서를 쓸 때 읽는 카드</small></h4><ul class="card-rows">${cardRowHtml("program", p)}${GUIDE_DOCS.map((g) => cardRowHtml("guide", g)).join("")}</ul>
       <small class="hint">사업 자료(공고문·평가 기준)를 넣은 뒤 'Claude 로 만들기'를 하면 평가 항목·강조점·우리 지원 교훈을 정리합니다.</small></div>
     ${refsCardHtml("p:" + p, programRefs(p), "사업 자료", "공고문, RFP, 작성 양식, 평가 기준처럼 이 사업에서 받은 자료를 넣어 두세요. 이 사업의 지원 건 모두가 같이 보고, Claude 도 문서를 쓸 때 먼저 읽습니다.")}
     <div class="card"><h4>${icon("layers")}지원 건</h4><ul class="app-links">${list
@@ -539,12 +539,16 @@ $("tplSave").onclick = async () => {
 const CARD_LABEL = { topic: "주제 카드", program: "사업 카드", guide: "작성 가이드" };
 const cardKey = (n) => String(n || "").replace(/\s+/g, " ").trim();
 const cardsOf = () => (S.applications && S.applications.cards) || [];
-const cardFind = (kind, name) => cardsOf().find((c) => c.kind === kind && (kind === "guide" || c.name === cardKey(name)));
+const GUIDE_DOCS = ["수요조사서", "사업계획서"]; // 기본 작성 가이드 (문서 종류마다 한 장)
+const cardFind = (kind, name) => cardsOf().find((c) => c.kind === kind && c.name === cardKey(name));
 // Claude 에게 보낼 요청: 어떤 카드인지, 어디에 무엇을 정리하는지까지 적어야 되묻지 않는다
 const CARD_ASK = {
   topic: (n) => `문서 보관함의 '${n}' 주제 카드를 만들어 줘(이미 있으면 새로 고쳐 줘). get_card(kind: topic, name: "${n}")로 양식을 받아 그 구조대로, 이 주제의 수요조사서·계획서·보고서·IR 문서와 지원 이력을 읽고 핵심 수치·차별점·실적·검증된 문장을 출처와 함께 정리해 save_card로 저장해 줘.`,
   program: (n) => `문서 보관함의 '${n}' 사업 카드를 만들어 줘(이미 있으면 새로 고쳐 줘). get_card(kind: program, name: "${n}")로 양식을 받아 그 구조대로, get_program의 사업 자료(공고문·RFP·평가 기준)와 이 사업 지원 건의 결과·탈락 사유를 읽고 평가 항목·강조점·양식 특징·교훈을 출처와 함께 정리해 save_card로 저장해 줘.`,
-  guide: () => `문서 보관함의 작성 가이드를 만들어 줘(이미 있으면 새로 고쳐 줘). get_card(kind: guide)로 양식을 받아 그 구조대로, 우리 회사가 낸 사업계획서·수요조사서(선정된 것 먼저)와 작성 안내 자료를 읽고 요약·목표·필요성·국내외 현황·개발 내용·수행 역량·추진 체계·사업화·기대 효과·연구비 같은 항목 종류마다 쓰는 법과 예시를 정리해 save_card로 저장해 줘. 탈락 사유는 '탈락 사유에서 배운 점'에 넣어 줘.`,
+  guide: (n) =>
+    /수요조사/.test(n)
+      ? `문서 보관함의 '${n}' 작성 가이드를 만들어 줘(이미 있으면 새로 고쳐 줘). get_card(kind: guide, name: "${n}")로 양식을 받아 그 구조대로, 우리 회사가 낸 수요조사서(RFP에 반영된 것 먼저)와 작성 안내 자료를 읽고 기술명·필요성·개발 목표·개발 내용·국내외 동향·활용 같은 항목 종류마다 쓰는 법과 예시를 정리해 save_card로 저장해 줘. 반영되지 않은 이유는 'RFP 반영·탈락에서 배운 점'에 넣어 줘.`
+      : `문서 보관함의 '${n}' 작성 가이드를 만들어 줘(이미 있으면 새로 고쳐 줘). get_card(kind: guide, name: "${n}")로 양식을 받아 그 구조대로, 우리 회사가 낸 ${n}(선정된 것 먼저)와 작성 안내 자료를 읽고 요약·목표·필요성·국내외 현황·개발 내용·수행 역량·추진 체계·사업화·기대 효과·연구비 같은 항목 종류마다 쓰는 법과 예시를 정리해 save_card로 저장해 줘. 탈락 사유는 '탈락 사유에서 배운 점'에 넣어 줘.`,
 };
 const cardPrompt = (kind, name) => CARD_ASK[kind](cardKey(name));
 
@@ -554,7 +558,7 @@ function cardRowHtml(kind, name) {
   const attrs = `data-c-kind="${kind}" data-c-name="${esc(cardKey(name))}"`;
   const state = c ? `<span class="state-on">있음</span> · ${esc(new Date(c.updated).toLocaleDateString())}` : '<span class="muted">없음</span>';
   return `<li class="card-row">
-    <div class="card-row-main"><b>${CARD_LABEL[kind]}</b>${kind === "guide" ? "" : ` <span>${esc(cardKey(name))}</span>`}<small>${state}</small></div>
+    <div class="card-row-main"><b>${CARD_LABEL[kind]}</b> <span>${esc(cardKey(name))}</span><small>${state}</small></div>
     <div class="card-row-act">
       <button class="link-btn" data-c-edit ${attrs} type="button">${c ? "보기·고치기" : "직접 쓰기"}</button>
       <button class="link-btn" data-c-copy="${esc(cardPrompt(kind, name))}" type="button" title="${esc(cardPrompt(kind, name))}">${c ? "Claude 로 새로 고치기" : "Claude 로 만들기"}</button>
@@ -573,12 +577,18 @@ function nextDocOf(a) {
   return "제출 문서";
 }
 
+// 이 건에서 다음에 쓸 문서의 작성 가이드 (모르면 둘 다)
+function guidesFor(a) {
+  const next = nextDocOf(a);
+  return GUIDE_DOCS.includes(next) ? [next] : GUIDE_DOCS;
+}
+
 // 지원 건 화면: 이 건의 문서를 쓸 때 읽는 카드 + 문서 쓰기 요청 문장
 function writeCardsHtml(a) {
   const topic = cardKey(a.topic), program = progKey(a);
   const rows = [topic ? cardRowHtml("topic", topic) : '<li class="card-row muted">주제를 적으면 주제 카드를 만들 수 있습니다</li>',
     program ? cardRowHtml("program", program) : '<li class="card-row muted">사업명을 적으면 사업 카드를 만들 수 있습니다</li>',
-    cardRowHtml("guide")].join("");
+    ...guidesFor(a).map((g) => cardRowHtml("guide", g))].join("");
   const ask = `문서 보관함의 '${appName(a)}' 지원 건${program ? `(${program})` : ""}으로 ${nextDocOf(a)}를 써 줘`;
   return `<div class="card"><h4>${icon("sparkle")}문서 쓰기<small>Claude 가 읽는 카드</small></h4>
     <ul class="card-rows">${rows}</ul>
@@ -591,12 +601,12 @@ function writeCardsHtml(a) {
 function renderCardsList() {
   const box = $("cardsList");
   if (!box) return;
-  const list = cardsOf().filter((c) => c.kind !== "guide");
+  const list = cardsOf();
   const topics = new Set(appsOf().map((a) => cardKey(a.topic)).filter(Boolean));
   const programs = new Set(appsOf().map(progKey).filter(Boolean));
   // 지원 건에는 있는데 카드가 없는 주제·사업도 보여 준다
   const rows = [
-    cardRowHtml("guide"),
+    ...[...new Set([...GUIDE_DOCS, ...list.filter((c) => c.kind === "guide").map((c) => c.name)])].map((n) => cardRowHtml("guide", n)),
     ...[...new Set([...list.filter((c) => c.kind === "topic").map((c) => c.name), ...topics])].sort((x, y) => x.localeCompare(y, "ko")).map((n) => cardRowHtml("topic", n)),
     ...[...new Set([...list.filter((c) => c.kind === "program").map((c) => c.name), ...programs])].sort((x, y) => x.localeCompare(y, "ko")).map((n) => cardRowHtml("program", n)),
   ];
@@ -609,7 +619,7 @@ async function openCardEditor(kind, name) {
   const c = await api.cardGet(kind, name);
   if (c.error) return toast(c.error, 5000);
   cardEditing = { kind, name: c.name };
-  $("cardDlgTitle").textContent = kind === "guide" ? "작성 가이드" : `${CARD_LABEL[kind]} · ${c.name}`;
+  $("cardDlgTitle").textContent = `${CARD_LABEL[kind]} · ${c.name}`;
   $("cardDlgSub").textContent = c.exists
     ? `${c.rel} · 마지막으로 고친 때 ${new Date(c.updated).toLocaleString()} · 저장하면 이전 내용은 기록으로 남습니다`
     : "아직 없어서 빈 양식을 보여 줍니다. 직접 채워 저장하거나, 닫고 'Claude 로 만들기'를 쓰세요.";

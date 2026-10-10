@@ -24,8 +24,23 @@ test("주제·사업 카드와 작성 가이드: 양식, 저장, 목록, 사용�
   assert.match(path.basename(r2.backup), /^주제 카드_그래핀_스텔스 패널_/);
 
   cards.save(root, "program", "소재부품기술개발사업", cards.template("program", "소재부품기술개발사업"));
-  cards.save(root, "guide", "", cards.template("guide"));
+  // 작성 가이드는 문서 종류마다: 수요조사서와 사업계획서는 양식이 다르다
+  assert.throws(() => cards.read(root, "guide"), /문서 종류/);
+  assert.match(cards.template("guide", "수요조사서"), /RFP/);
+  assert.match(cards.template("guide", "사업계획서"), /연구비/);
+  cards.save(root, "guide", "수요조사서", cards.template("guide", "수요조사서"));
   const list = cards.list(root);
-  assert.deepStrictEqual(list.map((c) => [c.kind, c.name]), [["topic", "그래핀/스텔스 패널"], ["program", "소재부품기술개발사업"], ["guide", ""]]);
-  assert.strictEqual(cards.read(root, "guide").rel, "Claude 지식/작성 가이드.md");
+  assert.deepStrictEqual(list.map((c) => [c.kind, c.name]), [["topic", "그래핀/스텔스 패널"], ["program", "소재부품기술개발사업"], ["guide", "수요조사서"]]);
+  assert.strictEqual(cards.read(root, "guide", "수요조사서").rel, "Claude 지식/작성 가이드/수요조사서.md");
+});
+
+test("예전 한 장짜리 작성 가이드는 사업계획서 가이드로 옮긴다", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "cards-old-"));
+  fs.mkdirSync(path.join(root, "Claude 지식"));
+  fs.writeFileSync(path.join(root, "Claude 지식", "작성 가이드.md"), "# 작성 가이드\n\n## 공통 원칙\n개조식\n");
+  const g = cards.read(root, "guide", "사업계획서");
+  assert.ok(g.exists);
+  assert.match(g.content, /^# 작성 가이드: 사업계획서\n[\s\S]*개조식/);
+  assert.ok(!fs.existsSync(path.join(root, "Claude 지식", "작성 가이드.md")));
+  assert.deepStrictEqual(cards.list(root).map((c) => [c.kind, c.name]), [["guide", "사업계획서"]]);
 });

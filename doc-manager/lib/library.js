@@ -489,20 +489,30 @@ class Library {
   cardStatus(topic, program) {
     const root = this.root();
     const one = (kind, name) => {
-      if (kind !== "guide" && !cards.cleanName(name)) return { exists: false, note: kind === "topic" ? "지원 건에 주제가 비어 있습니다" : "지원 건에 사업명이 비어 있습니다" };
+      if (!cards.cleanName(name)) return { exists: false, note: kind === "topic" ? "지원 건에 주제가 비어 있습니다" : "지원 건에 사업명이 비어 있습니다" };
       const c = cards.read(root, kind, name);
       return { name: c.name || undefined, exists: c.exists, updated: c.updated || undefined };
     };
-    return { topic: one("topic", topic), program: one("program", program), guide: one("guide") };
+    // 작성 가이드는 문서 종류마다 (수요조사서·사업계획서)
+    const guides = {};
+    for (const g of cards.GUIDE_NAMES) guides[g] = one("guide", g);
+    return { topic: one("topic", topic), program: one("program", program), guides };
   }
 
   // ---- 주제 카드·사업 카드·작성 가이드 ----
 
   getCard(kind, name) {
     const root = this.root();
-    if (kind !== "guide" && !cards.cleanName(name)) {
+    if (!cards.cleanName(name)) {
       const all = cards.list(root).filter((c) => c.kind === kind);
-      return { kind, cards: all.map((c) => ({ name: c.name, updated: c.updated })), note_for_ai: "name 을 주면 그 카드를 읽습니다. 지원 건의 주제(topic)·사업명(program)을 그대로 쓰세요." };
+      return {
+        kind,
+        cards: all.map((c) => ({ name: c.name, updated: c.updated })),
+        note_for_ai:
+          kind === "guide"
+            ? `name 에 문서 종류를 주면 그 작성 가이드를 읽습니다: ${cards.GUIDE_NAMES.join(", ")} (없으면 빈 양식).`
+            : "name 을 주면 그 카드를 읽습니다. 지원 건의 주제(topic)·사업명(program)을 그대로 쓰세요.",
+      };
     }
     const c = cards.read(root, kind, name);
     return {
