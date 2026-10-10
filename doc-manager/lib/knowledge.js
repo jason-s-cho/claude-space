@@ -12,7 +12,7 @@ const DIR_NAME = "Claude 지식";
 const CARD_NAME = "회사 지식 카드.md";
 const USER_SECTION = "## 사용자 메모";
 const MAX_BYTES = 300 * 1024;
-const HISTORY_KEEP = 30;
+const HISTORY_KEEP = 200; // 카드 여러 장의 기록을 같이 둔다
 
 function paths(root) {
   const dir = path.join(root, DIR_NAME);
@@ -52,12 +52,16 @@ ${USER_SECTION}
 `;
 
 function read(root) {
-  const p = paths(root);
+  return readFile(paths(root).card);
+}
+
+// 카드 파일 하나 읽기 (회사 지식 카드·주제 카드·사업 카드·작성 가이드가 같이 쓴다)
+function readFile(file) {
   try {
-    const st = fs.statSync(p.card);
-    return { exists: true, path: p.card, updated: st.mtime.toISOString(), content: fs.readFileSync(p.card, "utf8").replace(/^﻿/, "") };
+    const st = fs.statSync(file);
+    return { exists: true, path: file, updated: st.mtime.toISOString(), content: fs.readFileSync(file, "utf8").replace(/^\uFEFF/, "") };
   } catch {
-    return { exists: false, path: p.card, updated: null, content: "" };
+    return { exists: false, path: file, updated: null, content: "" };
   }
 }
 
@@ -80,12 +84,17 @@ function stamp(d = new Date()) {
  * protectUserSection: Claude 가 저장할 때 true. '## 사용자 메모' 는 이전 카드의 것을 그대로 쓴다 (Claude 가 빠뜨리거나 고쳐도).
  * 결과: { path, backup, keptUserSection }
  */
-function save(root, content, { now = new Date(), protectUserSection = false } = {}) {
+function save(root, content, opts = {}) {
+  return saveFile(root, paths(root).card, "회사 지식 카드", content, opts);
+}
+
+// file: 카드 파일, label: 기록 파일 이름 앞부분
+function saveFile(root, file, label, content, { now = new Date(), protectUserSection = false } = {}) {
   content = String(content || "").replace(/^\uFEFF/, "").replace(/\r\n/g, "\n");
   if (!content.trim()) throw new Error("빈 내용은 저장하지 않습니다.");
-  if (Buffer.byteLength(content) > MAX_BYTES) throw new Error(`지식 카드가 너무 깁니다 (최대 ${MAX_BYTES / 1024}KB). 핵심만 남겨 주세요.`);
-  const p = paths(root);
-  const old = read(root);
+  if (Buffer.byteLength(content) > MAX_BYTES) throw new Error(`카드가 너무 깁니다 (최대 ${MAX_BYTES / 1024}KB). 핵심만 남겨 주세요.`);
+  const history = paths(root).history;
+  const old = readFile(file);
   let keptUserSection = false;
   const mine = protectUserSection && old.exists ? userSection(old.content) : "";
   if (mine) {
@@ -95,18 +104,18 @@ function save(root, content, { now = new Date(), protectUserSection = false } = 
       keptUserSection = true;
     }
   }
-  fs.mkdirSync(p.dir, { recursive: true });
+  fs.mkdirSync(path.dirname(file), { recursive: true });
   let backup = null;
   if (old.exists && old.content !== content) {
-    fs.mkdirSync(p.history, { recursive: true });
-    backup = path.join(p.history, `회사 지식 카드_${stamp(now)}.md`);
+    fs.mkdirSync(history, { recursive: true });
+    backup = path.join(history, `${label.replace(/[\\/:*?"<>|]/g, " ")}_${stamp(now)}.md`);
     fs.writeFileSync(backup, old.content);
-    prune(p.history);
+    prune(history);
   }
-  const tmp = p.card + ".tmp";
+  const tmp = file + ".tmp";
   fs.writeFileSync(tmp, content);
-  fs.renameSync(tmp, p.card);
-  return { path: p.card, backup, keptUserSection };
+  fs.renameSync(tmp, file);
+  return { path: file, backup, keptUserSection };
 }
 
 function prune(dir) {
@@ -135,4 +144,4 @@ const BUILD_STEPS = `회사 지식 카드를 만들거나 새로 고치는 순�
 5. '## 사용자 메모' 부분은 고치지 말고 그대로 둔다.
 6. save_knowledge_card 로 저장하고, 무엇을 새로 넣거나 바꿨는지와 확인 필요한 항목을 사용자에게 짧게 알려 준다.`;
 
-module.exports = { DIR_NAME, CARD_NAME, USER_SECTION, TEMPLATE, BUILD_STEPS, paths, read, save, history, userSection };
+module.exports = { DIR_NAME, CARD_NAME, USER_SECTION, TEMPLATE, BUILD_STEPS, paths, read, save, readFile, saveFile, history, userSection };

@@ -28,6 +28,7 @@ const userFile = (name) => path.join(app.getPath("userData"), name);
 const store = require("./lib/store");
 const claudeConfig = require("./lib/claude-config");
 const knowledge = require("./lib/knowledge");
+const cards = require("./lib/cards");
 const duplicates = require("./lib/duplicates");
 const { convert, targetsFor } = require("./lib/convert");
 const updates = require("./lib/updates");
@@ -103,7 +104,11 @@ function loadApps(root) {
 }
 // 화면에 보낼 지원 건: 지금 단계(진행 중·탈락·선정)를 붙여서
 function appsState() {
-  return { templates: appsData.templates, statuses: appsLib.STATUSES, refKinds: appsLib.REF_KINDS, programs: appsData.programs, items: appsData.items.map((a) => ({ ...a, progress: appsLib.progress(a) })) };
+  let cardList = [];
+  try {
+    if (settings.root) cardList = cards.list(settings.root);
+  } catch {}
+  return { cards: cardList, templates: appsData.templates, statuses: appsLib.STATUSES, refKinds: appsLib.REF_KINDS, programs: appsData.programs, items: appsData.items.map((a) => ({ ...a, progress: appsLib.progress(a) })) };
 }
 
 // 문서 폴더를 연다: 예전 색인 옮기기 → 분류 규칙 읽기 → 색인 읽기
@@ -634,6 +639,34 @@ function registerIpc() {
       return { error: String((e && e.message) || e) };
     }
   });
+  // ---- 주제 카드·사업 카드·작성 가이드 ----
+  const cardOp = (fn) => {
+    try {
+      if (!settings.root) throw new Error("문서 폴더를 먼저 골라 주세요.");
+      return fn();
+    } catch (e) {
+      return { error: String((e && e.message) || e) };
+    }
+  };
+  ipcMain.handle("card-get", (_e, kind, name) => cardOp(() => {
+    const c = cards.read(settings.root, kind, name);
+    return { ...c, template: cards.template(kind, c.name) };
+  }));
+  ipcMain.handle("card-save", (_e, kind, name, content) => cardOp(() => {
+    const r = cards.save(settings.root, kind, name, content);
+    send("state", state());
+    return r;
+  }));
+  ipcMain.handle("card-open", (_e, kind, name) => cardOp(() => {
+    const c = cards.read(settings.root, kind, name);
+    if (!c.exists) {
+      cards.save(settings.root, kind, name, cards.template(kind, c.name));
+      send("state", state());
+    }
+    shell.showItemInFolder(c.path);
+    return {};
+  }));
+
   ipcMain.handle("ai-log", () => (settings.root ? readLog(settings.root, 40) : []));
 
   ipcMain.handle("move-to-category", async (_e, rel) => {

@@ -593,6 +593,16 @@ dialog[open] .move-form { animation: pop 0.16s var(--ease); }
 .ref-count { display: inline-flex; align-items: center; gap: 4px; border: 0; background: var(--surface-3); color: var(--text-2); border-radius: 999px; font-size: 11.5px; padding: 1px 8px; }
 .ref-count svg { width: 12px; height: 12px; }
 .ref-count:hover { color: var(--accent-text); }
+.card-rows { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 4px; }
+.card-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; background: var(--surface-2); font-size: 12.5px; }
+.card-row.muted { color: var(--text-3); background: none; padding-left: 2px; }
+.card-row-main { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.card-row-main span { overflow-wrap: anywhere; }
+.card-row-main small { color: var(--text-3); font-size: 11.5px; }
+.card-row-act { display: flex; gap: 2px; flex: none; }
+.card-form { width: min(860px, 92vw); }
+.card-form textarea { width: 100%; min-height: 52vh; font: 12.5px/1.6 ui-monospace, "Cascadia Mono", Consolas, monospace; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); color: var(--text); resize: vertical; }
+.settings-actions .spacer { flex: 1; }
 .apps-empty { margin: 40px auto; max-width: 560px; display: grid; justify-items: center; gap: 14px; text-align: center; color: var(--text-2); line-height: 1.7; }
 .apps-empty > svg { width: 30px; height: 30px; color: var(--text-3); }
 .seg-group { display: inline-flex; gap: 2px; padding: 2px; border-radius: 10px; background: var(--surface-3); }
