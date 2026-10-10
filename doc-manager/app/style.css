@@ -787,3 +787,9 @@ dialog[open] .move-form { animation: pop 0.16s var(--ease); }
 .todo-list > li { min-width: 0; }
 .cert-card .check-row { display: flex; align-items: center; gap: 6px; margin: 6px 0 2px; font-size: 13px; cursor: pointer; }
 .cert-card .check-row small { font-size: 12px; }
+.todo-hide { flex: none; display: grid; place-items: center; width: 24px; height: 24px; border: 0; border-radius: 6px; background: none; color: var(--text-3); opacity: 0.45; cursor: pointer; }
+.todo-hide svg { width: 13px; height: 13px; }
+.todo-list li:hover .todo-hide, .card-row:hover .todo-hide, .todo-hide:focus-visible { opacity: 1; }
+.todo-hide:hover { background: rgba(31, 138, 76, 0.12); color: #1f8a4c; }
+.todo-hidden-note { margin: 12px 2px 0; font-size: 12px; color: var(--text-3); }
+.todo-list.tidy li > button:first-child > b { flex: 0 1 auto; max-width: none; }

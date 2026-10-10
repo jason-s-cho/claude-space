@@ -4,6 +4,28 @@
 
 const TODO_DUE_DAYS = 30; // 이 안의 마감·만료를 보여 준다
 
+// '확인함'으로 숨긴 항목: { 열쇠: 숨긴 시각 }. 열쇠에 날짜·개수가 들어 있어 상황이 바뀌면(마감일 변경, 새 문서) 다시 나온다
+let todoHidden = pref("todoHidden", {});
+const isHiddenTodo = (k) => !!todoHidden[k];
+function hideTodo(k) {
+  const cut = Date.now() - 180 * DAY; // 오래된 것은 지워 둔다
+  todoHidden = Object.fromEntries(Object.entries(todoHidden).filter(([, t]) => t > cut));
+  todoHidden[k] = Date.now();
+  setPref("todoHidden", todoHidden);
+}
+function unhideAllTodo() {
+  todoHidden = {};
+  setPref("todoHidden", todoHidden);
+}
+const hideBtn = (k) => `<button class="todo-hide" data-t-hide="${esc(k)}" type="button" title="확인함 — 목록에서 숨기기">${icon("check")}</button>`;
+const todoKey = {
+  due: (u) => `due|${u.id}|${u.stage}|${u.due}`,
+  cert: (c) => `cert|${c.rel}|${c.validUntil}`,
+  ip: (x) => `ip|${x.right}|${x.appNo}`,
+  card: (c) => `card|${c.kind}|${c.name}`,
+  ocr: (d) => `ocr|${d.rel}|${d.ocrError ? "err" : "wait"}`,
+};
+
 function todoData() {
   const docs = S.docs || [];
   const deadlines = (typeof upcomingOf === "function" ? upcomingOf() : []).filter((u) => u.daysLeft <= TODO_DUE_DAYS);
@@ -31,7 +53,19 @@ function todoData() {
   }
   const weekAgo = Date.now() - 7 * DAY;
   const recent = docs.filter((d) => d.mtimeMs > weekAgo).sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, 6);
-  return { deadlines, certs, ipSug, misplaced, dupGroups, unclassified, scanned, ocrFailed, missingCards, recent };
+  const vis = (key) => (x) => !isHiddenTodo(todoKey[key](x));
+  return {
+    deadlines: deadlines.filter(vis("due")),
+    certs: certs.filter(vis("cert")),
+    ipSug: ipSug.filter(vis("ip")),
+    misplaced,
+    dupGroups,
+    unclassified,
+    scanned: scanned.filter(vis("ocr")),
+    ocrFailed: ocrFailed.filter(vis("ocr")),
+    missingCards: missingCards.filter(vis("card")),
+    recent,
+  };
 }
 
 // 왼쪽 메뉴 '할 일' 옆 숫자: 바로 챙겨야 하는 것 (7일 안 마감·지난 마감, 30일 안 만료 증빙, 대장에 없는 번호)
@@ -63,7 +97,7 @@ function renderTodoView() {
         "다가오는 마감",
         t.deadlines.length,
         `<ul class="todo-list">${t.deadlines
-          .map((u) => `<li><button data-t-app="${esc(u.id)}" type="button"><span class="dday ${ddayClass(u.daysLeft)}">${ddayText(u.daysLeft)}</span><b>${esc(u.stage)}</b><span class="t-sub">${esc(u.title)}</span><small>${esc(dueShort(u.due))}</small></button></li>`)
+          .map((u) => `<li><button data-t-app="${esc(u.id)}" type="button"><span class="dday ${ddayClass(u.daysLeft)}">${ddayText(u.daysLeft)}</span><b>${esc(u.stage)}</b><span class="t-sub">${esc(u.title)}</span><small>${esc(dueShort(u.due))}</small></button>${hideBtn(todoKey.due(u))}</li>`)
           .join("")}</ul>`
       )
     );
@@ -75,7 +109,7 @@ function renderTodoView() {
         "만료되는 회사 증빙",
         t.certs.length,
         `<ul class="todo-list">${t.certs
-          .map((c) => `<li><button data-t-doc="${esc(c.rel)}" type="button"><span class="dday ${c.daysLeft < 0 ? "dd-over" : c.daysLeft <= 7 ? "dd-soon" : "dd-near"}">${c.daysLeft < 0 ? "만료됨" : `D-${c.daysLeft}`}</span><b>${esc(c.kind)}</b><small>${esc(c.validUntil)}까지</small></button></li>`)
+          .map((c) => `<li><button data-t-doc="${esc(c.rel)}" type="button"><span class="dday ${c.daysLeft < 0 ? "dd-over" : c.daysLeft <= 7 ? "dd-soon" : "dd-near"}">${c.daysLeft < 0 ? "만료됨" : `D-${c.daysLeft}`}</span><b>${esc(c.kind)}</b><small>${esc(c.validUntil)}까지</small></button>${hideBtn(todoKey.cert(c))}</li>`)
           .join("")}</ul>`,
         "새로 발급받아 넣으면 최신본이 바뀝니다"
       )
@@ -89,7 +123,7 @@ function renderTodoView() {
         t.ipSug.length,
         `<ul class="todo-list">${t.ipSug
           .slice(0, 5)
-          .map((x) => `<li><button data-t-view="ip" type="button"><span class="ip-right">${esc(x.right)}</span><b>${esc(x.appNo)}</b><span class="t-sub">${esc(x.title || "")}</span></button></li>`)
+          .map((x) => `<li><button data-t-view="ip" type="button"><span class="ip-right">${esc(x.right)}</span><b>${esc(x.appNo)}</b><span class="t-sub">${esc(x.title || "")}</span></button>${hideBtn(todoKey.ip(x))}</li>`)
           .join("")}</ul>`,
         `<button class="btn sm" data-t-view="ip" type="button">지식재산 대장에서 넣기</button>`
       )
@@ -97,9 +131,10 @@ function renderTodoView() {
 
   // 정리할 문서
   const tidy = [];
-  if (t.misplaced.length) tidy.push(`<li><button data-t-view="misplaced" type="button">${icon("move")}<b>제자리가 아닌 문서</b><small>${t.misplaced.length}개</small></button><button class="btn sm" data-t-act="move-all" type="button">모두 옮기기</button></li>`);
-  if (t.dupGroups.length) tidy.push(`<li><button data-t-view="duplicates" type="button">${icon("copy")}<b>내용이 똑같은 파일</b><small>${t.dupGroups.length}묶음</small></button><button class="btn sm" data-t-act="dedupe" type="button">중복 정리</button></li>`);
-  if (t.unclassified.length) tidy.push(`<li><button data-t-view="cat:other" type="button">${icon("question")}<b>미분류 문서</b><small>${t.unclassified.length}개</small></button></li>`);
+  const tidyKey = (name, n) => `tidy|${name}|${n}`; // 개수가 늘면 다시 나온다
+  if (t.misplaced.length && !isHiddenTodo(tidyKey("misplaced", t.misplaced.length))) tidy.push(`<li><button data-t-view="misplaced" type="button">${icon("move")}<b>제자리가 아닌 문서</b><small>${t.misplaced.length}개</small></button><button class="btn sm" data-t-act="move-all" type="button">모두 옮기기</button>${hideBtn(tidyKey("misplaced", t.misplaced.length))}</li>`);
+  if (t.dupGroups.length && !isHiddenTodo(tidyKey("dup", t.dupGroups.length))) tidy.push(`<li><button data-t-view="duplicates" type="button">${icon("copy")}<b>내용이 똑같은 파일</b><small>${t.dupGroups.length}묶음</small></button><button class="btn sm" data-t-act="dedupe" type="button">중복 정리</button>${hideBtn(tidyKey("dup", t.dupGroups.length))}</li>`);
+  if (t.unclassified.length && !isHiddenTodo(tidyKey("other", t.unclassified.length))) tidy.push(`<li><button data-t-view="cat:other" type="button">${icon("question")}<b>미분류 문서</b><small>${t.unclassified.length}개</small></button>${hideBtn(tidyKey("other", t.unclassified.length))}</li>`);
   if (tidy.length) cards.push(todoCard("folder", "정리할 문서", "", `<ul class="todo-list tidy">${tidy.join("")}</ul>`));
 
   // 글자 읽기 (스캔 PDF)
@@ -112,7 +147,7 @@ function renderTodoView() {
         t.scanned.length || "",
         `${now ? `<p class="hint">지금 읽는 중: <b>${esc(now.base)}</b>${ocrNow.of ? ` ${ocrNow.page}/${ocrNow.of}쪽` : ""}</p>` : ""}
         <ul class="todo-list">${[...t.scanned.slice(0, 4).map((d) => [d, "읽을 차례"]), ...t.ocrFailed.slice(0, 3).map((d) => [d, "읽지 못함"])]
-          .map(([d, st]) => `<li><button data-t-doc="${esc(d.rel)}" type="button"><b>${esc(d.base)}</b><small>${st}</small></button></li>`)
+          .map(([d, st]) => `<li><button data-t-doc="${esc(d.rel)}" type="button"><b>${esc(d.base)}</b><small>${st}</small></button>${hideBtn(todoKey.ocr(d))}</li>`)
           .join("")}</ul>`,
         S.platform === "win32" ? "" : "글자 읽기는 윈도우에서만 됩니다"
       )
@@ -125,7 +160,7 @@ function renderTodoView() {
         "sparkle",
         "아직 없는 작성 카드",
         t.missingCards.length,
-        `<ul class="card-rows">${t.missingCards.slice(0, 5).map((c) => cardRowHtml(c.kind, c.name)).join("")}</ul>`,
+        `<ul class="card-rows">${t.missingCards.slice(0, 5).map((c) => cardRowHtml(c.kind, c.name).replace(/<\/li>\s*$/, `${hideBtn(todoKey.card(c))}</li>`)).join("")}</ul>`,
         "진행 중인 지원 건에 쓰이는 주제·사업·문서 종류입니다"
       )
     );
@@ -143,8 +178,10 @@ function renderTodoView() {
   cards.push(todoCard("bot", "최근 Claude 활동", "", `<ul class="todo-list" id="todoAiLog"><li class="muted small">불러오는 중…</li></ul>`));
 
   const urgent = t.deadlines.length + t.certs.length + t.ipSug.length;
+  const nHidden = Object.keys(todoHidden).length;
   board.innerHTML = `${urgent ? "" : `<div class="todo-calm">${icon("check")}<div><b>급하게 챙길 것이 없습니다.</b><br><small>30일 안의 마감·만료가 생기면 여기에 먼저 나옵니다.</small></div></div>`}
-    <div class="todo-grid">${cards.join("")}</div>`;
+    <div class="todo-grid">${cards.join("")}</div>
+    ${nHidden ? `<p class="todo-hidden-note">확인함으로 숨긴 항목 ${nHidden}개 · <button class="link-btn" data-t-act="unhide" type="button">다시 보기</button></p>` : ""}`;
   fillTodoAiLog();
 }
 
@@ -176,6 +213,16 @@ $("appsBoard").addEventListener("click", async (e) => {
   if (filter.view !== "todo") return;
   const b = e.target.closest("button");
   if (!b) return;
+  if (b.dataset.tHide) {
+    hideTodo(b.dataset.tHide);
+    renderSide(); // 왼쪽 '할 일' 숫자
+    return renderTodoView();
+  }
+  if (b.dataset.tAct === "unhide") {
+    unhideAllTodo();
+    renderSide();
+    return renderTodoView();
+  }
   if (b.dataset.tApp) return openApp(b.dataset.tApp);
   if (b.dataset.tDoc) {
     filter.view = "all";
