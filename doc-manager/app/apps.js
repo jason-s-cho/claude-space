@@ -251,6 +251,8 @@ $("detail").addEventListener("dragleave", (e) => {
   if (e.target.classList && e.target.classList.contains("ref-drop") && !e.target.contains(e.relatedTarget)) e.target.classList.remove("over");
 });
 
+const openNotes = new Set(); // "+ 메모"를 눌러 연 단계 (메모가 비어 있어도 칸을 보여 준다)
+
 function renderAppDetail() {
   const box = $("detail");
   const a = appsOf().find((x) => x.id === selectedApp);
@@ -270,44 +272,60 @@ function renderAppDetail() {
           return `<span class="doc-chip${d ? "" : " missing"}" title="${esc(rel)}"><button data-a-open-doc="${esc(rel)}" type="button">${esc(d ? d.base : rel.split("/").pop() + " (없음)")}</button><button data-a-unlink="${i}" data-rel="${esc(rel)}" type="button" aria-label="연결 끊기">${icon("x")}</button></span>`;
         })
         .join("");
+      // 한 단계 = 두 줄: [이름 · 결과 · (↑↓✕)] / [결과일 · 마감 · D-day · 캘린더], 메모·문서는 있을 때만 크게
+      const noteOpen = s.note || openNotes.has(`${a.id}|${i}`);
       return `<li class="stage ${STAGE_CLASS[s.status] || ""}">
-        <div class="stage-head">
+        <div class="stage-row">
           <input class="stage-name" data-a-sname="${i}" value="${esc(s.name)}" aria-label="단계 이름">
           <select class="select" data-a-sstatus="${i}" aria-label="결과">${statusOpts(s.status)}</select>
-          <input type="date" data-a-sdate="${i}" value="${esc(s.date)}" aria-label="결과 날짜" title="결과 날짜 (제출·발표·통보한 날)">
           <span class="stage-tools">
             <button class="icon-btn" data-a-sup="${i}" type="button" title="위로"${i ? "" : " disabled"}>↑</button>
             <button class="icon-btn" data-a-sdown="${i}" type="button" title="아래로"${i < a.stages.length - 1 ? "" : " disabled"}>↓</button>
             <button class="icon-btn danger" data-a-sdel="${i}" type="button" title="이 단계 빼기">${icon("x")}</button>
           </span>
         </div>
-        <div class="stage-due">
-          <span class="lbl">마감</span>
-          <input type="date" data-a-sdue="${i}" value="${esc((s.due || "").slice(0, 10))}" aria-label="마감 날짜">
-          <input type="time" data-a-sduetime="${i}" value="${esc((s.due || "").slice(11, 16))}" aria-label="마감 시각"${s.due ? "" : " disabled"}>
-          ${s.due ? `${dueBadge(s)}<button class="link-btn" data-a-cal="${i}" data-how="google" type="button" title="브라우저로 구글 캘린더 일정 추가 화면을 엽니다">구글 캘린더</button><button class="link-btn" data-a-cal="${i}" data-how="ics" type="button" title="일정 파일을 열어 아웃룩·윈도우 일정에 추가">일정 파일</button>` : ""}
+        <div class="stage-row meta">
+          <label title="결과 날짜 (제출·발표·통보한 날)"><span>결과일</span><input type="date" data-a-sdate="${i}" value="${esc(s.date)}" aria-label="결과 날짜"></label>
+          <label title="마감 (날짜만 넣어도 됩니다)"><span>마감</span><input type="date" data-a-sdue="${i}" value="${esc((s.due || "").slice(0, 10))}" aria-label="마감 날짜"><input type="time" data-a-sduetime="${i}" value="${esc((s.due || "").slice(11, 16))}" aria-label="마감 시각"${s.due ? "" : " hidden"}></label>
+          ${s.due ? `${dueBadge(s)}<span class="cal-links"><button class="mini-btn" data-a-cal="${i}" data-how="google" type="button" title="구글 캘린더에 일정 추가 (브라우저)">${icon("calendar")}구글</button><button class="mini-btn" data-a-cal="${i}" data-how="ics" type="button" title="일정 파일을 열어 아웃룩·윈도우 일정에 추가">${icon("calendar")}파일</button></span>` : ""}
         </div>
-        <textarea data-a-snote="${i}" rows="${s.note ? 3 : 1}" placeholder="평가 의견 · 탈락 사유 · 메모">${esc(s.note)}</textarea>
-        <div class="stage-docs">${docs}<button class="link-btn" data-a-slink="${i}" type="button">+ 문서 연결</button></div>
+        ${noteOpen ? `<textarea data-a-snote="${i}" rows="${s.note ? Math.min(4, s.note.split("\n").length + 1) : 2}" placeholder="평가 의견 · 탈락 사유 · 메모">${esc(s.note)}</textarea>` : ""}
+        <div class="stage-docs">${docs}${noteOpen ? "" : `<button class="link-btn" data-a-snote-open="${i}" type="button">+ 메모</button>`}<button class="link-btn" data-a-slink="${i}" type="button">+ 문서 연결</button></div>
       </li>`;
     })
     .join("");
+  // 탭: 단계 | 자료(사업 자료·이 과제 자료·제출 서류) | 문서 쓰기 | 정보(과제명·사업명 등 고치기)
+  const refCount = (progKey(a) ? programRefs(progKey(a)).length : 0) + (a.refs || []).length;
+  const T = detailTabs("app", [["stages", "단계"], ["refs", "자료", refCount], ["write", "문서 쓰기"], ["info", "정보"]]);
+  const next = nextDueOf(a);
+  const summary = [a.topic && a.title ? a.topic : "", progKey(a), a.agency, a.year].filter(Boolean).map(esc).join(" · ");
   box.innerHTML = `
     <div class="d-head"><span class="ficon app">${icon("briefcase")}</span><div><h2>${esc(appName(a))}</h2>
-      <div class="d-path"><span class="app-state ${APP_STATE_CLASS[a.progress.state] || ""}">${esc(a.progress.state)}${a.progress.stage && a.progress.state !== "선정" ? " · " + esc(a.progress.stage) : ""}</span></div></div></div>
-    <div class="card"><h4>${icon("info")}지원 건</h4>
-      <div class="af-grid">${field("title", "과제명")}${field("topic", "주제(기술)", "예: 그래핀 스텔스 패널")}${field("program", "사업명", "예: 소재부품기술개발")}${field("agency", "전문기관", "예: KEIT")}${field("year", "연도", "", "number")}</div>
-      <label class="af"><span>메모</span><textarea data-a-f="memo" rows="2" placeholder="공동기관, 예산 규모 등">${esc(a.memo || "")}</textarea></label>
-    </div>
-    ${writeCardsHtml(a)}
-    ${bundleCardHtml(a)}
-    ${progKey(a) ? refsCardHtml("p:" + progKey(a), programRefs(progKey(a)), `사업 자료 · ${progKey(a)}`, "이 사업의 공고문·RFP·작성 양식을 넣어 두면 같은 사업의 지원 건 모두가 같이 봅니다.") : ""}
-    ${refsCardHtml("a:" + a.id, a.refs || [], "이 과제만의 자료", "이 지원 건에만 해당하는 자료 (예: 이 과제의 RFP, 수요조사 안내)")}
-    <div class="card"><h4>${icon("layers")}단계<small>${a.template ? esc(a.template) : ""}</small></h4>
-      <ol class="stage-list">${stages}</ol>
-      <button class="btn sm ghost" data-a-sadd type="button">${icon("plus")}단계 추가</button>
-    </div>
-    <div class="app-foot"><button class="btn sm ghost danger" data-a-del type="button">${icon("trash")}이 지원 건 지우기</button></div>
+      <div class="d-path"><span class="app-state ${APP_STATE_CLASS[a.progress.state] || ""}">${esc(a.progress.state)}${a.progress.stage && a.progress.state !== "선정" ? " · " + esc(a.progress.stage) : ""}</span>${
+        next ? ` <span class="dday ${ddayClass(next.daysLeft)}" title="${esc(next.stage)} 마감 ${esc(next.due)}">${esc(next.stage)} ${ddayText(next.daysLeft)}</span>` : ""
+      }</div>
+      ${summary ? `<div class="d-sub">${summary} <button class="link-btn" data-a-edit-info type="button">고치기</button></div>` : `<div class="d-sub"><button class="link-btn" data-a-edit-info type="button">사업명·주제 적기</button></div>`}</div></div>
+    ${T.bar}
+    ${T.panel(
+      "stages",
+      `<ol class="stage-list">${stages}</ol>
+      <button class="btn sm ghost" data-a-sadd type="button">${icon("plus")}단계 추가</button>${a.template ? ` <small class="muted">단계 틀: ${esc(a.template)}</small>` : ""}`
+    )}
+    ${T.panel(
+      "refs",
+      `${progKey(a) ? refsCardHtml("p:" + progKey(a), programRefs(progKey(a)), `사업 자료 · ${progKey(a)}`, "이 사업의 공고문·RFP·작성 양식을 넣어 두면 같은 사업의 지원 건 모두가 같이 봅니다.") : ""}
+      ${refsCardHtml("a:" + a.id, a.refs || [], "이 과제만의 자료", "이 지원 건에만 해당하는 자료 (예: 이 과제의 RFP, 수요조사 안내)")}
+      ${bundleCardHtml(a)}`
+    )}
+    ${T.panel("write", writeCardsHtml(a))}
+    ${T.panel(
+      "info",
+      `<div class="card"><h4>${icon("info")}지원 건</h4>
+        <div class="af-grid">${field("title", "과제명")}${field("topic", "주제(기술)", "예: 그래핀 스텔스 패널")}${field("program", "사업명", "예: 소재부품기술개발")}${field("agency", "전문기관", "예: KEIT")}${field("year", "연도", "", "number")}</div>
+        <label class="af"><span>메모</span><textarea data-a-f="memo" rows="3" placeholder="공동기관, 예산 규모 등">${esc(a.memo || "")}</textarea></label>
+      </div>
+      <div class="app-foot"><button class="btn sm ghost danger" data-a-del type="button">${icon("trash")}이 지원 건 지우기</button></div>`
+    )}
 `;
 }
 
@@ -482,6 +500,7 @@ $("detail").addEventListener("click", async (e) => {
     st.push({ name: `새 단계${n > 1 ? " " + n : ""}` });
     return appsOp({ type: "stages", id: a.id, stages: st });
   }
+  if (b.hasAttribute("data-a-edit-info")) return showTab("app", "info");
   if (b.hasAttribute("data-a-make-bundle")) {
     const r = await api.makeBundle(a.id);
     if (r.error) return toast(r.error, 6000);
@@ -490,6 +509,13 @@ $("detail").addEventListener("click", async (e) => {
     if (r.missing.length) msg += `\n보관함에 없음: ${r.missing.join(", ")}`;
     if (r.expired.length) msg += `\n유효기간 지남: ${r.expired.join(", ")} — 새로 발급받으세요`;
     return toast(msg, r.missing.length || r.expired.length ? 12000 : 6000);
+  }
+  if (b.dataset.aSnoteOpen !== undefined) {
+    openNotes.add(`${a.id}|${b.dataset.aSnoteOpen}`);
+    renderAppDetail();
+    const ta = document.querySelector(`[data-a-snote="${b.dataset.aSnoteOpen}"]`);
+    if (ta) ta.focus();
+    return;
   }
   if (b.dataset.aCal !== undefined) {
     const r = await api.deadlineCalendar({ id: a.id, stage: a.stages[idx("aCal")].name }, b.dataset.how);
@@ -774,3 +800,28 @@ document.addEventListener("click", async (e) => {
 
 // 마감 알림을 누르면 그 지원 건을 연다
 api.onOpenApp((id) => openApp(id));
+
+// 빈 메모 칸은 다른 곳을 누르거나 Esc 를 누르면 다시 "+ 메모"로 접는다.
+// (화면 전체를 다시 그리지 않고 그 칸만 바꾼다: 바로 누른 단추의 클릭이 사라지지 않게)
+function foldEmptyNote(ta) {
+  if (!ta || !ta.isConnected || ta.value.trim()) return;
+  const i = ta.dataset.aSnote;
+  const a = appNow();
+  if (a) openNotes.delete(`${a.id}|${i}`);
+  const docs = ta.parentElement.querySelector(".stage-docs");
+  ta.remove();
+  if (docs && !docs.querySelector("[data-a-snote-open]")) {
+    const b = document.createElement("button");
+    b.className = "link-btn";
+    b.type = "button";
+    b.dataset.aSnoteOpen = i;
+    b.textContent = "+ 메모";
+    docs.insertBefore(b, docs.querySelector("[data-a-slink]"));
+  }
+}
+$("detail").addEventListener("focusout", (e) => {
+  if (e.target.dataset && e.target.dataset.aSnote !== undefined) setTimeout(() => foldEmptyNote(e.target), 0);
+});
+$("detail").addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && e.target.dataset && e.target.dataset.aSnote !== undefined && !e.target.value.trim()) foldEmptyNote(e.target);
+});
