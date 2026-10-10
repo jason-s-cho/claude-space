@@ -141,3 +141,16 @@ test("제자리 판정과 여러 개 한꺼번에 옮기기", async () => {
   assert.ok(fs.existsSync(path.join(root, "홍보", "홈페이지", "전자세금계산서_B.pdf"))); // 지우지 않는다
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+test("사업 자료 넣기: 정한 폴더에 넣고 분류를 정해 둔다 (내용이 보고서처럼 보여도)", async () => {
+  const root = tmp("docmgr-root-");
+  const src = tmp("docmgr-src-");
+  const f = path.join(src, "2026 공고문.docx");
+  await makeDocx(f, ["최종보고서", "주관기관 참여기관 정부출연금"]);
+  const index = indexer.emptyIndex(root);
+  const r = await importFiles(index, [f], { layout: "category", options: {}, folder: "국가과제·지원사업/1 공고·수요조사/암묵지 사업", category: "gov_notice" });
+  assert.strictEqual(r.imported[0].rel, "국가과제·지원사업/1 공고·수요조사/암묵지 사업/2026 공고문.docx");
+  assert.strictEqual(indexer.effective(index.files[r.imported[0].rel]).category, "gov_notice");
+  fs.rmSync(root, { recursive: true, force: true });
+  fs.rmSync(src, { recursive: true, force: true });
+});

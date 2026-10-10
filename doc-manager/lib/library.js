@@ -17,6 +17,7 @@ const knowledge = require("./knowledge");
 const forms = require("./forms");
 const convertLib = require("./convert");
 const { compareTexts } = require("./diff");
+const appsLib = require("./applications");
 const { groupVersions, nextVersionName, uniqueVersionName } = require("./versions");
 
 const AI_EXCLUDE_TAG = "AI제외";
@@ -400,6 +401,91 @@ class Library {
       changes: changes.slice(0, limit),
       more_changes: changes.length > limit ? changes.length - limit : undefined,
     };
+  }
+
+  // ---- 지원 건 ----
+
+  // AI 에게 보여도 되는 문서만 남긴 연결 목록
+  visibleDocs(docs) {
+    return docs.filter((rel) => {
+      try {
+        this.formSource(rel); // 보관함에 있거나 방금 커넥터가 만든 문서 (AI 제외 문서는 빠진다)
+        return true;
+      } catch {
+        return false;
+      }
+    });
+  }
+
+  // 지원 건 목록 (찾기: 과제명·주제·사업·기관·메모에 들어 있는 글자, 결과: 준비|진행 중|탈락|선정, 연도)
+  listApplications({ query = "", state = "", year } = {}) {
+    const data = appsLib.load(this.root());
+    const q = String(query || "").toLowerCase().replace(/\s+/g, "");
+    const items = data.items
+      .map((a) => ({ a, p: appsLib.progress(a) }))
+      .filter(({ a, p }) => (!q || [a.title, a.topic, a.program, a.agency, a.memo].join(" ").toLowerCase().replace(/\s+/g, "").includes(q)) && (!state || p.state === state) && (!year || a.year === year))
+      .sort((x, y) => (y.a.year || 0) - (x.a.year || 0) || y.a.updatedAt.localeCompare(x.a.updatedAt));
+    return {
+      templates: data.templates,
+      total: items.length,
+      applications: items.map(({ a, p }) => ({
+        id: a.id,
+        title: a.title,
+        topic: a.topic,
+        program: a.program,
+        agency: a.agency || undefined,
+        year: a.year,
+        progress: `${p.state}${p.stage ? " (" + p.stage + ")" : ""}`,
+        stages: a.stages.map((st) => `${st.name}: ${st.status || "-"}${st.date ? " " + st.date : ""}${st.note ? " — " + st.note.slice(0, 80) : ""}`),
+        own_reference_docs: this.visibleRefs(a.refs).length || undefined,
+      })),
+      // 사업별 자료(공고문·RFP·작성 양식 등) 개수. 내용은 get_program 으로
+      programs: [...new Set(data.items.map((a) => a.program).filter(Boolean))].map((name) => ({ name, applications: data.items.filter((a) => a.program === name).length, reference_docs: this.visibleRefs((data.programs[name] || { refs: [] }).refs).length })),
+    };
+  }
+
+  // 사업 자료 중 AI 에 보여도 되는 것만: [{ path, kind }]
+  visibleRefs(refs) {
+    const ok = new Set(this.visibleDocs((refs || []).map((r) => r.rel)));
+    return (refs || []).filter((r) => ok.has(r.rel)).map((r) => ({ path: r.rel, kind: r.kind }));
+  }
+
+  // 사업 하나: 사업 자료(공고문·RFP 등) + 그 사업의 지원 건
+  getProgram(name) {
+    const data = appsLib.load(this.root());
+    const key = appsLib.programName(name);
+    const items = data.items.filter((a) => a.program === key);
+    if (!items.length && !data.programs[key]) {
+      const all = [...new Set(data.items.map((a) => a.program).filter(Boolean))];
+      throw new Error(`'${key}' 사업이 없습니다. 있는 사업: ${all.join(", ") || "(없음)"}`);
+    }
+    return {
+      program: key,
+      reference_docs: this.visibleRefs((data.programs[key] || { refs: [] }).refs),
+      applications: items.map((a) => ({ id: a.id, title: a.title || a.topic, year: a.year, progress: appsLib.progress(a).state })),
+      note_for_ai: "문서를 쓰기 전에 reference_docs 의 공고문·RFP·평가 기준을 read_document 로 읽고, 작성 양식은 inspect_form 으로 확인하세요.",
+    };
+  }
+
+  getApplication(id) {
+    const data = appsLib.load(this.root());
+    const a = data.items.find((x) => x.id === id);
+    if (!a) throw new Error("없는 지원 건입니다: " + id + " (list_applications 로 id 를 확인하세요)");
+    return {
+      ...a,
+      progress: appsLib.progress(a),
+      stages: a.stages.map((st) => ({ ...st, docs: this.visibleDocs(st.docs) })),
+      refs: undefined,
+      // 남이 만든 참고 자료: 사업 전체(공고문 등)와 이 건만의 것(그 과제의 RFP 등)
+      program_reference_docs: this.visibleRefs((data.programs[a.program] || { refs: [] }).refs),
+      own_reference_docs: this.visibleRefs(a.refs),
+    };
+  }
+
+  saveApplication(op) {
+    const r = appsLib.update(this.root(), op);
+    if (r.program) return this.getProgram(r.program);
+    return r.id ? this.getApplication(r.id) : { done: true, templates: appsLib.load(this.root()).templates };
   }
 
   // ---- 기록 ----

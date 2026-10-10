@@ -37,6 +37,7 @@ const INSTRUCTIONS = `이 서버는 사용자가 직접 작성한 업무 문서(
 - 문서를 새로 쓰거나 고치기 전에는 get_knowledge 로 '회사 지식 카드'(회사 개요·기술·성능 수치·과제 이력·고객사·자주 쓰는 표현)를 먼저 읽고, 그 사실과 표현을 우선 쓰세요.
 - 먼저 library_overview 로 분류·과제·태그를 보고, search_documents 로 찾은 뒤 read_document 로 본문을 읽으세요. 긴 문서는 next_offset 으로 이어 읽습니다.
 - 기본 검색 결과는 각 문서의 최신 버전만 보여 줍니다. 이전 버전이 필요하면 list_versions 를 쓰세요.
+- 사업에 내는 문서(수요조사서·사업계획서·발표자료)를 쓸 때는 list_applications 로 같은 주제·같은 사업의 지원 건을 찾아, 단계별 결과와 탈락 사유(평가 의견)를 읽고 같은 약점을 피하세요. 통과한 건의 표현은 다시 써도 됩니다. 수요조사가 RFP 에 반영됐으면 계획서는 그 RFP 문구에 맞춥니다. 쓰기 전에 get_program(또는 get_application 의 program_reference_docs)으로 그 사업의 공고문·RFP·평가 기준·작성 양식을 먼저 읽고, 공고의 요구 사항과 평가 항목에 맞춰 쓰세요. 문서를 다 쓰면 record_application 으로 지원 건과 단계 결과를 기록하세요.
 - 새 버전을 저장했으면 compare_versions 로 원본과 바뀐 곳(특히 바뀐 숫자)을 확인해 사용자에게 짧게 알려 주세요.
 - 새 문서나 계획서를 쓸 때는 find_related_documents 로 재사용할 만한 이전 자료(같은 과제·기술·키워드)를 찾으세요.
 - 기존 파일은 절대 고칠 수 없습니다. 고친 결과는 항상 새 버전으로 저장합니다:
@@ -261,6 +262,100 @@ tool(
   },
   async ({ path: rel, to }) => lib.convertDocument(rel, to),
   (a, r) => ({ path: a.path, to: a.to, new_path: r ? r.new_path : undefined })
+);
+
+tool(
+  "list_applications",
+  {
+    title: "지원 건 목록",
+    description:
+      "사업 지원 이력: 한 주제(기술)를 한 사업에 낸 '지원 건'마다 단계(예: 수요조사 제출 → RFP 반영 → 사업계획서 제출 → 서류평가 → 발표평가 → 선정·협약)별 결과(통과·탈락·진행)·날짜·평가 의견을 보여 줍니다. " +
+      "비슷한 주제를 다른 사업에 낸 이력, 어느 단계에서 왜 떨어졌는지 확인할 때 씁니다. 자세한 의견과 연결 문서는 get_application.",
+    inputSchema: {
+      query: z.string().optional().describe("과제명·주제·사업명·기관·메모에서 찾을 글자 (예: 그래핀 스텔스, 소재부품)"),
+      state: z.enum(["준비", "진행 중", "탈락", "선정"]).optional(),
+      year: z.number().int().optional(),
+    },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ query, state, year }) => lib.listApplications({ query, state, year }),
+  (a, r) => ({ query: a.query, results: r ? r.total : undefined })
+);
+
+tool(
+  "get_application",
+  {
+    title: "지원 건 자세히",
+    description: "지원 건 하나의 단계별 결과·날짜·평가 의견(탈락 사유 포함)·연결 문서 경로를 모두 보여 줍니다. 연결 문서는 read_document 로 읽을 수 있습니다.",
+    inputSchema: { id: z.string() },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ id }) => lib.getApplication(id),
+  (a) => ({ path: a.id })
+);
+
+tool(
+  "get_program",
+  {
+    title: "사업 자료 보기",
+    description:
+      "사업(예: 소재부품기술개발사업) 하나에 넣어 둔 참고 자료(공고문·RFP·작성 양식·평가 기준 등) 경로와 그 사업의 지원 건을 보여 줍니다. " +
+      "그 사업에 낼 문서를 쓰기 전에 부르고, 공고문·RFP·평가 기준은 read_document 로, 작성 양식은 inspect_form 으로 먼저 읽으세요.",
+    inputSchema: { program: z.string().describe("사업명 (list_applications 의 programs)") },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ program }) => lib.getProgram(program),
+  (a, r) => ({ query: a.program, results: r ? r.reference_docs.length : undefined })
+);
+
+tool(
+  "record_application",
+  {
+    title: "지원 건 기록",
+    description:
+      "지원 건을 만들거나 고칩니다. action: " +
+      "create(새 지원 건: fields 와 template 또는 stages) · update(fields 고치기) · stage(단계 결과 기록: stage, status, date, note) · " +
+      "stages(단계 목록 통째로 바꾸기: 더하기·빼기·이름·순서) · link/unlink(단계에 문서 연결: stage, path) · templates(단계 틀 목록 바꾸기) · " +
+      "ref_link/ref_unlink(공고문·RFP 같은 참고 자료 연결: path, kind, 사업 전체면 program, 이 건만이면 id). " +
+      "결과(status)는 진행·통과·탈락·제외(이 건에는 없는 단계) 중 하나. 탈락했으면 note 에 사유·평가 의견을 꼭 남기세요. 사용자에게 확인받은 사실만 기록하세요.",
+    inputSchema: {
+      action: z.enum(["create", "update", "stage", "stages", "link", "unlink", "templates", "ref_link", "ref_unlink"]),
+      program: z.string().optional().describe("ref_link/ref_unlink 때 사업명 (사업 전체의 자료로 붙일 때)"),
+      kind: z.enum(["공고문", "RFP", "작성 양식", "평가 기준", "참고 자료"]).optional().describe("ref_link 때 자료 종류"),
+      id: z.string().optional().describe("지원 건 id (create·templates 는 필요 없음)"),
+      fields: z
+        .object({ title: z.string().optional(), topic: z.string().optional(), program: z.string().optional(), agency: z.string().optional(), year: z.number().int().optional(), memo: z.string().optional() })
+        .optional()
+        .describe("title: 과제명, topic: 주제(기술), program: 사업명, agency: 전문기관"),
+      template: z.string().optional().describe("create 때 단계 틀 이름 (list_applications 의 templates)"),
+      stage: z.string().optional().describe("단계 이름"),
+      status: z.enum(["", "진행", "통과", "탈락", "제외"]).optional(),
+      date: z.string().optional().describe("YYYY-MM-DD"),
+      note: z.string().optional().describe("평가 의견·탈락 사유·메모"),
+      path: z.string().optional().describe("link/unlink 할 문서 경로 (search_documents 의 path 또는 fill_form 의 new_path)"),
+      stages: z.array(z.object({ name: z.string(), status: z.string().optional(), date: z.string().optional(), note: z.string().optional(), docs: z.array(z.string()).optional() })).optional(),
+      templates: z.array(z.object({ name: z.string(), stages: z.array(z.string()) })).optional(),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false },
+  },
+  async (a) => {
+    const op = { type: a.action, id: a.id };
+    if (a.action === "create") Object.assign(op, { fields: a.fields || {}, template: a.template, stages: a.stages });
+    else if (a.action === "update") op.fields = a.fields || {};
+    else if (a.action === "stage") Object.assign(op, { stage: a.stage, patch: { status: a.status, date: a.date, note: a.note } });
+    else if (a.action === "stages") op.stages = a.stages;
+    else if (a.action === "link" || a.action === "unlink") {
+      // 연결은 보관함에 있는(그리고 AI 에 보여도 되는) 문서나 방금 만든 문서만
+      const rel = a.action === "link" ? lib.formSource(a.path).v.rel : String(a.path || "");
+      Object.assign(op, { stage: a.stage, rel });
+    } else if (a.action === "ref_link" || a.action === "ref_unlink") {
+      const rel = a.action === "ref_link" ? lib.formSource(a.path).v.rel : String(a.path || "");
+      Object.assign(op, { program: a.id ? undefined : a.program, rel, kind: a.kind });
+    } else if (a.action === "templates") op.templates = a.templates;
+    for (const k of Object.keys(op.patch || {})) if (op.patch[k] === undefined) delete op.patch[k];
+    return lib.saveApplication(op);
+  },
+  (a, r) => ({ path: a.id || (r && r.id), action: a.action, stage: a.stage, status: a.status })
 );
 
 tool(

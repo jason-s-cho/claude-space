@@ -115,6 +115,7 @@
     </div>
     <ul class="list" id="list" role="listbox" aria-label="문서 목록"></ul>
     <div class="empty" id="empty" hidden></div>
+    <div class="apps-board" id="appsBoard" hidden></div>
   </section>
 
   <aside class="detail" id="detail" aria-label="문서 정보"></aside>
@@ -294,6 +295,41 @@
   </div>
 </dialog>
 
+<dialog id="appNewDlg" class="move-dlg">
+  <div class="move-form an-form">
+    <h2>새 지원 건</h2>
+    <p class="hint">한 주제(기술)를 한 사업에 낸 것을 지원 건 하나로 기록합니다. 같은 주제를 다른 사업에도 냈으면 지원 건을 따로 만드세요.</p>
+    <div class="af-grid an-grid">
+      <label class="af"><span>과제명</span><input id="anTitle" placeholder="예: 300mm급 무손상 전사 기반 광학투명 스텔스 패널"></label>
+      <label class="af"><span>주제(기술)</span><input id="anTopic" placeholder="예: 그래핀 스텔스 패널"></label>
+      <label class="af"><span>사업명</span><input id="anProgram" list="programList" placeholder="예: 소재부품기술개발 (이미 쓴 사업명은 목록에서 고르기)"></label>
+      <label class="af"><span>전문기관</span><input id="anAgency" placeholder="예: KEIT"></label>
+      <label class="af"><span>연도</span><input id="anYear" type="number"></label>
+      <label class="af"><span>단계 틀</span><select class="select" id="anTemplate"></select></label>
+    </div>
+    <p class="hint an-stages" id="anStages"></p>
+    <div class="settings-actions">
+      <button class="btn ghost" id="anCancel" type="button">취소</button>
+      <button class="btn primary" id="anGo" type="button">만들기</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="appTplDlg" class="move-dlg">
+  <div class="move-form tpl-form">
+    <h2>단계 틀</h2>
+    <p class="hint">사업 유형마다 기본 단계 목록을 둡니다. 새 지원 건을 만들 때 고르고, 만든 뒤에도 지원 건마다 단계를 더하거나 빼거나 이름·순서를 바꿀 수 있습니다. 틀을 바꿔도 이미 만든 지원 건은 그대로입니다.</p>
+    <div></div>
+    <div class="tpl-list" id="tplList"></div>
+    <div class="settings-actions">
+      <button class="btn ghost" id="tplAdd" type="button">+ 틀 추가</button>
+      <span style="flex:1"></span>
+      <button class="btn ghost" id="tplCancel" type="button">취소</button>
+      <button class="btn primary" id="tplSave" type="button">저장</button>
+    </div>
+  </div>
+</dialog>
+
 <dialog id="cmpDlg" class="move-dlg">
   <div class="move-form cmp-form">
     <h2>바뀐 곳 비교</h2>
@@ -341,5 +377,7 @@
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script src="app.js"></script>
+<script src="apps.js"></script>
+<datalist id="programList"></datalist>
 </body>
 </html>

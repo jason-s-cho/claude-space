@@ -21,3 +21,12 @@ test("설치 파일에 앱이 쓰는 폴더가 모두 들어간다", () => {
     }
   }
 });
+
+test("화면 스크립트를 같이 읽어도 이름이 겹치지 않는다 (겹치면 뒤 파일이 통째로 안 읽힌다)", () => {
+  const vm = require("vm");
+  const html = fs.readFileSync(path.join(__dirname, "..", "app", "index.html"), "utf8");
+  const scripts = [...html.matchAll(/<script src="([^"]+)"/g)].map((m) => m[1]).filter((s) => !/^https?:/.test(s));
+  assert.ok(scripts.length >= 2);
+  const code = scripts.map((s) => fs.readFileSync(path.join(__dirname, "..", "app", s), "utf8")).join("\n;\n");
+  assert.doesNotThrow(() => new vm.Script(code));
+});

@@ -199,7 +199,8 @@ function isInside(root, p) {
 
 /**
  * paths: 놓은 파일·폴더 경로
- * opts: { layout: "category" | "root", options: 분류 옵션, onProgress({ done, total, current }) }
+ * opts: { layout: "category" | "root", options: 분류 옵션, onProgress({ done, total, current }),
+ *         folder: 넣을 폴더(문서 폴더 기준, 주면 분류와 상관없이 여기에), category: 이 분류로 정해 둔다(사용자가 고른 것처럼) }
  * 결과: { imported: [{ rel, category, from }], existing: [{ rel, name }], skipped: [{ name, reason }] }
  */
 async function importFiles(index, paths, opts = {}) {
@@ -219,11 +220,13 @@ async function importFiles(index, paths, opts = {}) {
       if (isInside(root, src)) {
         const rel = path.relative(root, src).split(path.sep).join("/");
         if (!index.files[rel]) await indexer.addFile(index, src, opts.options);
+        if (opts.category && index.files[rel] && !index.files[rel].userCategory) index.files[rel].userCategory = opts.category;
         existing.push({ rel, name, reason: "이미 문서 폴더 안에 있음" });
         continue;
       }
       let dir = root;
-      if (opts.layout !== "root") {
+      if (opts.folder) dir = path.join(root, ...opts.folder.split("/"));
+      else if (opts.layout !== "root") {
         const x = await extract(src);
         // 원래 있던 폴더 이름도 단서로 쓴다. (예: …/고객사/현대모비스/단가표.xlsx)
         const from = path.dirname(src).split(path.sep).filter(Boolean).slice(-2).join("/");
@@ -243,6 +246,7 @@ async function importFiles(index, paths, opts = {}) {
       const st = await fs.promises.stat(src);
       await fs.promises.utimes(dest, st.atime, st.mtime);
       const entry = await indexer.addFile(index, dest, opts.options);
+      if (opts.category) entry.userCategory = opts.category;
       imported.push({ rel, category: indexer.effective(entry).category, from: src });
     } catch (e) {
       skipped.push({ name, reason: String((e && e.message) || e).slice(0, 120) });
