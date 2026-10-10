@@ -68,15 +68,17 @@ function todoData() {
   };
 }
 
-// 왼쪽 메뉴 '할 일' 옆 숫자: 바로 챙겨야 하는 것 (7일 안 마감·지난 마감, 30일 안 만료 증빙, 대장에 없는 번호)
+// 왼쪽 메뉴 '할 일' 옆 숫자: 바로 챙겨야 하는 것 (7일 안 마감·지난 마감, 30일 안 만료 증빙)
 function todoCount() {
   if (!S.docs) return 0;
   const t = todoData();
-  return t.deadlines.filter((u) => u.daysLeft <= 7).length + t.certs.length + t.ipSug.length;
+  return t.deadlines.filter((u) => u.daysLeft <= 7).length + t.certs.length; // 대장에 넣을 번호는 급하지 않아 세지 않는다
 }
 
-function todoCard(iconName, title, n, body, foot = "") {
-  return `<section class="todo-card"><h3>${icon(iconName)}${title}${n ? `<small>${n}</small>` : ""}</h3>${body}${foot ? `<div class="todo-foot">${foot}</div>` : ""}</section>`;
+// allKind: 이 카드 항목을 한 번에 숨기는 '모두 확인함' (항목이 2개 넘을 때만)
+function todoCard(iconName, title, n, body, foot = "", allKind = "") {
+  const all = allKind && n > 2 ? `<button class="link-btn todo-all" data-t-hideall="${allKind}" type="button">모두 확인함</button>` : "";
+  return `<section class="todo-card"><h3>${icon(iconName)}${title}${n ? `<small>${n}</small>` : ""}${all}</h3>${body}${foot ? `<div class="todo-foot">${foot}</div>` : ""}</section>`;
 }
 
 function renderTodoView() {
@@ -98,7 +100,9 @@ function renderTodoView() {
         t.deadlines.length,
         `<ul class="todo-list">${t.deadlines
           .map((u) => `<li><button data-t-app="${esc(u.id)}" type="button"><span class="dday ${ddayClass(u.daysLeft)}">${ddayText(u.daysLeft)}</span><b>${esc(u.stage)}</b><span class="t-sub">${esc(u.title)}</span><small>${esc(dueShort(u.due))}</small></button>${hideBtn(todoKey.due(u))}</li>`)
-          .join("")}</ul>`
+          .join("")}</ul>`,
+        "",
+        "due"
       )
     );
 
@@ -125,7 +129,8 @@ function renderTodoView() {
           .slice(0, 5)
           .map((x) => `<li><button data-t-view="ip" type="button"><span class="ip-right">${esc(x.right)}</span><b>${esc(x.appNo)}</b><span class="t-sub">${esc(x.title || "")}</span></button>${hideBtn(todoKey.ip(x))}</li>`)
           .join("")}</ul>`,
-        `<button class="btn sm" data-t-view="ip" type="button">지식재산 대장에서 넣기</button>`
+        `<button class="btn sm" data-t-view="ip" type="button">지식재산 대장에서 넣기</button>`,
+        "ip"
       )
     );
 
@@ -149,7 +154,8 @@ function renderTodoView() {
         <ul class="todo-list">${[...t.scanned.slice(0, 4).map((d) => [d, "읽을 차례"]), ...t.ocrFailed.slice(0, 3).map((d) => [d, "읽지 못함"])]
           .map(([d, st]) => `<li><button data-t-doc="${esc(d.rel)}" type="button"><b>${esc(d.base)}</b><small>${st}</small></button>${hideBtn(todoKey.ocr(d))}</li>`)
           .join("")}</ul>`,
-        S.platform === "win32" ? "" : "글자 읽기는 윈도우에서만 됩니다"
+        S.platform === "win32" ? "" : "글자 읽기는 윈도우에서만 됩니다",
+        "ocr"
       )
     );
   }
@@ -161,7 +167,8 @@ function renderTodoView() {
         "아직 없는 작성 카드",
         t.missingCards.length,
         `<ul class="card-rows">${t.missingCards.slice(0, 5).map((c) => cardRowHtml(c.kind, c.name).replace(/<\/li>\s*$/, `${hideBtn(todoKey.card(c))}</li>`)).join("")}</ul>`,
-        "진행 중인 지원 건에 쓰이는 주제·사업·문서 종류입니다"
+        "진행 중인 지원 건에 쓰이는 주제·사업·문서 종류입니다",
+        "card"
       )
     );
 
@@ -216,6 +223,14 @@ $("appsBoard").addEventListener("click", async (e) => {
   if (b.dataset.tHide) {
     hideTodo(b.dataset.tHide);
     renderSide(); // 왼쪽 '할 일' 숫자
+    return renderTodoView();
+  }
+  if (b.dataset.tHideall) {
+    const t = todoData();
+    const k = b.dataset.tHideall;
+    const list = { due: t.deadlines, ip: t.ipSug, card: t.missingCards, ocr: [...t.scanned, ...t.ocrFailed] }[k] || [];
+    for (const x of list) hideTodo(todoKey[k](x));
+    renderSide();
     return renderTodoView();
   }
   if (b.dataset.tAct === "unhide") {
