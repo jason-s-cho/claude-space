@@ -26,6 +26,9 @@ test("Claude 데스크톱 설정: 다른 커넥터는 그대로 두고 넣고 �
   // 실행 파일 위치가 바뀌면 '다시 연결' 필요
   st = cc.status({ ...entry, command: "D:\\다른곳\\app.exe" }, [file])[0];
   assert.ok(st.connected && !st.matches);
+  // 앱 데이터 폴더가 다르면 커넥터가 다른 설정을 읽으므로 역시 '다시 연결'
+  st = cc.status({ ...entry, env: { ...entry.env, DOCMANAGER_USERDATA: "C:\\Users\\me\\AppData\\Roaming\\doc-manager" } }, [file])[0];
+  assert.ok(st.connected && !st.matches);
   // 해제: 내 항목만 지운다
   cc.disconnect([file]);
   const after = JSON.parse(fs.readFileSync(file, "utf8"));

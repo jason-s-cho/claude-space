@@ -13,7 +13,7 @@ const DAY = 86400000;
 let S = { root: "", categories: [], docs: [], scanning: false, progress: null, settings: {}, keywordGroups: [], defaultKeywords: {}, techTags: [] };
 let byRel = new Map();
 let catById = {};
-const filter = { view: "all", tags: new Set(), kind: "", project: "" };
+const filter = { view: "todo", tags: new Set(), kind: "", project: "" }; // 켜면 '할 일'부터
 let query = "";
 let results = null; // 검색 중이면 Map(rel → { score, snippet })
 let hlTerms = []; // 검색어 중 화면에 칠할 글자
@@ -40,7 +40,7 @@ function setPref(key, value) {
   } catch {}
 }
 let groupVersions = pref("groupVersions", true);
-const openGroups = new Set(pref("openGroups", ["국가과제·지원사업", "회사소개", "홍보"]));
+const openGroups = new Set(pref("openGroups2", [])); // 분류 묶음은 처음엔 접어 둔다 (메뉴가 한 화면에 들어오게)
 
 // ---------- 작은 도구 ----------
 
@@ -157,7 +157,7 @@ function rebuildDupMap() {
 // ---------- 걸러내기 ----------
 
 const isAppsView = () => filter.view === "apps" || filter.view.startsWith("apps:");
-const isBoardView = () => isAppsView() || filter.view === "ip"; // 문서 목록 대신 대장 화면을 쓰는 보기
+const isBoardView = () => isAppsView() || filter.view === "ip" || filter.view === "todo"; // 문서 목록 대신 대장 화면을 쓰는 보기
 
 function matchesView(d, view) {
   if (view === "all") return true;
@@ -215,11 +215,9 @@ function renderSide() {
   const count = (fn) => docs.filter(fn).length;
   let h = "";
 
-  h += '<div class="side-label">보기</div>';
-  h += navItem("all", "전체 문서", docs.length, { icon: "files" });
-  h += navItem("starred", "즐겨찾기", count((d) => d.starred), { icon: "star" });
-  h += navItem("recent", "최근 30일", count((d) => Date.now() - d.mtimeMs < 30 * DAY), { icon: "clock" });
-  // 지원 현황: 사업명별 하위 항목 (한 사업에 수요조사를 여러 건 내므로)
+  // 업무: 할 일 · 지원 현황(사업명별) · 지식재산 대장
+  h += '<div class="side-label">업무</div>';
+  h += navItem("todo", "할 일", typeof todoCount === "function" ? todoCount() : 0, { icon: "check" });
   const appItems = (S.applications && S.applications.items) || [];
   const programs = appProgramCounts(appItems);
   if (programs.length) {
@@ -231,21 +229,22 @@ function renderSide() {
     h += "</div></div>";
   } else h += navItem("apps", "지원 현황", appItems.length, { icon: "briefcase" });
   h += navItem("ip", "지식재산 대장", ((S.ip && S.ip.items) || []).length, { icon: "bulb" });
+
+  // 문서
+  h += '<div class="side-label">문서</div>';
+  h += navItem("all", "전체 문서", docs.length, { icon: "files" });
+  h += navItem("starred", "즐겨찾기", count((d) => d.starred), { icon: "star" });
+  h += navItem("recent", "최근 30일", count((d) => Date.now() - d.mtimeMs < 30 * DAY), { icon: "clock" });
   if (lastImported.size) h += navItem("imported", "방금 넣은 문서", count((d) => lastImported.has(d.rel)), { icon: "inbox" });
-  const misplacedN = count((d) => d.misplaced);
-  if (misplacedN || filter.view === "misplaced") h += navItem("misplaced", "제자리가 아닌 문서", misplacedN, { icon: "move" });
-  const dupN = count((d) => dupOf.has(d.rel));
-  if (dupN || filter.view === "duplicates") h += navItem("duplicates", "중복 파일", dupN, { icon: "copy" });
+  // 제자리가 아닌 문서·중복 파일은 '할 일'에서 들어간다 (보고 있는 동안만 여기에도 보인다)
+  if (filter.view === "misplaced") h += navItem("misplaced", "제자리가 아닌 문서", count((d) => d.misplaced), { icon: "move" });
+  if (filter.view === "duplicates") h += navItem("duplicates", "중복 파일", count((d) => dupOf.has(d.rel)), { icon: "copy" });
 
   const saved = S.settings.savedSearches || [];
-  if (saved.length) {
-    h += '<div class="side-label">저장한 검색</div>';
-    saved.forEach((sv, i) => {
-      h += `<div class="saved-row"><button class="nav-item" data-saved="${i}" type="button" title="${esc(savedTitle(sv))}">${icon("bookmark", "nav-icon")}<span class="label">${esc(sv.name)}</span></button><button class="x" data-unsave="${i}" type="button" aria-label="삭제" title="삭제">${icon("x")}</button></div>`;
-    });
-  }
+  for (const [i, sv] of saved.entries())
+    h += `<div class="saved-row"><button class="nav-item" data-saved="${i}" type="button" title="${esc(savedTitle(sv))}">${icon("bookmark", "nav-icon")}<span class="label">${esc(sv.name)}</span></button><button class="x" data-unsave="${i}" type="button" aria-label="삭제" title="삭제">${icon("x")}</button></div>`;
 
-  // 분류: 그룹은 접었다 펼 수 있다
+  // 분류: 묶음은 접었다 펼 수 있다 (처음엔 접혀 있음)
   h += '<div class="side-label">분류</div>';
   const seenGroups = new Set();
   for (const c of S.categories) {
@@ -255,7 +254,8 @@ function renderSide() {
       seenGroups.add(c.group);
       const cats = S.categories.filter((x) => x.group === c.group);
       const n = count((d) => (catById[d.category] || {}).group === c.group);
-      h += `<div class="nav-group${openGroups.has(c.group) ? " open" : ""}" data-group="${esc(c.group)}">`;
+      const open = openGroups.has(c.group) || cats.some((x) => filter.view === "cat:" + x.id);
+      h += `<div class="nav-group${open ? " open" : ""}" data-group="${esc(c.group)}">`;
       h += navItem("group:" + c.group, c.group, n, { icon: GROUP_ICON[c.group] || "folder", chev: true });
       h += '<div class="nav-children">';
       for (const x of cats) h += navItem("cat:" + x.id, x.label, count((d) => d.category === x.id), { sub: true, color: x.color });
@@ -266,15 +266,27 @@ function renderSide() {
   }
   h += navItem("cat:other", "미분류", count((d) => d.category === "other"), { icon: CAT_ICON.other });
 
+  const side = $("side");
+  const scroll = side.scrollTop;
+  side.innerHTML = h;
+  side.scrollTop = scroll;
+}
+
+// 목록 위 '거르기': 과제·연도·파일 형식·태그·자주 나오는 키워드 (예전에는 왼쪽 메뉴 아래에 있었다)
+function filterPanelHtml() {
+  const docs = S.docs;
+  const count = (fn) => docs.filter(fn).length;
+  let h = "";
   // 등록한 과제
   const projects = S.settings.projects || [];
   if (projects.length) {
-    h += '<div class="side-label">과제</div>';
+    h += '<div class="fp-label">과제</div><div class="chip-cloud">';
     for (const p of projects) {
       const mine = docs.filter((d) => d.tags.includes(p.name));
       const done = mine.length && mine.every((d) => d.tags.includes("완료"));
-      h += `<button class="nav-item${filter.project === p.name ? " on" : ""}${mine.length ? "" : " zero"}" data-project="${esc(p.name)}" type="button">${icon("briefcase", "nav-icon")}<span class="label">${esc(p.name)}</span>${done ? '<span class="done-pill">완료</span>' : ""}<span class="n">${mine.length}</span></button>`;
+      h += `<button class="chip-btn${filter.project === p.name ? " on" : ""}" data-project="${esc(p.name)}" type="button">${icon("briefcase")}${esc(p.name)}${done ? " ✓" : ""}<small>${mine.length}</small></button>`;
     }
+    h += "</div>";
   }
 
   const tagCount = new Map();
@@ -282,21 +294,21 @@ function renderSide() {
   const projectNames = new Set(projects.map((p) => p.name));
   const years = [...tagCount.keys()].filter((t) => YEAR_RE.test(t)).sort().reverse();
   if (years.length) {
-    h += '<div class="side-label">연도</div><div class="chip-cloud">';
+    h += '<div class="fp-label">연도</div><div class="chip-cloud">';
     for (const y of years) h += chipBtn(y, tagCount.get(y));
     h += "</div>";
   }
 
   const kinds = Object.keys(KIND_LABEL).filter((k) => count((d) => d.kind === k));
   if (kinds.length) {
-    h += '<div class="side-label">파일 형식</div><div class="chip-cloud">';
+    h += '<div class="fp-label">파일 형식</div><div class="chip-cloud">';
     for (const k of kinds) h += `<button class="chip-btn${filter.kind === k ? " on" : ""}" data-kind="${k}" type="button"><span class="dot" style="background:var(--k-${k})"></span>${KIND_LABEL[k]}<small>${count((d) => d.kind === k)}</small></button>`;
     h += "</div>";
   }
 
   const tags = [...tagCount.entries()].filter(([t]) => !YEAR_RE.test(t) && !projectNames.has(t)).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ko"));
   if (tags.length) {
-    h += '<div class="side-label">태그</div><div class="chip-cloud">';
+    h += '<div class="fp-label">태그</div><div class="chip-cloud">';
     const limit = showAllTags ? tags.length : 24;
     for (const [t, n] of tags.filter(([t], i) => i < limit || filter.tags.has(t))) h += chipBtn(t, n);
     h += "</div>";
@@ -308,14 +320,14 @@ function renderSide() {
   for (const d of docs) for (const k of d.keywords || []) kwCount.set(k, (kwCount.get(k) || 0) + 1);
   const kws = [...kwCount.entries()].filter(([, n]) => n >= 2).sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "ko")).slice(0, 20);
   if (kws.length) {
-    h += '<div class="side-label" title="여러 문서에서 핵심 키워드로 뽑힌 단어. 누르면 본문 검색">자주 나오는 키워드</div><div class="chip-cloud">';
+    h += '<div class="fp-label" title="여러 문서에서 핵심 키워드로 뽑힌 단어. 누르면 본문 검색">자주 나오는 키워드</div><div class="chip-cloud">';
     for (const [k, n] of kws) h += `<button class="chip-btn kw" data-kw="${esc(k)}" type="button">${esc(k)}<small>${n}</small></button>`;
     h += "</div>";
   }
-  const side = $("side");
-  const scroll = side.scrollTop;
-  side.innerHTML = h;
-  side.scrollTop = scroll;
+  return h || '<div class="muted small">거를 항목이 아직 없습니다.</div>';
+}
+function activeFilterCount() {
+  return filter.tags.size + (filter.kind ? 1 : 0) + (filter.project ? 1 : 0);
 }
 
 function chipBtn(t, n) {
@@ -331,6 +343,7 @@ function viewLabel(view) {
   if (view === "apps") return "지원 현황";
   if (view.startsWith("apps:")) return view.slice(5) || "사업명 없음";
   if (view === "ip") return "지식재산 대장";
+  if (view === "todo") return "할 일";
   if (view === "duplicates") return "중복 파일";
   if (view.startsWith("group:")) return view.slice(6);
   if (view.startsWith("cat:")) return catLabel(view.slice(4));
@@ -363,8 +376,9 @@ function certCardHtml(d) {
     ${latestDoc ? `<p class="hint">같은 종류의 더 새 발급본이 있습니다: <button class="link-btn" data-goto="${esc(latestDoc.rel)}" type="button">${esc(latestDoc.base)}</button></p>` : ""}
     <div class="af-grid">
       <label class="af"><span>발급일${x.issuedAuto ? " <small>(문서에서 찾음)</small>" : ""}</span><input type="date" id="certIssued" value="${esc(d.issuedAt || x.issued || "")}"></label>
-      <label class="af"><span>유효기간 (까지)${x.validAuto ? " <small>(문서에서 찾음)</small>" : ""}</span><input type="date" id="certValid" value="${esc(d.validUntil || x.validUntil || "")}"></label>
+      <label class="af"><span>유효기간 (까지)${x.validAuto ? " <small>(문서에서 찾음)</small>" : ""}</span><input type="date" id="certValid" value="${esc(x.noExpiry ? "" : d.validUntil || x.validUntil || "")}"${x.noExpiry ? " disabled" : ""}></label>
     </div>
+    <label class="check-row"><input type="checkbox" id="certNoExpiry"${x.noExpiry ? " checked" : ""}> 유효기간 없음 <small class="muted">(만료 알림을 받지 않습니다)</small></label>
     ${state ? `<div class="cert-state">${state}</div>` : ""}
     <small class="hint">유효기간이 있으면 만료 30일·7일 전과 당일에 알려 줍니다 (같은 종류의 최신본만). 지원 건의 <b>제출 서류</b>에서 고르면 최신본을 한 폴더에 모아 줍니다.</small>
   </div>`;
@@ -398,6 +412,8 @@ function rowHtml(d, opts = {}) {
 }
 
 function renderList() {
+  if ($("filterBtn")) renderFilterPop();
+  if (filter.view === "todo") return typeof renderTodoView === "function" ? renderTodoView() : null; // home.js (뒤에 읽힌다)
   if (filter.view === "ip") return renderIpView(); // ip.js
   if (isAppsView()) return renderAppsView();
   if (typeof leaveAppsView === "function") leaveAppsView(); // apps.js 는 app.js 다음에 읽힌다
@@ -529,6 +545,7 @@ document.addEventListener("click", (e) => {
 });
 
 async function renderDetail() {
+  if (filter.view === "todo") return typeof renderTodoDetail === "function" ? renderTodoDetail() : null;
   if (filter.view === "ip") return renderIpDetail();
   if (isAppsView()) return renderAppDetail();
   const box = $("detail");
@@ -1022,7 +1039,7 @@ async function renderClaudeTab() {
     : connected
       ? stale
         ? `<span class="state-warn">연결되어 있지만 예전 위치를 가리킵니다. '다시 연결'을 눌러 주세요.</span>`
-        : `<span class="state-on">연결됨</span> · Claude 앱을 다시 켜면 '문서 보관함' 도구가 보입니다.`
+        : `<span class="state-on">연결됨</span> · Claude 앱을 다시 켜면 '워크데스크' 도구가 보입니다.`
       : `연결되어 있지 않습니다. <span class="muted">(${esc(main.path || "")})</span>`;
   $("claudeConnectBtn").textContent = connected ? "다시 연결" : "연결";
   $("claudeDisconnectBtn").hidden = !connected;
@@ -1054,7 +1071,7 @@ async function renderClaudeTab() {
 $("claudeConnectBtn").onclick = async () => {
   const r = await api.claudeConnect();
   if (r.error) toast(r.error, 7000);
-  else toast("Claude 데스크톱 설정에 문서 보관함을 넣었습니다.\nClaude 앱을 완전히 종료했다가 다시 켜 주세요.", 7000);
+  else toast("Claude 데스크톱 설정에 워크데스크을 넣었습니다.\nClaude 앱을 완전히 종료했다가 다시 켜 주세요.", 7000);
   renderClaudeTab();
 };
 $("claudeDisconnectBtn").onclick = async () => {
@@ -1507,26 +1524,58 @@ $("side").addEventListener("click", (e) => {
   if (!b) return;
   if (b.dataset.saved !== undefined) return applySaved(S.settings.savedSearches[+b.dataset.saved]);
   if (b.dataset.unsave !== undefined) return removeSaved(+b.dataset.unsave);
-  if (b.dataset.kw) return setQuery(kwQuery(b.dataset.kw));
-  if (b.id === "moreTags") showAllTags = !showAllTags;
-  else if (b.dataset.view) {
+  if (b.dataset.view) {
     const v = b.dataset.view;
     // 그룹 줄을 누르면 펼치고, 이미 고른 그룹을 다시 누르면 접는다
     if (v.startsWith("group:") || (v === "apps" && b.querySelector(".chev"))) {
       const g = v === "apps" ? "apps" : v.slice(6);
       if (filter.view === v && openGroups.has(g)) openGroups.delete(g);
       else openGroups.add(g);
-      setPref("openGroups", [...openGroups]);
+      setPref("openGroups2", [...openGroups]);
     }
     filter.view = v;
-  } else if (b.dataset.project !== undefined) filter.project = filter.project === b.dataset.project ? "" : b.dataset.project;
+  }
+  renderSide();
+  renderList();
+});
+
+// 거르기 창: 과제·연도·형식·태그·키워드
+function renderFilterPop() {
+  const pop = $("filterPop");
+  if (!pop.hidden) pop.innerHTML = filterPanelHtml();
+  const n = activeFilterCount();
+  $("filterBtn").classList.toggle("on", n > 0);
+  $("filterBtnN").textContent = n ? n : "";
+}
+$("filterBtn").addEventListener("click", (e) => {
+  e.stopPropagation();
+  const pop = $("filterPop");
+  pop.hidden = !pop.hidden;
+  renderFilterPop();
+});
+document.addEventListener("click", (e) => {
+  const pop = $("filterPop");
+  if (!pop.hidden && !e.target.closest("#filterPop, #filterBtn")) pop.hidden = true;
+});
+$("filterPop").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  e.stopPropagation();
+  if (b.dataset.kw) {
+    $("filterPop").hidden = true;
+    return setQuery(kwQuery(b.dataset.kw));
+  }
+  if (b.id === "moreTags") showAllTags = !showAllTags;
+  else if (b.dataset.project !== undefined) filter.project = filter.project === b.dataset.project ? "" : b.dataset.project;
   else if (b.dataset.kind) filter.kind = filter.kind === b.dataset.kind ? "" : b.dataset.kind;
   else if (b.dataset.tag) {
     const t = b.dataset.tag;
     filter.tags.has(t) ? filter.tags.delete(t) : filter.tags.add(t);
   }
+  if (isBoardView()) filter.view = "all"; // 거르기는 문서 목록에서
   renderSide();
   renderList();
+  renderFilterPop();
 });
 
 $("activeFilters").addEventListener("click", (e) => {
@@ -1626,6 +1675,10 @@ $("detail").addEventListener("change", async (e) => {
   if (!d) return;
   if (e.target.id === "certIssued" || e.target.id === "certValid") {
     await patchDoc(d.rel, { [e.target.id === "certIssued" ? "issuedAt" : "validUntil"]: e.target.value });
+    return;
+  }
+  if (e.target.id === "certNoExpiry") {
+    await patchDoc(d.rel, { validUntil: e.target.checked ? "none" : "" });
     return;
   }
   if (e.target.id === "aiExcludeToggle") {

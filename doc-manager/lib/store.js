@@ -41,7 +41,7 @@ function ensureDir(root) {
     fs.accessSync(dir, fs.constants.W_OK);
     if (!existed) {
       fs.writeFileSync(path.join(dir, "README.txt"),
-        "문서 보관함 앱이 이 폴더의 분류·태그·메모와 분류 규칙을 저장하는 곳입니다.\r\n" +
+        "워크데스크 앱이 이 폴더의 분류·태그·메모와 분류 규칙을 저장하는 곳입니다.\r\n" +
         "지우면 직접 고친 분류·태그·메모가 사라집니다. (문서 파일에는 영향 없음)\r\n");
       if (process.platform === "win32") execFile("attrib", ["+h", dir], () => {});
     }

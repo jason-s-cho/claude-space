@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data:; font-src 'self'">
-<title>문서 보관함</title>
+<title>워크데스크</title>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -53,7 +53,7 @@
 <header class="titlebar" id="titlebar">
   <div class="tb-left">
     <div class="app-mark" aria-hidden="true"><svg><use href="#i-files"/></svg></div>
-    <div class="app-name">문서 보관함</div>
+    <div class="app-name">워크데스크</div>
     <button class="folder-chip no-drag" id="rootPath" type="button" title="문서 폴더 열기" hidden>
       <svg><use href="#i-folder"/></svg><span id="rootName"></span>
     </button>
@@ -103,6 +103,10 @@
       <div class="filters" id="activeFilters"></div>
       <div class="toolbar-right">
         <span class="count" id="count"></span>
+        <span class="filter-wrap">
+          <button class="btn sm ghost" id="filterBtn" type="button" title="과제·연도·파일 형식·태그·키워드로 거르기"><svg><use href="#i-hash"/></svg>거르기<b id="filterBtnN"></b></button>
+          <div class="filter-pop" id="filterPop" hidden></div>
+        </span>
         <label class="switch" title="초안·v01·날짜만 다른 같은 문서를 하나로 묶어 최신본만 보여 줍니다">
           <input type="checkbox" id="groupToggle" checked><span class="switch-track"></span><span>버전 묶기</span>
         </label>
@@ -237,7 +241,7 @@
                 <button class="btn ghost" id="knowledgeOpenBtn" type="button">폴더에서 보기</button>
               </div>
             </div>
-            <div class="cmd-row"><code id="knowledgePrompt">문서 보관함의 자료로 회사 지식 카드를 만들어 줘</code><button class="icon-btn" id="copyKnowledgePromptBtn" type="button" title="복사" aria-label="요청 문장 복사"><svg><use href="#i-copy"/></svg></button></div>
+            <div class="cmd-row"><code id="knowledgePrompt">워크데스크의 자료로 회사 지식 카드를 만들어 줘</code><button class="icon-btn" id="copyKnowledgePromptBtn" type="button" title="복사" aria-label="요청 문장 복사"><svg><use href="#i-copy"/></svg></button></div>
             <small class="hint">위 문장을 Claude 데스크톱 <b>일반 채팅</b>에 붙여 넣으면 Claude 가 보관함 문서를 읽고 카드를 만들어 <code>Claude 지식/회사 지식 카드.md</code> 에 저장합니다. 문서가 늘면 "회사 지식 카드 새로 고쳐 줘"라고 하면 됩니다. 이전 내용은 자동으로 보관하고, 맨 아래 <b>사용자 메모</b>는 Claude 가 고치지 않습니다.</small>
             <div id="knowledgeEditor" hidden>
               <textarea id="knowledgeText" rows="16" spellcheck="false"></textarea>
@@ -403,6 +407,7 @@
 <script src="app.js"></script>
 <script src="apps.js"></script>
 <script src="ip.js"></script>
+<script src="home.js"></script>
 <datalist id="programList"></datalist>
 </body>
 </html>

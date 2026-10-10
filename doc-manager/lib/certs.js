@@ -34,6 +34,9 @@ const KINDS = [
   ["기업신용평가", ["기업신용평가", "신용평가등급", "신용평가"]],
 ];
 
+// 유효기간이 없는 서류: 본문의 "~까지"는 사업연도·실적 기간이라 만료일로 보지 않는다 (직접 적으면 그 값을 쓴다)
+const NO_EXPIRY = new Set(["사업자등록증", "법인등기부등본", "정관", "주주명부", "법인인감증명서", "사용인감계", "연구소기업 등록증", "기업부설연구소 인정서", "수출실적증명서", "재무제표", "부가가치세과세표준증명", "4대보험 가입자명부"]);
+
 const norm = (s) => String(s || "").replace(/\s+/g, "").toLowerCase();
 
 // 종류: 파일 이름을 먼저 보고, 없으면 본문 앞부분
@@ -91,8 +94,10 @@ function analyze(docs) {
     const kind = kindOf(d.name, d.text);
     const auto = datesOf(d.text);
     const issued = d.issuedAt || auto.issued;
-    const validUntil = d.validUntil || auto.validUntil;
-    const x = { kind, issued, validUntil, issuedAuto: !d.issuedAt && !!auto.issued, validAuto: !d.validUntil && !!auto.validUntil, sortKey: issued || new Date(d.mtimeMs || 0).toISOString().slice(0, 10), latest: false, latestRel: d.rel };
+    // 직접 적은 값 > (유효기간이 있는 종류만) 문서에서 찾은 값. "none" 은 사용자가 '유효기간 없음'을 고른 것
+    const autoValid = NO_EXPIRY.has(kind) ? "" : auto.validUntil;
+    const validUntil = d.validUntil === "none" ? "" : d.validUntil || autoValid;
+    const x = { kind, issued, validUntil, noExpiry: d.validUntil === "none", issuedAuto: !d.issuedAt && !!auto.issued, validAuto: !d.validUntil && !!autoValid, sortKey: issued || new Date(d.mtimeMs || 0).toISOString().slice(0, 10), latest: false, latestRel: d.rel };
     info.set(d.rel, x);
     if (kind) {
       if (!byKind.has(kind)) byKind.set(kind, []);
@@ -118,4 +123,4 @@ function latestByKind(info) {
   return out.sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind));
 }
 
-module.exports = { KINDS, kindOf, datesOf, daysLeft, analyze, latestByKind };
+module.exports = { KINDS, NO_EXPIRY, kindOf, datesOf, daysLeft, analyze, latestByKind };

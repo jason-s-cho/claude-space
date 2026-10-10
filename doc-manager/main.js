@@ -3,6 +3,8 @@ const { app, BrowserWindow, Menu, shell, ipcMain, dialog, nativeTheme, net, Noti
 app.commandLine.appendSwitch("lang", "ko");
 const fs = require("fs");
 const path = require("path");
+// 앱 데이터 폴더는 package.json 의 name("doc-manager")으로 정해진다 (build.productName 은 실행 중 이름에 쓰이지 않음).
+// 그래서 앱 이름(워크데스크)을 바꿔도 설정·문서 폴더 위치는 그대로 이어진다. name 은 바꾸지 말 것.
 const indexer = require("./lib/indexer");
 const { CATEGORIES, KEYWORDS, KEYWORD_GROUPS, TECH_TAGS, migrateOverrides } = require("./lib/classify");
 const { docFrequency, topKeywords } = require("./lib/keywords");
@@ -51,6 +53,16 @@ function mcpEntry() {
     args: [path.join(app.getAppPath(), "mcp", "server.js")],
     env: { ELECTRON_RUN_AS_NODE: "1", DOCMANAGER_USERDATA: app.getPath("userData") },
   };
+}
+
+// Claude 에 연결해 둔 뒤 설치 위치나 실행 파일 이름이 바뀌면(예: 앱 이름 변경) 연결해 둔 설정만 지금 실행 파일로 고친다
+function refreshClaudeEntry() {
+  if (!app.isPackaged) return; // 개발 중 실행은 설치판 연결을 건드리지 않는다
+  try {
+    const entry = mcpEntry();
+    const stale = claudeConfig.status(entry).filter((t) => t.connected && !t.matches && !t.error).map((t) => t.path);
+    if (stale.length) claudeConfig.connect(entry, stale);
+  } catch {}
 }
 
 // 색인 파일: 보통 문서 폴더 안의 .docmanager/index.json, 폴더에 쓸 수 없으면 앱 데이터 폴더
@@ -1195,7 +1207,7 @@ function createWindow() {
     height: 840,
     minWidth: 860,
     minHeight: 580,
-    title: "문서 보관함",
+    title: "워크데스크",
     icon: path.join(__dirname, "assets", "icon.png"),
     autoHideMenuBar: true,
     titleBarStyle: "hidden",
@@ -1282,7 +1294,7 @@ function checkDeadlines() {
     sent[key] = now;
     changed = true;
     const when = c.daysLeft < 0 ? `${-c.daysLeft}일 전에 만료됐습니다` : c.daysLeft === 0 ? "오늘 만료됩니다" : `${c.daysLeft}일 뒤 만료됩니다`;
-    const n = new Notification({ title: `${c.kind} · ${when}`, body: `유효기간 ${c.validUntil}\n새로 발급받아 문서 보관함에 넣어 주세요.` });
+    const n = new Notification({ title: `${c.kind} · ${when}`, body: `유효기간 ${c.validUntil}\n새로 발급받아 워크데스크에 넣어 주세요.` });
     n.on("click", () => {
       if (!win) return;
       if (win.isMinimized()) win.restore();
@@ -1321,6 +1333,7 @@ app.whenReady().then(() => {
   if (process.platform !== "darwin") Menu.setApplicationMenu(null);
   settings = loadSettings();
   applyTheme();
+  refreshClaudeEntry();
   nativeTheme.on("updated", () => {
     if (win && process.platform !== "darwin") {
       try {

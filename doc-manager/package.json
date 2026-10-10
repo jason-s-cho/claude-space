@@ -1,7 +1,7 @@
 {
   "name": "doc-manager",
   "version": "0.2.0",
-  "description": "문서 보관함 — 내가 만든 문서를 자동 분류·태그하는 데스크톱 앱 (Electron)",
+  "description": "워크데스크 — 국가과제·지원사업 문서, 마감, 회사 증빙, 지식재산을 한곳에서 챙기고 Claude 와 함께 쓰는 데스크톱 앱 (Electron)",
   "main": "main.js",
   "homepage": "https://github.com/jason-s-cho/claude-space",
   "repository": {
@@ -31,7 +31,7 @@
   },
   "build": {
     "appId": "com.jasonscho.docmanager",
-    "productName": "문서 보관함",
+    "productName": "워크데스크",
     "artifactName": "docmanager-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "dist",
@@ -61,8 +61,8 @@
       "deleteAppDataOnUninstall": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "문서 보관함",
-      "uninstallDisplayName": "문서 보관함"
+      "shortcutName": "워크데스크",
+      "uninstallDisplayName": "워크데스크"
     },
     "mac": {
       "category": "public.app-category.productivity",

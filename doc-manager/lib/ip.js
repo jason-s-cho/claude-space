@@ -168,6 +168,20 @@ function readNumbers(text) {
   return { appNos, regNos, title, appDate: near("출원"), regDate: near("등록") };
 }
 
+// 이 문서 자신의 출원번호: 명세서·공보에는 선행기술(특허문헌 1: 10-2011-…)처럼 남의 번호도 많이 나오므로
+// ① 파일 이름의 번호 ② '출원번호'·'(21)' 칸의 번호 ③ 둘 다 없으면 문서 첫머리(서지 사항 자리)의 번호만 본다.
+const NUM = String.raw`(10|20|30|40|41|45)\s?-\s?(\d{4})\s?-\s?(\d{7})(?!\d)`;
+const LABELED_RE = new RegExp(String.raw`(?:출\s*원\s*번\s*호|\(\s*21\s*\))\s*[】\]]?\s*[:：]?\s*(?:제\s*)?` + NUM, "g");
+function ownAppNos(text, name = "") {
+  const fmt = (m) => `${m[1]}-${m[2]}-${m[3]}`;
+  const t = String(text || "");
+  const fromName = [...String(name).matchAll(APP_RE)].map(fmt);
+  const labeled = [...t.matchAll(LABELED_RE)].map(fmt);
+  let own = [...fromName, ...labeled];
+  if (!own.length) own = [...t.slice(0, 800).matchAll(APP_RE)].map(fmt);
+  return [...new Set(own)];
+}
+
 /**
  * 지식재산 분류 문서에서 찾은 번호 가운데 대장에 없는 것: 대장에 넣자고 제안한다.
  * docs: [{ rel, text, category }]  결과: [{ appNo, regNo, right, title, appDate, regDate, docs: [rel] }]
@@ -179,14 +193,15 @@ function suggestions(data, docs) {
   for (const d of docs) {
     if (!/^ip_/.test(d.category || "")) continue;
     const n = readNumbers(d.text);
-    for (const appNo of n.appNos) {
+    const own = ownAppNos(d.text, String(d.rel || "").split("/").pop());
+    for (const appNo of own) {
       if (known.has(appNo)) continue;
       const s = out.get(appNo) || { appNo, regNo: "", right: RIGHT_OF_PREFIX[appNo.slice(0, 2)] || "특허", title: "", appDate: "", regDate: "", docs: [] };
       if (!s.docs.includes(d.rel)) s.docs.push(d.rel);
       s.title = s.title || n.title;
       s.appDate = s.appDate || n.appDate;
       // 한 문서에 출원번호 하나와 등록번호 하나면 같은 건으로 본다
-      if (n.appNos.length === 1 && n.regNos.length === 1 && !knownReg.has(n.regNos[0])) {
+      if (own.length === 1 && n.regNos.length === 1 && !knownReg.has(n.regNos[0])) {
         s.regNo = s.regNo || n.regNos[0];
         s.regDate = s.regDate || n.regDate;
       }
@@ -203,4 +218,4 @@ function toTsv(items) {
   return [head, ...rows].map((r) => r.map((c) => String(c || "").replace(/[\t\n]/g, " ")).join("\t")).join("\n");
 }
 
-module.exports = { RIGHTS, STATUSES, fileOf, empty, load, save, apply, update, renameDocs, readNumbers, suggestions, toTsv, normAppNo, normRegNo, normDate };
+module.exports = { RIGHTS, STATUSES, fileOf, empty, load, save, apply, update, renameDocs, readNumbers, ownAppNos, suggestions, toTsv, normAppNo, normRegNo, normDate };

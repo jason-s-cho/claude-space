@@ -47,7 +47,7 @@ function fold(line) {
  * events: [{ uid, title, description, due }] → .ics 내용
  */
 function toIcs(events, { now = new Date() } = {}) {
-  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//docmanager//문서 보관함//KO", "CALSCALE:GREGORIAN", "METHOD:PUBLISH"];
+  const lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//docmanager//워크데스크//KO", "CALSCALE:GREGORIAN", "METHOD:PUBLISH"];
   const stamp = now.toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
   for (const e of events) {
     const s = span(e.due);
@@ -78,7 +78,7 @@ function eventOf(u) {
   return {
     uid: `${u.id}-${Buffer.from(u.stage).toString("hex").slice(0, 24)}`,
     title: `[마감] ${u.stage} · ${u.title}`,
-    description: [u.program && `사업: ${u.program}`, `지원 건: ${u.title}`, `단계: ${u.stage}`, `마감: ${u.due}`, "문서 보관함에서 만든 일정"].filter(Boolean).join("\n"),
+    description: [u.program && `사업: ${u.program}`, `지원 건: ${u.title}`, `단계: ${u.stage}`, `마감: ${u.due}`, "워크데스크에서 만든 일정"].filter(Boolean).join("\n"),
     due: u.due,
   };
 }

@@ -1,4 +1,4 @@
-// Claude 데스크톱 앱 설정(claude_desktop_config.json)에 문서 보관함 커넥터를 넣고 빼기.
+// Claude 데스크톱 앱 설정(claude_desktop_config.json)에 워크데스크 커넥터를 넣고 빼기.
 // 다른 커넥터 설정은 건드리지 않고 "doc-manager" 항목만 바꾼다. 바꾸기 전에 원래 파일을 .bak 으로 남긴다.
 // 설정 파일이 깨져 있으면(JSON 이 아님) 덮어쓰지 않고 오류를 알린다.
 const fs = require("fs");
@@ -59,7 +59,7 @@ function status(entry, paths = configPaths()) {
         path: p,
         exists: fs.existsSync(p),
         connected: !!cur,
-        matches: !!cur && cur.command === entry.command && JSON.stringify(cur.args) === JSON.stringify(entry.args),
+        matches: !!cur && cur.command === entry.command && JSON.stringify(cur.args) === JSON.stringify(entry.args) && ((cur.env || {}).DOCMANAGER_USERDATA || "") === ((entry.env || {}).DOCMANAGER_USERDATA || ""),
       };
     } catch (e) {
       return { path: p, exists: true, connected: false, matches: false, error: e.message };
