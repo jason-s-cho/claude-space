@@ -17,6 +17,7 @@ const knowledge = require("./knowledge");
 const forms = require("./forms");
 const convertLib = require("./convert");
 const { compareTexts } = require("./diff");
+const appsLib = require("./applications");
 const { groupVersions, nextVersionName, uniqueVersionName } = require("./versions");
 
 const AI_EXCLUDE_TAG = "AI제외";
@@ -400,6 +401,56 @@ class Library {
       changes: changes.slice(0, limit),
       more_changes: changes.length > limit ? changes.length - limit : undefined,
     };
+  }
+
+  // ---- 지원 건 ----
+
+  // AI 에게 보여도 되는 문서만 남긴 연결 목록
+  visibleDocs(docs) {
+    return docs.filter((rel) => {
+      try {
+        this.formSource(rel); // 보관함에 있거나 방금 커넥터가 만든 문서 (AI 제외 문서는 빠진다)
+        return true;
+      } catch {
+        return false;
+      }
+    });
+  }
+
+  // 지원 건 목록 (찾기: 과제명·주제·사업·기관·메모에 들어 있는 글자, 결과: 준비|진행 중|탈락|선정, 연도)
+  listApplications({ query = "", state = "", year } = {}) {
+    const data = appsLib.load(this.root());
+    const q = String(query || "").toLowerCase().replace(/\s+/g, "");
+    const items = data.items
+      .map((a) => ({ a, p: appsLib.progress(a) }))
+      .filter(({ a, p }) => (!q || [a.title, a.topic, a.program, a.agency, a.memo].join(" ").toLowerCase().replace(/\s+/g, "").includes(q)) && (!state || p.state === state) && (!year || a.year === year))
+      .sort((x, y) => (y.a.year || 0) - (x.a.year || 0) || y.a.updatedAt.localeCompare(x.a.updatedAt));
+    return {
+      templates: data.templates,
+      total: items.length,
+      applications: items.map(({ a, p }) => ({
+        id: a.id,
+        title: a.title,
+        topic: a.topic,
+        program: a.program,
+        agency: a.agency || undefined,
+        year: a.year,
+        progress: `${p.state}${p.stage ? " (" + p.stage + ")" : ""}`,
+        stages: a.stages.map((st) => `${st.name}: ${st.status || "-"}${st.date ? " " + st.date : ""}${st.note ? " — " + st.note.slice(0, 80) : ""}`),
+      })),
+    };
+  }
+
+  getApplication(id) {
+    const data = appsLib.load(this.root());
+    const a = data.items.find((x) => x.id === id);
+    if (!a) throw new Error("없는 지원 건입니다: " + id + " (list_applications 로 id 를 확인하세요)");
+    return { ...a, progress: appsLib.progress(a), stages: a.stages.map((st) => ({ ...st, docs: this.visibleDocs(st.docs) })) };
+  }
+
+  saveApplication(op) {
+    const r = appsLib.update(this.root(), op);
+    return r.id ? this.getApplication(r.id) : { done: true, templates: appsLib.load(this.root()).templates };
   }
 
   // ---- 기록 ----

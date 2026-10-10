@@ -31,6 +31,7 @@ const knowledge = require("./lib/knowledge");
 const duplicates = require("./lib/duplicates");
 const { convert, targetsFor } = require("./lib/convert");
 const updates = require("./lib/updates");
+const appsLib = require("./lib/applications");
 const { readLog } = require("./lib/library");
 
 // Claude 커넥터 실행 방법: 이 앱의 실행 파일을 Node 처럼 돌려 mcp/server.js 를 실행한다.
@@ -93,6 +94,18 @@ function loadFolderSettings(root) {
   else saveSettings();
 }
 
+// ---- 지원 건 (.docmanager/applications.json) ----
+let appsData = appsLib.empty();
+let appsMtime = 0;
+function loadApps(root) {
+  appsData = appsLib.load(root);
+  appsMtime = mtimeOf(appsLib.fileOf(root));
+}
+// 화면에 보낼 지원 건: 지금 단계(진행 중·탈락·선정)를 붙여서
+function appsState() {
+  return { templates: appsData.templates, statuses: appsLib.STATUSES, items: appsData.items.map((a) => ({ ...a, progress: appsLib.progress(a) })) };
+}
+
 // 문서 폴더를 연다: 예전 색인 옮기기 → 분류 규칙 읽기 → 색인 읽기
 function loadRoot(root) {
   dupGroups = [];
@@ -101,6 +114,7 @@ function loadRoot(root) {
   const loc = store.indexLocation(root, userFile("index.json"));
   indexFile = loc.file;
   indexInFolder = loc.inFolder;
+  loadApps(root);
   textFile = store.textCacheFile(app.getPath("userData"), root);
   index = indexer.loadIndex(indexFile, root, { anyRoot: indexInFolder, textFile });
   indexDiskMtime = mtimeOf(indexFile);
@@ -118,6 +132,11 @@ function syncFromDisk() {
   const sMtime = mtimeOf(sFile);
   if (sMtime && sMtime !== folderSettingsMtime) {
     loadFolderSettings(settings.root);
+    changed = true;
+  }
+  const aMtime = mtimeOf(appsLib.fileOf(settings.root));
+  if (aMtime !== appsMtime) {
+    loadApps(settings.root); // Claude 커넥터나 다른 PC가 지원 건을 고쳤다
     changed = true;
   }
   const iMtime = mtimeOf(indexFile);
@@ -271,6 +290,7 @@ function state() {
     scanning,
     progress,
     docs: index ? Object.values(index.files).map(docSummary) : [],
+    applications: appsState(),
     families: (() => {
       const out = {};
       for (const v of versionMap().values()) out[v.key] = v.order;
@@ -622,9 +642,23 @@ function registerIpc() {
     try {
       const newRel = await moveToFolder(index, rel, expectedFolder(eff.category, eff.tags, settings.partners, settings.projects));
       persistIndex();
+      if (appsLib.renameDocs(settings.root, [{ from: rel, to: newRel }])) loadApps(settings.root);
       keywordCache = versionCache = null;
       send("state", state());
       return { rel: newRel };
+    } catch (err) {
+      return { error: String((err && err.message) || err) };
+    }
+  });
+
+  // ---- 지원 건 ----
+  ipcMain.handle("apps-op", (_e, op) => {
+    try {
+      if (!settings.root) throw new Error("문서 폴더를 먼저 골라 주세요.");
+      const r = appsLib.update(settings.root, op);
+      loadApps(settings.root);
+      send("state", state());
+      return { id: r.id };
     } catch (err) {
       return { error: String((err && err.message) || err) };
     }
@@ -699,6 +733,7 @@ function registerIpc() {
     const r = await moveManyToFolders(index, rels, expectedDirOf);
     if (r.moved.length) {
       persistIndex();
+      if (appsLib.renameDocs(settings.root, r.moved)) loadApps(settings.root);
       keywordCache = versionCache = null;
       send("state", state());
     }

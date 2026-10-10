@@ -542,3 +542,70 @@ dialog[open] .move-form { animation: pop 0.16s var(--ease); }
 .update-bar small { color: var(--text-3); font-size: 11.5px; }
 .update-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
 .about a { color: var(--accent-text); }
+
+/* ---- 지원 현황 ---- */
+.apps-board { flex: 1; overflow-y: auto; padding: 4px 12px 24px; display: flex; flex-direction: column; gap: 6px; }
+.apps-board[hidden] { display: none; }
+.app-row { display: grid; grid-template-columns: minmax(180px, 1.2fr) auto minmax(0, 2fr); gap: 14px; align-items: center; padding: 12px 14px; border: 1px solid transparent; border-radius: var(--r-lg); background: var(--surface); cursor: pointer; }
+.app-row:hover { border-color: var(--line); }
+.app-row.sel { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.app-title { font-weight: 650; overflow-wrap: anywhere; }
+.app-meta { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+.app-state { justify-self: start; font-size: 12px; font-weight: 650; padding: 2px 10px; border-radius: 999px; white-space: nowrap; background: var(--surface-3); color: var(--text-2); }
+.app-state.s-doing { background: rgba(214, 158, 46, 0.16); color: #9a6a00; }
+.app-state.s-fail { background: rgba(209, 67, 67, 0.12); color: #c03a3a; }
+.app-state.s-pass { background: rgba(31, 138, 76, 0.13); color: #1f8a4c; }
+.pipe { list-style: none; margin: 0; padding: 0; display: flex; gap: 3px; min-width: 0; }
+.pipe li { flex: 1; min-width: 0; font-size: 11px; padding: 4px 6px; border-radius: 6px; background: var(--surface-3); color: var(--text-3); text-align: center; }
+.pipe li span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pipe li.st-pass { background: rgba(31, 138, 76, 0.16); color: #1f6e3f; }
+.pipe li.st-doing { background: rgba(214, 158, 46, 0.22); color: #8a5e00; }
+.pipe li.st-fail { background: rgba(209, 67, 67, 0.18); color: #b03030; font-weight: 650; }
+.pipe li.st-skip { background: repeating-linear-gradient(45deg, var(--surface-2), var(--surface-2) 4px, var(--surface-3) 4px, var(--surface-3) 8px); text-decoration: line-through; }
+.apps-empty { margin: 40px auto; max-width: 560px; display: grid; justify-items: center; gap: 14px; text-align: center; color: var(--text-2); line-height: 1.7; }
+.apps-empty > svg { width: 30px; height: 30px; color: var(--text-3); }
+.seg-group { display: inline-flex; gap: 2px; padding: 2px; border-radius: 10px; background: var(--surface-3); }
+.seg-btn { border: 0; background: none; font-size: 12.5px; padding: 3px 10px; border-radius: 8px; color: var(--text-2); }
+.seg-btn small { margin-left: 4px; color: var(--text-3); }
+.seg-btn.on { background: var(--surface); color: var(--text); font-weight: 650; box-shadow: var(--shadow-sm); }
+.ficon.app { background: linear-gradient(135deg, #6d6df0, #4a4ac4); color: #fff; display: grid; place-items: center; }
+.ficon.app svg { width: 20px; height: 20px; }
+.af-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 10px; margin-bottom: 8px; }
+.af { display: grid; gap: 3px; font-size: 12px; color: var(--text-3); }
+.af input, .af textarea, .doc-pick, .stage-head input { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; background: var(--surface-2); color: var(--text); font: inherit; font-size: 13px; min-width: 0; }
+.af textarea, .stage textarea { width: 100%; resize: vertical; }
+.af input:focus, .af textarea:focus, .stage input:focus, .stage textarea:focus { outline: none; border-color: var(--accent); background: var(--surface); }
+.stage-list { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 8px; }
+.stage { padding: 8px; border-radius: 10px; border: 1px solid var(--line); border-left-width: 4px; display: grid; gap: 6px; }
+.stage.st-pass { border-left-color: #2f9e5f; }
+.stage.st-doing { border-left-color: #d69e2e; }
+.stage.st-fail { border-left-color: #d14343; }
+.stage.st-skip { opacity: 0.6; }
+.stage-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name tools" "status date"; gap: 6px; align-items: center; }
+.stage-name { grid-area: name; font-weight: 650; }
+.stage-head .select { grid-area: status; justify-self: start; height: 30px; font-size: 12.5px; width: auto; }
+.stage-head input[type="date"] { grid-area: date; width: 140px; }
+.stage-tools { grid-area: tools; display: flex; }
+.stage-tools .icon-btn { width: 24px; height: 24px; font-size: 12px; }
+.stage textarea { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; background: var(--surface-2); font: inherit; font-size: 12.5px; color: var(--text); }
+.stage-docs { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.doc-chip { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; background: var(--surface); max-width: 100%; }
+.doc-chip button { border: 0; background: none; padding: 2px 4px 2px 9px; color: var(--accent-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
+.doc-chip button + button { padding: 2px 6px 2px 2px; color: var(--text-3); }
+.doc-chip button svg { width: 11px; height: 11px; }
+.doc-chip.missing button:first-child { color: var(--text-3); text-decoration: line-through; }
+.link-btn { border: 0; background: none; color: var(--accent-text); font-size: 12px; padding: 2px 6px; }
+.doc-pick { width: 100%; }
+.app-foot { padding: 4px 2px 20px; }
+.app-links { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 4px; }
+.app-links button { border: 0; background: var(--surface-2); width: 100%; text-align: left; padding: 6px 10px; border-radius: 8px; font-size: 12.5px; color: var(--text); }
+.app-links button:hover { background: var(--surface-3); }
+.app-links small { color: var(--text-3); }
+.an-form .af-grid { padding: 0 22px; }
+.an-stages { padding: 4px 22px 12px !important; }
+.tpl-form { width: min(760px, calc(100vw - 32px)); }
+.tpl-list { overflow-y: auto; padding: 4px 22px 12px; display: grid; gap: 10px; }
+.tpl { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
+.tpl input, .tpl textarea { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; background: var(--surface-2); font: inherit; color: var(--text); }
+.tpl-name { font-weight: 650; }
+.tpl button { justify-self: start; }

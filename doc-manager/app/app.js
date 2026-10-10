@@ -208,6 +208,7 @@ function renderSide() {
   h += navItem("all", "전체 문서", docs.length, { icon: "files" });
   h += navItem("starred", "즐겨찾기", count((d) => d.starred), { icon: "star" });
   h += navItem("recent", "최근 30일", count((d) => Date.now() - d.mtimeMs < 30 * DAY), { icon: "clock" });
+  h += navItem("apps", "지원 현황", ((S.applications && S.applications.items) || []).length, { icon: "briefcase" });
   if (lastImported.size) h += navItem("imported", "방금 넣은 문서", count((d) => lastImported.has(d.rel)), { icon: "inbox" });
   const misplacedN = count((d) => d.misplaced);
   if (misplacedN || filter.view === "misplaced") h += navItem("misplaced", "제자리가 아닌 문서", misplacedN, { icon: "move" });
@@ -305,6 +306,7 @@ function viewLabel(view) {
   if (view === "recent") return "최근 30일";
   if (view === "imported") return "방금 넣은 문서";
   if (view === "misplaced") return "제자리가 아닌 문서";
+  if (view === "apps") return "지원 현황";
   if (view === "duplicates") return "중복 파일";
   if (view.startsWith("group:")) return view.slice(6);
   if (view.startsWith("cat:")) return catLabel(view.slice(4));
@@ -342,6 +344,8 @@ function rowHtml(d, opts = {}) {
 }
 
 function renderList() {
+  if (filter.view === "apps") return renderAppsView();
+  if (typeof leaveAppsView === "function") leaveAppsView(); // apps.js 는 app.js 다음에 읽힌다
   visible = filtered();
   let f = "";
   const chip = (label, attr) => `<span class="filter-chip">${label}<button ${attr} type="button" aria-label="해제">${icon("x")}</button></span>`;
@@ -439,6 +443,7 @@ function ensureRowShown(rel) {
 }
 
 async function renderDetail() {
+  if (filter.view === "apps") return renderAppDetail();
   const box = $("detail");
   const d = byRel.get(selected);
   if (!d) {
@@ -518,6 +523,7 @@ async function renderDetail() {
         : ""}
     </div>
     ${timeline}
+    ${appsCardHtml(d)}
     <div class="card">
       <h4>${icon("hash")}태그</h4>
       <div class="tag-edit">${tagChips}<input class="tag-input" id="tagInput" placeholder="+ 태그" list="allTags"></div>
@@ -846,6 +852,7 @@ const TOOL_LABEL = {
   find_related_documents: "관련 문서", save_new_version: "새 버전 저장", prepare_new_version: "새 버전 복사본",
   get_knowledge: "지식 카드 읽기", save_knowledge_card: "지식 카드 저장",
   inspect_form: "양식 보기", fill_form: "양식 채우기", convert_document: "형식 바꾸기", compare_versions: "바뀐 곳 비교",
+  list_applications: "지원 건 목록", get_application: "지원 건 보기", record_application: "지원 건 기록",
 };
 
 async function renderClaudeTab() {
@@ -1403,6 +1410,7 @@ $("list").addEventListener("dblclick", (e) => {
 });
 
 $("detail").addEventListener("click", async (e) => {
+  if (filter.view === "apps") return; // 지원 건 화면은 apps.js 가 맡는다
   const b = e.target.closest("button");
   const d = byRel.get(selected);
   if (!b || !d) return;
@@ -1452,6 +1460,7 @@ $("detail").addEventListener("click", async (e) => {
 });
 
 $("detail").addEventListener("change", async (e) => {
+  if (filter.view === "apps") return;
   const d = byRel.get(selected);
   if (!d) return;
   if (e.target.id === "aiExcludeToggle") {

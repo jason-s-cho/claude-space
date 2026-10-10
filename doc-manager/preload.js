@@ -61,6 +61,7 @@ contextBridge.exposeInMainWorld("docs", {
   knowledgeSave: (content) => ipcRenderer.invoke("knowledge-save", content),
   knowledgeOpen: () => ipcRenderer.invoke("knowledge-open"),
   aiLog: () => ipcRenderer.invoke("ai-log"),
+  appsOp: (op) => ipcRenderer.invoke("apps-op", op),
   checkUpdate: () => ipcRenderer.invoke("check-update"),
   openUpdate: (url) => ipcRenderer.invoke("open-update", url),
   onUpdateAvailable: on("update-available"),
