@@ -873,7 +873,7 @@ const TOOL_LABEL = {
   find_related_documents: "관련 문서", save_new_version: "새 버전 저장", prepare_new_version: "새 버전 복사본",
   get_knowledge: "지식 카드 읽기", save_knowledge_card: "지식 카드 저장",
   inspect_form: "양식 보기", fill_form: "양식 채우기", convert_document: "형식 바꾸기", compare_versions: "바뀐 곳 비교",
-  list_applications: "지원 건 목록", get_application: "지원 건 보기", record_application: "지원 건 기록",
+  list_applications: "지원 건 목록", get_application: "지원 건 보기", record_application: "지원 건 기록", get_program: "사업 자료 보기",
 };
 
 async function renderClaudeTab() {
@@ -1632,6 +1632,8 @@ window.addEventListener("drop", async (e) => {
   $("dropZone").hidden = true;
   if (!S.root) return toast("먼저 문서 폴더를 골라 주세요.");
   const paths = api.droppedPaths();
+  // 지원 현황의 사업 자료 칸에 놓았으면 그 사업 자료로 넣는다 (apps.js)
+  if (typeof refDrop === "function" && refDrop(e, paths) && paths.length) return;
   if (!paths.length) {
     // 메일 첨부·웹 페이지처럼 디스크에 파일이 없는 곳에서 끌어온 경우
     return toast("놓은 것에서 파일을 찾지 못했습니다.\n탐색기(Finder)의 파일이나 폴더를 끌어다 놓거나, '문서 넣기'로 골라 주세요.", 6000);

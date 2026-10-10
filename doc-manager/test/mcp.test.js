@@ -58,7 +58,7 @@ test("Claude 커넥터: 둘러보기·검색·읽기·버전·관련 문서·새
   const { client, call } = await connect(ud);
   try {
     const tools = (await client.listTools()).tools.map((t) => t.name).sort();
-    assert.deepStrictEqual(tools, ["compare_versions", "convert_document", "fill_form", "find_related_documents", "get_application", "get_knowledge", "inspect_form", "library_overview", "list_applications", "list_versions", "prepare_new_version", "read_document", "record_application", "save_knowledge_card", "save_new_version", "search_documents"]);
+    assert.deepStrictEqual(tools, ["compare_versions", "convert_document", "fill_form", "find_related_documents", "get_application", "get_knowledge", "get_program", "inspect_form", "library_overview", "list_applications", "list_versions", "prepare_new_version", "read_document", "record_application", "save_knowledge_card", "save_new_version", "search_documents"]);
     const prompts = (await client.listPrompts()).prompts.map((p) => p.name);
     assert.deepStrictEqual(prompts, ["build_knowledge_card"]);
     const pr = await client.getPrompt({ name: "build_knowledge_card" });
@@ -163,6 +163,18 @@ test("Claude 커넥터: 둘러보기·검색·읽기·버전·관련 문서·새
     assert.deepStrictEqual(one.stages[0].docs, [filled.new_path]);
     assert.strictEqual(one.stages[1].note, "다른 수요와 통합되어 미반영");
     assert.match((await call("record_application", { action: "stage", id: created.id, stage: "없는 단계", status: "통과" })).text, /단계가 없습니다/);
+    // 사업 자료: 사업 전체에 공고문, 이 건에만 RFP. AI 제외 문서는 붙지도 보이지도 않는다
+    const prog = (await call("record_application", { action: "ref_link", program: "소재부품기술개발", path: report, kind: "공고문" })).data;
+    assert.deepStrictEqual(prog.reference_docs, [{ path: report, kind: "공고문" }]);
+    await call("record_application", { action: "ref_link", id: created.id, path: filled.new_path, kind: "RFP" });
+    assert.match((await call("record_application", { action: "ref_link", program: "소재부품기술개발", path: "구매·견적/장비 견적.docx" })).text, /AI 제외/);
+    assert.match((await call("record_application", { action: "ref_link", program: "없는 사업", path: report })).text, /지원 건이 없습니다/);
+    const withRefs = (await call("get_application", { id: created.id })).data;
+    assert.deepStrictEqual(withRefs.program_reference_docs, [{ path: report, kind: "공고문" }]);
+    assert.deepStrictEqual(withRefs.own_reference_docs, [{ path: filled.new_path, kind: "RFP" }]);
+    assert.deepStrictEqual((await call("list_applications", {})).data.programs, [{ name: "소재부품기술개발", applications: 1, reference_docs: 1 }]);
+    assert.strictEqual((await call("get_program", { program: "소재부품기술개발" })).data.applications.length, 1);
+    assert.match((await call("get_program", { program: "없는 사업" })).text, /사업이 없습니다/);
     // 형식 바꾸기: 이 시험 환경(리눅스·한글 없음)에서는 윈도우 전용이라고 알려 준다. 지원하지 않는 조합도 알려 준다.
     if (process.platform !== "win32") assert.match((await call("convert_document", { path: report, to: "pdf" })).text, /윈도우/);
     assert.match((await call("convert_document", { path: report, to: "hwpx" })).text, /\.pdf 로만/);

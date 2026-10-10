@@ -55,7 +55,8 @@ function renderAppsView() {
   const title = program === null ? "지원 현황" : `<span class="crumb" data-a-all role="button" tabindex="0">지원 현황</span> › ${esc(program || "사업명 없음")}`;
   $("activeFilters").innerHTML = `<span class="title">${title}</span><div class="seg-group">${seg}</div>
     <button class="btn sm primary" data-a-new type="button">${icon("plus")}새 지원 건</button>
-    <button class="btn sm ghost" data-a-templates type="button" title="사업 유형별 기본 단계 목록">단계 틀</button>`;
+    <button class="btn sm ghost" data-a-templates type="button" title="사업 유형별 기본 단계 목록">단계 틀</button>
+    ${program ? `<button class="btn sm ghost" data-a-refs type="button" title="공고문·RFP·작성 양식">${icon("inbox")}사업 자료 ${programRefs(program).length || ""}</button>` : ""}`;
   document.querySelector(".toolbar-right").hidden = true;
   $("list").hidden = true;
   $("empty").hidden = true;
@@ -93,7 +94,7 @@ function renderAppsView() {
       return `<section class="app-group${closed ? " closed" : ""}">
         <div class="app-group-head" data-a-group="${esc(p)}" role="button" tabindex="0">
           ${icon("chevron", "chev")}<b>${esc(p || "사업명 없음")}</b>${agencies ? `<small>${esc(agencies)}</small>` : ""}
-          <span class="n">${list.length}건</span><span class="app-group-sum">${summary}</span>
+          <span class="n">${list.length}건</span>${programRefs(p).length ? `<button class="ref-count" data-a-only="${esc(p)}" type="button" title="사업 자료 보기">${icon("inbox")}자료 ${programRefs(p).length}</button>` : ""}<span class="app-group-sum">${summary}</span>
           <button class="link-btn" data-a-only="${esc(p)}" type="button" title="이 사업만 보기">이 사업만</button>
         </div>
         <div class="app-group-body">${closed ? "" : list.map(appRowHtml).join("")}</div>
@@ -108,9 +109,110 @@ function leaveAppsView() {
 }
 
 // 오른쪽: 지원 건 하나 고치기
+// ---- 사업 자료 (공고문·RFP·작성 양식 등 참고 문서) ----
+const refKinds = () => (S.applications && S.applications.refKinds) || ["공고문", "RFP", "작성 양식", "평가 기준", "참고 자료"];
+const programRefs = (p) => ((S.applications && S.applications.programs && S.applications.programs[p]) || { refs: [] }).refs;
+let refKindChoice = "공고문"; // 넣을 때 고른 종류 (다음에도 그대로)
+
+// scope: "p:<사업명>" (사업 전체) | "a:<지원 건 id>" (이 건만)
+function refsCardHtml(scope, refs, title, hint) {
+  const kinds = refKinds();
+  const sorted = [...refs].sort((x, y) => kinds.indexOf(x.kind) - kinds.indexOf(y.kind));
+  const rows = sorted
+    .map((r) => {
+      const d = byRel.get(r.rel);
+      const kindSel = kinds.map((k) => `<option${k === r.kind ? " selected" : ""}>${esc(k)}</option>`).join("");
+      return `<li class="ref-row${d ? "" : " missing"}">
+        <select class="ref-kind" data-r-kind="${esc(r.rel)}" data-r-scope="${esc(scope)}" aria-label="자료 종류">${kindSel}</select>
+        <button class="ref-name" data-r-open="${esc(r.rel)}" type="button" title="${esc(r.rel)}\n누르면 파일을 엽니다">${d ? `${refExtIcon(d)}${esc(d.base)}` : esc(r.rel.split("/").pop() + " (없음)")}</button>
+        <button class="icon-btn" data-r-unlink="${esc(r.rel)}" data-r-scope="${esc(scope)}" type="button" title="연결 끊기 (파일은 그대로)">${icon("x")}</button>
+      </li>`;
+    })
+    .join("");
+  const kindPick = kinds.map((k) => `<option${k === refKindChoice ? " selected" : ""}>${esc(k)}</option>`).join("");
+  return `<div class="card ref-card ref-drop" data-r-scope="${esc(scope)}"><h4>${icon("inbox")}${esc(title)}<small>${refs.length ? refs.length + "개" : ""}</small></h4>
+    ${rows ? `<ul class="ref-list">${rows}</ul>` : `<p class="hint">${esc(hint)}</p>`}
+    <div class="ref-add">
+      <select class="select sm" data-r-newkind aria-label="넣을 자료 종류">${kindPick}</select>
+      <button class="btn sm" data-r-import="${esc(scope)}" type="button">${icon("plus")}파일 넣기</button>
+      <button class="link-btn" data-r-pick="${esc(scope)}" type="button">보관함에서 고르기</button>
+    </div>
+    <small class="hint drop-note">파일을 이 칸에 끌어다 놓아도 됩니다</small>
+  </div>`;
+}
+const refExtIcon = (d) => `<span class="ref-ext">${esc(String(d.ext || "").replace(".", "").toUpperCase())}</span>`;
+
+// 사업 하나를 고른 화면에서 지원 건을 고르지 않았을 때: 사업 자료 + 지원 건 목록
+function renderProgramPanel(p) {
+  const list = appsOf().filter((a) => progKey(a) === p);
+  const agencies = [...new Set(list.map((a) => a.agency).filter(Boolean))].join(", ");
+  $("detail").innerHTML = `
+    <div class="d-head"><span class="ficon app">${icon("briefcase")}</span><div><h2>${esc(p)}</h2>
+      <div class="d-path">${esc([agencies, `지원 건 ${list.length}개`].filter(Boolean).join(" · "))}</div></div></div>
+    ${refsCardHtml("p:" + p, programRefs(p), "사업 자료", "공고문, RFP, 작성 양식, 평가 기준처럼 이 사업에서 받은 자료를 넣어 두세요. 이 사업의 지원 건 모두가 같이 보고, Claude 도 문서를 쓸 때 먼저 읽습니다.")}
+    <div class="card"><h4>${icon("layers")}지원 건</h4><ul class="app-links">${list
+      .map((a) => `<li><button data-a-goto="${esc(a.id)}" type="button"><b>${esc(appName(a))}</b> <small>${esc(a.progress.state)}${a.progress.stage && a.progress.state !== "선정" ? " · " + esc(a.progress.stage) : ""}</small></button></li>`)
+      .join("")}</ul></div>`;
+}
+
+function refTarget(scope) {
+  return scope.startsWith("a:") ? { id: scope.slice(2) } : { program: scope.slice(2) };
+}
+
+async function importRefs(scope, paths) {
+  toast("자료를 넣는 중…", 60000);
+  const r = await api.appsImportRefs(refTarget(scope), refKindChoice, paths || null);
+  if (!r || r.cancelled) return toast("넣기를 취소했습니다.");
+  if (r.error) return toast(r.error, 6000);
+  toast(r.linked ? `${r.linked}개를 '${refKindChoice}'(으)로 넣었습니다.\n저장 위치: ${r.folder}` : "넣은 파일이 없습니다." + (r.skipped && r.skipped.length ? ` (${r.skipped.map((x) => x.name + ": " + x.reason).join(", ")})` : ""), 5000);
+  renderAppDetail();
+}
+
+// 사업 자료 칸에 파일을 끌어다 놓으면 그 사업(지원 건) 자료로 넣는다. app.js 의 drop 처리에서 부른다.
+function refDrop(e, paths) {
+  const zone = e.target && e.target.closest && e.target.closest(".ref-drop");
+  if (!zone || !isAppsView()) return false;
+  if (paths.length) importRefs(zone.dataset.rScope, paths);
+  return true;
+}
+
+$("detail").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b || !isAppsView()) return;
+  if (b.dataset.rImport) return importRefs(b.dataset.rImport);
+  if (b.dataset.rOpen) {
+    if (!byRel.get(b.dataset.rOpen)) return toast("파일을 찾을 수 없습니다. 옮겨졌거나 지워졌을 수 있습니다.");
+    return api.openFile(b.dataset.rOpen).then((err) => err && toast(err, 5000));
+  }
+  if (b.dataset.rUnlink) return appsOp({ type: "ref_unlink", ...refTarget(b.dataset.rScope), rel: b.dataset.rUnlink }).then(renderAppDetail);
+  if (b.dataset.rPick) {
+    const scope = b.dataset.rPick;
+    const refs = scope.startsWith("a:") ? (appsOf().find((a) => a.id === scope.slice(2)) || { refs: [] }).refs : programRefs(scope.slice(2));
+    return openDocPicker(b, new Set(refs.map((r) => r.rel)), (d) => appsOp({ type: "ref_link", ...refTarget(scope), rel: d.rel, kind: refKindChoice }, `'${d.base}'을(를) ${refKindChoice}(으)로 연결했습니다.`));
+  }
+});
+$("detail").addEventListener("change", (e) => {
+  const t = e.target;
+  if (!isAppsView()) return;
+  if (t.hasAttribute("data-r-newkind")) {
+    refKindChoice = t.value;
+    for (const x of document.querySelectorAll("[data-r-newkind]")) x.value = t.value;
+  }
+  if (t.dataset.rKind) appsOp({ type: "ref_link", ...refTarget(t.dataset.rScope), rel: t.dataset.rKind, kind: t.value });
+});
+$("detail").addEventListener("dragover", (e) => {
+  const zone = e.target.closest && e.target.closest(".ref-drop");
+  for (const z of document.querySelectorAll(".ref-drop.over")) if (z !== zone) z.classList.remove("over");
+  if (zone) zone.classList.add("over");
+});
+$("detail").addEventListener("dragleave", (e) => {
+  if (e.target.classList && e.target.classList.contains("ref-drop") && !e.target.contains(e.relatedTarget)) e.target.classList.remove("over");
+});
+
 function renderAppDetail() {
   const box = $("detail");
   const a = appsOf().find((x) => x.id === selectedApp);
+  if (!a && appsProgram()) return renderProgramPanel(appsProgram());
   if (!a) {
     box.innerHTML = `<div class="detail-empty">${icon("briefcase")}<div>지원 건을 고르면 여기서 단계별 결과와 평가 의견, 관련 문서를 기록합니다.</div></div>`;
     return;
@@ -149,6 +251,8 @@ function renderAppDetail() {
       <div class="af-grid">${field("title", "과제명")}${field("topic", "주제(기술)", "예: 그래핀 스텔스 패널")}${field("program", "사업명", "예: 소재부품기술개발")}${field("agency", "전문기관", "예: KEIT")}${field("year", "연도", "", "number")}</div>
       <label class="af"><span>메모</span><textarea data-a-f="memo" rows="2" placeholder="공동기관, 예산 규모 등">${esc(a.memo || "")}</textarea></label>
     </div>
+    ${progKey(a) ? refsCardHtml("p:" + progKey(a), programRefs(progKey(a)), `사업 자료 · ${progKey(a)}`, "이 사업의 공고문·RFP·작성 양식을 넣어 두면 같은 사업의 지원 건 모두가 같이 봅니다.") : ""}
+    ${refsCardHtml("a:" + a.id, a.refs || [], "이 과제만의 자료", "이 지원 건에만 해당하는 자료 (예: 이 과제의 RFP, 수요조사 안내)")}
     <div class="card"><h4>${icon("layers")}단계<small>${a.template ? esc(a.template) : ""}</small></h4>
       <ol class="stage-list">${stages}</ol>
       <button class="btn sm ghost" data-a-sadd type="button">${icon("plus")}단계 추가</button>
@@ -158,8 +262,8 @@ function renderAppDetail() {
 }
 
 // 문서 고르기: 이름·폴더 일부(띄어쓰기로 여러 단어)를 치면 맞는 문서가 바로 아래에 뜬다. 누르거나 Enter(첫 번째)로 연결.
-function openDocPicker(btn, a, stageName) {
-  const already = new Set((a.stages.find((s) => s.name === stageName) || { docs: [] }).docs);
+// already: 이미 연결된 문서(목록에서 뺀다), onPick(d): 고른 문서로 할 일
+function openDocPicker(btn, already, onPick) {
   const wrap = document.createElement("div");
   wrap.className = "doc-picker";
   wrap.innerHTML = `<input class="doc-pick" placeholder="문서 이름 일부 (예: 탄소 수요조사)" autocomplete="off"><ul class="doc-pick-list"></ul><small class="hint">눌러서 고르거나 Enter 로 첫 번째 문서를 연결합니다 · Esc 로 닫기</small>`;
@@ -182,7 +286,7 @@ function openDocPicker(btn, a, stageName) {
   const pick = async (d) => {
     if (!d) return toast("맞는 문서가 없습니다. 이름 일부를 다르게 입력해 보세요.");
     input.blur(); // 입력 중이면 화면을 다시 그리지 않으므로 먼저 빠져나온다
-    await appsOp({ type: "link", id: a.id, stage: stageName, rel: d.rel }, `'${d.base}'을(를) 연결했습니다.`);
+    await onPick(d);
     renderAppDetail();
   };
   input.addEventListener("input", show);
@@ -203,10 +307,16 @@ function openDocPicker(btn, a, stageName) {
 function appsCardHtml(d) {
   const linked = [];
   for (const a of appsOf()) for (const s of a.stages) if (s.docs.includes(d.rel)) linked.push({ a, s });
-  if (!linked.length && !appsOf().length) return "";
+  const asRef = [];
+  for (const [p, v] of Object.entries((S.applications && S.applications.programs) || {})) for (const r of v.refs) if (r.rel === d.rel) asRef.push({ label: p, kind: r.kind, program: p });
+  for (const a of appsOf()) for (const r of a.refs || []) if (r.rel === d.rel) asRef.push({ label: appName(a), kind: r.kind, id: a.id });
+  if (!linked.length && !asRef.length && !appsOf().length) return "";
   const rows = linked
     .map(({ a, s }) => `<li><button data-a-goto="${esc(a.id)}" type="button"><b>${esc(appName(a))}</b> <small>${esc([a.program, a.year].filter(Boolean).join(" · "))} › ${esc(s.name)}${s.status ? " · " + esc(s.status) : ""}</small></button></li>`)
-    .join("");
+    .join("") +
+    asRef
+      .map((x) => `<li><button ${x.id ? `data-a-goto="${esc(x.id)}"` : `data-a-goto-program="${esc(x.program)}"`} type="button"><b>${esc(x.label)}</b> <small>사업 자료 · ${esc(x.kind)}</small></button></li>`)
+      .join("");
   const opts = appsOf()
     .flatMap((a) => a.stages.filter((s) => !s.docs.includes(d.rel)).map((s) => `<option value="${esc(a.id)}|${esc(s.name)}">${esc(appName(a))} › ${esc(s.name)}</option>`))
     .join("");
@@ -237,6 +347,11 @@ $("activeFilters").addEventListener("click", (e) => {
   }
   if (b.hasAttribute("data-a-new")) openNewApp();
   if (b.hasAttribute("data-a-all")) showProgram(null);
+  if (b.hasAttribute("data-a-refs")) {
+    selectedApp = "";
+    for (const r of $("appsBoard").querySelectorAll(".app-row.sel")) r.classList.remove("sel");
+    renderAppDetail();
+  }
   if (b.hasAttribute("data-a-templates")) openTemplates();
 });
 
@@ -255,7 +370,11 @@ function toggleAppGroup(p) {
 $("appsBoard").addEventListener("click", (e) => {
   if (e.target.closest("[data-a-new]")) return openNewApp();
   const only = e.target.closest("[data-a-only]");
-  if (only) return showProgram(only.dataset.aOnly);
+  if (only) {
+    selectedApp = "";
+    showProgram(only.dataset.aOnly);
+    return renderDetail();
+  }
   const head = e.target.closest("[data-a-group]");
   if (head) return toggleAppGroup(head.dataset.aGroup);
   const row = e.target.closest("[data-a-id]");
@@ -272,6 +391,11 @@ $("detail").addEventListener("click", async (e) => {
   const b = e.target.closest("button");
   if (!b) return;
   if (b.dataset.aGoto) return openApp(b.dataset.aGoto);
+  if (b.dataset.aGotoProgram !== undefined) {
+    selectedApp = "";
+    showProgram(b.dataset.aGotoProgram);
+    return renderDetail();
+  }
   if (!isAppsView()) return;
   const a = appNow();
   if (!a) return;
@@ -301,7 +425,10 @@ $("detail").addEventListener("click", async (e) => {
     return appsOp({ type: "stages", id: a.id, stages: st });
   }
   if (b.dataset.aUnlink !== undefined) return appsOp({ type: "unlink", id: a.id, stage: a.stages[idx("aUnlink")].name, rel: b.dataset.rel });
-  if (b.dataset.aSlink !== undefined) return openDocPicker(b, a, a.stages[idx("aSlink")].name);
+  if (b.dataset.aSlink !== undefined) {
+    const s = a.stages[idx("aSlink")];
+    return openDocPicker(b, new Set(s.docs), (d) => appsOp({ type: "link", id: a.id, stage: s.name, rel: d.rel }, `'${d.base}'을(를) 연결했습니다.`));
+  }
   if (b.hasAttribute("data-a-del")) {
     if (!confirm(`'${appName(a)}' 지원 건을 지울까요? (문서 파일은 지워지지 않습니다)`)) return;
     await appsOp({ type: "delete", id: a.id }, "지원 건을 지웠습니다.");

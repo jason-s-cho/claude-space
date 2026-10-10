@@ -38,3 +38,27 @@ test("사업명 띄어쓰기는 한 칸으로 맞춘다 (같은 사업으로 묶
   const { id } = apps.update(root, { type: "create", fields: { title: "x", program: " 국방반도체 R&D  사업 " } });
   assert.strictEqual(apps.load(root).items.find((a) => a.id === id).program, "국방반도체 R&D 사업");
 });
+
+test("사업 자료: 사업 전체·지원 건 하나에 붙이고, 종류를 바꾸고, 문서가 옮겨지면 따라가고, 사업명을 바꾸면 따라간다", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "apps-ref-"));
+  const { id } = apps.update(root, { type: "create", fields: { title: "x", program: "암묵지 사업" } });
+  assert.throws(() => apps.update(root, { type: "ref_link", program: "없는 사업", rel: "a.pdf" }), /지원 건이 없습니다/);
+  apps.update(root, { type: "ref_link", program: "암묵지  사업", rel: "공고/공고문.pdf", kind: "공고문" });
+  apps.update(root, { type: "ref_link", program: "암묵지 사업", rel: "공고/양식.hwpx", kind: "작성 양식" });
+  apps.update(root, { type: "ref_link", program: "암묵지 사업", rel: "공고/양식.hwpx", kind: "평가 기준" }); // 같은 문서면 종류만 바뀜
+  apps.update(root, { type: "ref_link", id, rel: "공고/RFP.pdf", kind: "RFP" });
+  let d = apps.load(root);
+  assert.deepStrictEqual(d.programs["암묵지 사업"].refs, [{ rel: "공고/공고문.pdf", kind: "공고문" }, { rel: "공고/양식.hwpx", kind: "평가 기준" }]);
+  assert.deepStrictEqual(d.items[0].refs, [{ rel: "공고/RFP.pdf", kind: "RFP" }]);
+  apps.renameDocs(root, [{ from: "공고/공고문.pdf", to: "새/공고문.pdf" }, { from: "공고/RFP.pdf", to: "새/RFP.pdf" }]);
+  d = apps.load(root);
+  assert.strictEqual(d.programs["암묵지 사업"].refs[0].rel, "새/공고문.pdf");
+  assert.strictEqual(d.items[0].refs[0].rel, "새/RFP.pdf");
+  apps.update(root, { type: "update", id, fields: { program: "암묵지 기반 AI 사업" } });
+  d = apps.load(root);
+  assert.ok(!d.programs["암묵지 사업"]);
+  assert.strictEqual(d.programs["암묵지 기반 AI 사업"].refs.length, 2);
+  apps.update(root, { type: "ref_unlink", program: "암묵지 기반 AI 사업", rel: "새/공고문.pdf" });
+  apps.update(root, { type: "ref_unlink", program: "암묵지 기반 AI 사업", rel: "공고/양식.hwpx" });
+  assert.ok(!apps.load(root).programs["암묵지 기반 AI 사업"]); // 비면 정리
+});

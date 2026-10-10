@@ -6,7 +6,7 @@ const { CATEGORIES, KEYWORDS, KEYWORD_GROUPS, TECH_TAGS, migrateOverrides } = re
 const { docFrequency, topKeywords } = require("./lib/keywords");
 const searchLib = require("./lib/search");
 const { groupVersions, nextVersionName, uniqueVersionName } = require("./lib/versions");
-const { importFiles, ensureCategoryFolders, expectedFolder, moveToFolder, moveManyToFolders, isInPlace, removeLegacyFolders } = require("./lib/importer");
+const { importFiles, safeName, ensureCategoryFolders, expectedFolder, moveToFolder, moveManyToFolders, isInPlace, removeLegacyFolders } = require("./lib/importer");
 const { SUPPORTED, extract } = require("./lib/extract");
 const { compareTexts } = require("./lib/diff");
 
@@ -103,7 +103,7 @@ function loadApps(root) {
 }
 // 화면에 보낼 지원 건: 지금 단계(진행 중·탈락·선정)를 붙여서
 function appsState() {
-  return { templates: appsData.templates, statuses: appsLib.STATUSES, items: appsData.items.map((a) => ({ ...a, progress: appsLib.progress(a) })) };
+  return { templates: appsData.templates, statuses: appsLib.STATUSES, refKinds: appsLib.REF_KINDS, programs: appsData.programs, items: appsData.items.map((a) => ({ ...a, progress: appsLib.progress(a) })) };
 }
 
 // 문서 폴더를 연다: 예전 색인 옮기기 → 분류 규칙 읽기 → 색인 읽기
@@ -489,13 +489,14 @@ function registerIpc() {
   // 끌어다 놓은 파일(또는 '문서 넣기'로 고른 파일)을 문서 폴더에 복사하고 분류한다.
   // 넣는 도중에 또 넣으면 앞의 것이 끝난 뒤 이어서 한다.
   let importChain = Promise.resolve();
-  function doImport(paths) {
+  function doImport(paths, extra = {}) {
     const run = async () => {
       if (!index || !index.root) return { imported: [], existing: [], skipped: [], error: "먼저 문서 폴더를 골라 주세요." };
       let lastSend = 0;
       const r = await importFiles(index, paths, {
         layout: settings.importLayout,
         options: classifyOptions(),
+        ...extra,
         onProgress: (p) => {
           const now = Date.now();
           if (now - lastSend > 120 || p.done === p.total) {
@@ -659,6 +660,44 @@ function registerIpc() {
       loadApps(settings.root);
       send("state", state());
       return { id: r.id };
+    } catch (err) {
+      return { error: String((err && err.message) || err) };
+    }
+  });
+
+  // 사업 자료(공고문·RFP 등) 넣기: 파일을 '국가과제·지원사업/(과제)/1 공고·수요조사/사업명' 폴더에 넣고 바로 연결한다.
+  // target: { program } (사업 전체) 또는 { id } (지원 건 하나), kind: 자료 종류, paths: 끌어다 놓은 파일 (없으면 고르는 창)
+  ipcMain.handle("apps-import-refs", async (_e, target, kind, paths) => {
+    try {
+      if (!settings.root || !index) throw new Error("문서 폴더를 먼저 골라 주세요.");
+      target = target || {};
+      let program = target.program;
+      if (target.id) {
+        const a = appsLib.load(settings.root).items.find((x) => x.id === target.id);
+        if (!a) throw new Error("없는 지원 건입니다");
+        program = a.program;
+      }
+      if (!Array.isArray(paths) || !paths.length) {
+        const r = await dialog.showOpenDialog(win, {
+          title: `${program || "지원 건"} 자료 넣기 (${kind || "참고 자료"}) · Ctrl·Shift 로 여러 개`,
+          properties: ["openFile", "multiSelections"],
+          filters: [{ name: "문서", extensions: Object.keys(SUPPORTED).map((x) => x.slice(1)) }],
+        });
+        if (r.canceled || !r.filePaths.length) return { cancelled: true };
+        paths = r.filePaths;
+      }
+      const base = expectedFolder("gov_notice", [], settings.partners, settings.projects);
+      const folder = program ? `${base}/${safeName(program)}` : base;
+      const r = await doImport(paths.filter((p) => typeof p === "string" && p), { folder, category: "gov_notice" });
+      if (r.error) throw new Error(r.error);
+      const rels = [...r.imported.map((x) => x.rel), ...r.existing.map((x) => x.rel)];
+      for (const rel of rels) appsLib.update(settings.root, { type: "ref_link", ...(target.id ? { id: target.id } : { program }), rel, kind });
+      if (rels.length) {
+        loadApps(settings.root);
+        persistIndex();
+        send("state", state());
+      }
+      return { linked: rels.length, folder, skipped: r.skipped };
     } catch (err) {
       return { error: String((err && err.message) || err) };
     }
