@@ -14,6 +14,7 @@ const { StdioServerTransport } = require("@modelcontextprotocol/sdk/server/stdio
 const { z } = require("zod");
 const { Library } = require("../lib/library");
 const knowledge = require("../lib/knowledge");
+const cards = require("../lib/cards");
 
 const pkg = require("../package.json");
 
@@ -37,7 +38,8 @@ const INSTRUCTIONS = `이 서버는 사용자가 직접 작성한 업무 문서(
 - 문서를 새로 쓰거나 고치기 전에는 get_knowledge 로 '회사 지식 카드'(회사 개요·기술·성능 수치·과제 이력·고객사·자주 쓰는 표현)를 먼저 읽고, 그 사실과 표현을 우선 쓰세요.
 - 먼저 library_overview 로 분류·과제·태그를 보고, search_documents 로 찾은 뒤 read_document 로 본문을 읽으세요. 긴 문서는 next_offset 으로 이어 읽습니다.
 - 기본 검색 결과는 각 문서의 최신 버전만 보여 줍니다. 이전 버전이 필요하면 list_versions 를 쓰세요.
-- 사업에 내는 문서(수요조사서·사업계획서·발표자료)를 쓸 때는 list_applications 로 같은 주제·같은 사업의 지원 건을 찾아, 단계별 결과와 탈락 사유(평가 의견)를 읽고 같은 약점을 피하세요. 통과한 건의 표현은 다시 써도 됩니다. 수요조사가 RFP 에 반영됐으면 계획서는 그 RFP 문구에 맞춥니다. 쓰기 전에 get_program(또는 get_application 의 program_reference_docs)으로 그 사업의 공고문·RFP·평가 기준·작성 양식을 먼저 읽고, 공고의 요구 사항과 평가 항목에 맞춰 쓰세요. 문서를 다 쓰면 record_application 으로 지원 건과 단계 결과를 기록하세요.
+- 사업에 내는 문서(수요조사서·사업계획서·발표자료)는 양식(inspect_form) × 주제 카드 × 사업 카드 × 작성 가이드(get_card)를 함께 보고 씁니다. 자세한 순서는 'write_application_document' 프롬프트와 같습니다: 바탕 자료 읽기 → 칸별 요약을 사용자에게 확인 → fill_form → record_application.
+- 사업에 내는 문서를 쓸 때는 list_applications 로 같은 주제·같은 사업의 지원 건을 찾아, 단계별 결과와 탈락 사유(평가 의견)를 읽고 같은 약점을 피하세요. 통과한 건의 표현은 다시 써도 됩니다. 수요조사가 RFP 에 반영됐으면 계획서는 그 RFP 문구에 맞춥니다. 쓰기 전에 get_program(또는 get_application 의 program_reference_docs)으로 그 사업의 공고문·RFP·평가 기준·작성 양식을 먼저 읽고, 공고의 요구 사항과 평가 항목에 맞춰 쓰세요. 문서를 다 쓰면 record_application 으로 지원 건과 단계 결과를 기록하세요.
 - 새 버전을 저장했으면 compare_versions 로 원본과 바뀐 곳(특히 바뀐 숫자)을 확인해 사용자에게 짧게 알려 주세요.
 - 새 문서나 계획서를 쓸 때는 find_related_documents 로 재사용할 만한 이전 자료(같은 과제·기술·키워드)를 찾으세요.
 - 기존 파일은 절대 고칠 수 없습니다. 고친 결과는 항상 새 버전으로 저장합니다:
@@ -390,6 +392,41 @@ tool(
   (a) => ({ path: `${knowledge.DIR_NAME}/${knowledge.CARD_NAME}`, change_summary: a.change_summary })
 );
 
+const cardKind = z.enum(["topic", "program", "guide"]).describe("topic: 주제 카드(주제마다), program: 사업 카드(사업마다), guide: 작성 가이드(한 장)");
+
+tool(
+  "get_card",
+  {
+    title: "주제·사업 카드, 작성 가이드 읽기",
+    description:
+      "사업 문서를 쓸 때 읽는 카드: 주제 카드(기술의 핵심 내용·수치·차별점·실적·검증된 문장·지원 이력), 사업 카드(사업의 평가 항목·강조점·양식 특징·우리 지원 교훈), 작성 가이드(목표·필요성·사업화 같은 항목 종류마다 쓰는 법). " +
+      "주제·사업명은 지원 건의 topic·program 을 그대로 쓰세요. name 없이 부르면 그 종류의 카드 목록을 돌려줍니다. 카드가 없으면 빈 양식과 만드는 순서를 돌려줍니다.",
+    inputSchema: { kind: cardKind, name: z.string().optional().describe("주제 또는 사업명 (guide 는 필요 없음)") },
+    annotations: { readOnlyHint: true },
+  },
+  async ({ kind, name }) => lib.getCard(kind, name),
+  (a, r) => ({ query: [a.kind, a.name].filter(Boolean).join(": "), exists: r ? r.exists : undefined })
+);
+
+tool(
+  "save_card",
+  {
+    title: "주제·사업 카드, 작성 가이드 저장",
+    description:
+      "주제 카드·사업 카드·작성 가이드의 전체 내용(마크다운)을 저장합니다. 이전 내용은 기록으로 남고 '## 사용자 메모' 는 사용자 것이 유지됩니다. " +
+      "사용자가 카드를 만들거나 고쳐 달라고 할 때, 또는 문서를 쓰다 새로 확인한 사실을 넣자고 했을 때 씁니다. get_card 가 주는 양식 구조를 따르세요.",
+    inputSchema: {
+      kind: cardKind,
+      name: z.string().optional().describe("주제 또는 사업명 (guide 는 필요 없음)"),
+      content: z.string().describe("카드 전체 내용 (마크다운)"),
+      change_summary: z.string().optional().describe("무엇을 새로 넣거나 바꿨는지 한두 문장 (기록에 남습니다)"),
+    },
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
+  },
+  async ({ kind, name, content }) => lib.saveCard(kind, name, content),
+  (a, r) => ({ path: r ? r.saved : [a.kind, a.name].filter(Boolean).join(": "), change_summary: a.change_summary })
+);
+
 // Claude 데스크톱의 '+' 메뉴에서 고를 수 있는 작업
 server.registerPrompt(
   "build_knowledge_card",
@@ -402,6 +439,40 @@ server.registerPrompt(
       },
     ],
   })
+);
+
+const userPrompt = (text) => ({ messages: [{ role: "user", content: { type: "text", text } }] });
+
+server.registerPrompt(
+  "build_topic_card",
+  { title: "주제 카드 만들기", description: "한 주제(기술)의 문서와 지원 이력을 읽고 주제 카드를 만들거나 새로 고칩니다.", argsSchema: { topic: z.string().describe("주제 (예: 그래핀 투명 전자파 차폐재)") } },
+  ({ topic }) => userPrompt(`'${topic}' 주제 카드를 만들어 줘(이미 있으면 새로 고쳐 줘).\n\n` + cards.BUILD_STEPS.topic)
+);
+
+server.registerPrompt(
+  "build_program_card",
+  { title: "사업 카드 만들기", description: "사업 자료(공고문·평가 기준)와 그 사업의 지원 이력으로 사업 카드를 만들거나 새로 고칩니다.", argsSchema: { program: z.string().describe("사업명 (예: 소재부품기술개발사업)") } },
+  ({ program }) => userPrompt(`'${program}' 사업 카드를 만들어 줘(이미 있으면 새로 고쳐 줘).\n\n` + cards.BUILD_STEPS.program)
+);
+
+server.registerPrompt(
+  "build_writing_guide",
+  { title: "작성 가이드 만들기", description: "통과한 사업계획서·수요조사서와 탈락 사유를 읽고 항목 종류별 작성 가이드를 만들거나 새로 고칩니다." },
+  () => userPrompt("문서 보관함 자료로 작성 가이드를 만들어 줘(이미 있으면 새로 고쳐 줘).\n\n" + cards.BUILD_STEPS.guide)
+);
+
+server.registerPrompt(
+  "write_application_document",
+  {
+    title: "사업 문서 쓰기",
+    description: "지원 건(주제 × 사업)의 수요조사서·사업계획서 양식을 회사 지식 카드·주제 카드·사업 카드·작성 가이드·공고문·지난 탈락 사유를 바탕으로 채웁니다.",
+    argsSchema: {
+      application: z.string().optional().describe("지원 건 (과제명이나 주제·사업명)"),
+      document: z.string().optional().describe("쓸 문서 (예: 수요조사서, 사업계획서)"),
+    },
+  },
+  ({ application, document }) =>
+    userPrompt(`${application ? `'${application}' 지원 건의 ` : ""}${document || "사업 문서"}를 써 줘.\n\n` + cards.WRITE_STEPS)
 );
 
 async function main() {

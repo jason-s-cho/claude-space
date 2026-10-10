@@ -221,6 +221,11 @@
         </div>
 
         <div class="field">
+          <span class="field-label">작성 카드 <small>사업 문서를 쓸 때 회사 지식 카드와 함께 읽는 주제 카드·사업 카드·작성 가이드</small></span>
+          <div class="knowledge-card" id="cardsList"></div>
+        </div>
+
+        <div class="field">
           <span class="field-label">회사 지식 카드 <small>Claude 가 문서를 쓰기 전에 먼저 읽는 회사 핵심 사실</small></span>
           <div class="knowledge-card">
             <div class="knowledge-head">
@@ -326,6 +331,20 @@
       <span style="flex:1"></span>
       <button class="btn ghost" id="tplCancel" type="button">취소</button>
       <button class="btn primary" id="tplSave" type="button">저장</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="cardDlg" class="move-dlg">
+  <div class="move-form card-form">
+    <h2 id="cardDlgTitle">카드</h2>
+    <p class="hint" id="cardDlgSub"></p>
+    <textarea id="cardText" rows="22" spellcheck="false"></textarea>
+    <div class="settings-actions">
+      <button class="btn ghost" id="cardDlgOpen" type="button">폴더에서 보기</button>
+      <span class="spacer"></span>
+      <button class="btn ghost" id="cardDlgCancel" type="button">닫기</button>
+      <button class="btn primary" id="cardDlgSave" type="button">저장</button>
     </div>
   </div>
 </dialog>

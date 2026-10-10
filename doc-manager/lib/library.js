@@ -14,6 +14,7 @@ const { extract, SUPPORTED } = require("./extract");
 const { CATEGORIES, migrateOverrides } = require("./classify");
 const { docFrequency, topKeywords } = require("./keywords");
 const knowledge = require("./knowledge");
+const cards = require("./cards");
 const forms = require("./forms");
 const convertLib = require("./convert");
 const { compareTexts } = require("./diff");
@@ -462,7 +463,8 @@ class Library {
     return {
       program: key,
       reference_docs: this.visibleRefs((data.programs[key] || { refs: [] }).refs),
-      applications: items.map((a) => ({ id: a.id, title: a.title || a.topic, year: a.year, progress: appsLib.progress(a).state })),
+      applications: items.map((a) => ({ id: a.id, title: a.title, topic: a.topic, year: a.year, progress: appsLib.progress(a).state })),
+      program_card: this.cardStatus("", key).program,
       note_for_ai: "문서를 쓰기 전에 reference_docs 의 공고문·RFP·평가 기준을 read_document 로 읽고, 작성 양식은 inspect_form 으로 확인하세요.",
     };
   }
@@ -479,6 +481,50 @@ class Library {
       // 남이 만든 참고 자료: 사업 전체(공고문 등)와 이 건만의 것(그 과제의 RFP 등)
       program_reference_docs: this.visibleRefs((data.programs[a.program] || { refs: [] }).refs),
       own_reference_docs: this.visibleRefs(a.refs),
+      cards: this.cardStatus(a.topic, a.program),
+    };
+  }
+
+  // 이 주제·사업으로 문서를 쓸 때 읽을 카드가 있는지
+  cardStatus(topic, program) {
+    const root = this.root();
+    const one = (kind, name) => {
+      if (kind !== "guide" && !cards.cleanName(name)) return { exists: false, note: kind === "topic" ? "지원 건에 주제가 비어 있습니다" : "지원 건에 사업명이 비어 있습니다" };
+      const c = cards.read(root, kind, name);
+      return { name: c.name || undefined, exists: c.exists, updated: c.updated || undefined };
+    };
+    return { topic: one("topic", topic), program: one("program", program), guide: one("guide") };
+  }
+
+  // ---- 주제 카드·사업 카드·작성 가이드 ----
+
+  getCard(kind, name) {
+    const root = this.root();
+    if (kind !== "guide" && !cards.cleanName(name)) {
+      const all = cards.list(root).filter((c) => c.kind === kind);
+      return { kind, cards: all.map((c) => ({ name: c.name, updated: c.updated })), note_for_ai: "name 을 주면 그 카드를 읽습니다. 지원 건의 주제(topic)·사업명(program)을 그대로 쓰세요." };
+    }
+    const c = cards.read(root, kind, name);
+    return {
+      kind,
+      name: c.name || undefined,
+      exists: c.exists,
+      updated: c.updated,
+      file: c.rel,
+      card: c.exists ? c.content : cards.template(kind, c.name),
+      note_for_ai: c.exists
+        ? "문서를 쓸 때 이 카드의 사실·강조점·쓰는 법을 따르세요. 카드와 문서가 다르면 사용자에게 알려 주세요."
+        : `아직 ${c.label}가 없습니다. 위 card 는 빈 양식입니다. 사용자가 원하면 아래 순서로 만들어 save_card 로 저장하세요.\n` + cards.BUILD_STEPS[kind],
+    };
+  }
+
+  saveCard(kind, name, content) {
+    const r = cards.save(this.root(), kind, name, content, { protectUserSection: true });
+    return {
+      saved: r.rel,
+      previous_kept: !!r.backup,
+      user_section_restored: r.keptUserSection || undefined,
+      note_for_ai: r.keptUserSection ? "'## 사용자 메모' 부분은 사용자 것을 그대로 두었습니다." : undefined,
     };
   }
 

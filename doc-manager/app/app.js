@@ -873,7 +873,7 @@ const TOOL_LABEL = {
   find_related_documents: "관련 문서", save_new_version: "새 버전 저장", prepare_new_version: "새 버전 복사본",
   get_knowledge: "지식 카드 읽기", save_knowledge_card: "지식 카드 저장",
   inspect_form: "양식 보기", fill_form: "양식 채우기", convert_document: "형식 바꾸기", compare_versions: "바뀐 곳 비교",
-  list_applications: "지원 건 목록", get_application: "지원 건 보기", record_application: "지원 건 기록", get_program: "사업 자료 보기",
+  list_applications: "지원 건 목록", get_application: "지원 건 보기", record_application: "지원 건 기록", get_program: "사업 자료 보기", get_card: "카드 읽기", save_card: "카드 저장",
 };
 
 async function renderClaudeTab() {
@@ -892,6 +892,7 @@ async function renderClaudeTab() {
   $("claudeConnectBtn").textContent = connected ? "다시 연결" : "연결";
   $("claudeDisconnectBtn").hidden = !connected;
   $("claudeCodeCmd").textContent = st.claudeCode;
+  if (typeof renderCardsList === "function") renderCardsList();
   renderKnowledge();
   // 제외할 분류
   const excluded = new Set(S.settings.aiExcludeCategories || []);

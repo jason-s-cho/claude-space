@@ -149,6 +149,8 @@ function renderProgramPanel(p) {
   $("detail").innerHTML = `
     <div class="d-head"><span class="ficon app">${icon("briefcase")}</span><div><h2>${esc(p)}</h2>
       <div class="d-path">${esc([agencies, `지원 건 ${list.length}개`].filter(Boolean).join(" · "))}</div></div></div>
+    <div class="card"><h4>${icon("sparkle")}사업 카드<small>Claude 가 이 사업 문서를 쓸 때 읽는 카드</small></h4><ul class="card-rows">${cardRowHtml("program", p)}${cardRowHtml("guide")}</ul>
+      <small class="hint">사업 자료(공고문·평가 기준)를 넣은 뒤 'Claude 로 만들기'를 하면 평가 항목·강조점·우리 지원 교훈을 정리합니다.</small></div>
     ${refsCardHtml("p:" + p, programRefs(p), "사업 자료", "공고문, RFP, 작성 양식, 평가 기준처럼 이 사업에서 받은 자료를 넣어 두세요. 이 사업의 지원 건 모두가 같이 보고, Claude 도 문서를 쓸 때 먼저 읽습니다.")}
     <div class="card"><h4>${icon("layers")}지원 건</h4><ul class="app-links">${list
       .map((a) => `<li><button data-a-goto="${esc(a.id)}" type="button"><b>${esc(appName(a))}</b> <small>${esc(a.progress.state)}${a.progress.stage && a.progress.state !== "선정" ? " · " + esc(a.progress.stage) : ""}</small></button></li>`)
@@ -251,6 +253,7 @@ function renderAppDetail() {
       <div class="af-grid">${field("title", "과제명")}${field("topic", "주제(기술)", "예: 그래핀 스텔스 패널")}${field("program", "사업명", "예: 소재부품기술개발")}${field("agency", "전문기관", "예: KEIT")}${field("year", "연도", "", "number")}</div>
       <label class="af"><span>메모</span><textarea data-a-f="memo" rows="2" placeholder="공동기관, 예산 규모 등">${esc(a.memo || "")}</textarea></label>
     </div>
+    ${writeCardsHtml(a)}
     ${progKey(a) ? refsCardHtml("p:" + progKey(a), programRefs(progKey(a)), `사업 자료 · ${progKey(a)}`, "이 사업의 공고문·RFP·작성 양식을 넣어 두면 같은 사업의 지원 건 모두가 같이 봅니다.") : ""}
     ${refsCardHtml("a:" + a.id, a.refs || [], "이 과제만의 자료", "이 지원 건에만 해당하는 자료 (예: 이 과제의 RFP, 수요조사 안내)")}
     <div class="card"><h4>${icon("layers")}단계<small>${a.template ? esc(a.template) : ""}</small></h4>
@@ -531,3 +534,108 @@ $("tplSave").onclick = async () => {
   const r = await appsOp({ type: "templates", templates }, "단계 틀을 저장했습니다. 새로 만드는 지원 건부터 적용됩니다.");
   if (r) $("appTplDlg").close();
 };
+
+// ---------- 작성 카드: 주제 카드·사업 카드·작성 가이드 ----------
+const CARD_LABEL = { topic: "주제 카드", program: "사업 카드", guide: "작성 가이드" };
+const cardKey = (n) => String(n || "").replace(/\s+/g, " ").trim();
+const cardsOf = () => (S.applications && S.applications.cards) || [];
+const cardFind = (kind, name) => cardsOf().find((c) => c.kind === kind && (kind === "guide" || c.name === cardKey(name)));
+const cardPrompt = (kind, name) =>
+  kind === "guide" ? "문서 보관함 자료로 작성 가이드를 만들어 줘" : `문서 보관함 자료로 '${cardKey(name)}' ${CARD_LABEL[kind]}를 만들어 줘`;
+
+// 카드 한 줄: 이름·있는지·고치기·Claude 에게 보낼 문장 복사
+function cardRowHtml(kind, name) {
+  const c = cardFind(kind, name);
+  const attrs = `data-c-kind="${kind}" data-c-name="${esc(cardKey(name))}"`;
+  const state = c ? `<span class="state-on">있음</span> · ${esc(new Date(c.updated).toLocaleDateString())}` : '<span class="muted">없음</span>';
+  return `<li class="card-row">
+    <div class="card-row-main"><b>${CARD_LABEL[kind]}</b>${kind === "guide" ? "" : ` <span>${esc(cardKey(name))}</span>`}<small>${state}</small></div>
+    <div class="card-row-act">
+      <button class="link-btn" data-c-edit ${attrs} type="button">${c ? "보기·고치기" : "직접 쓰기"}</button>
+      <button class="link-btn" data-c-copy="${esc(cardPrompt(kind, name))}" type="button" title="${esc(cardPrompt(kind, name))}">${c ? "Claude 로 새로 고치기" : "Claude 로 만들기"}</button>
+    </div>
+  </li>`;
+}
+
+// 아직 끝나지 않은 단계 가운데 처음으로 문서를 내는 단계 → 쓸 문서 이름
+function nextDocOf(a) {
+  const DOCS = [[/수요조사/, "수요조사서"], [/사업계획서|계획서/, "사업계획서"], [/신청서/, "신청서"], [/발표/, "발표자료"]];
+  for (const s of a.stages) {
+    if (s.status === "통과" || s.status === "제외" || s.status === "탈락") continue;
+    const hit = DOCS.find(([re]) => re.test(s.name));
+    if (hit) return hit[1];
+  }
+  return "제출 문서";
+}
+
+// 지원 건 화면: 이 건의 문서를 쓸 때 읽는 카드 + 문서 쓰기 요청 문장
+function writeCardsHtml(a) {
+  const topic = cardKey(a.topic), program = progKey(a);
+  const rows = [topic ? cardRowHtml("topic", topic) : '<li class="card-row muted">주제를 적으면 주제 카드를 만들 수 있습니다</li>',
+    program ? cardRowHtml("program", program) : '<li class="card-row muted">사업명을 적으면 사업 카드를 만들 수 있습니다</li>',
+    cardRowHtml("guide")].join("");
+  const ask = `문서 보관함의 '${appName(a)}' 지원 건${program ? `(${program})` : ""}으로 ${nextDocOf(a)}를 써 줘`;
+  return `<div class="card"><h4>${icon("sparkle")}문서 쓰기<small>Claude 가 읽는 카드</small></h4>
+    <ul class="card-rows">${rows}</ul>
+    <div class="cmd-row"><code>${esc(ask)}</code><button class="icon-btn" data-c-copy="${esc(ask)}" type="button" title="복사" aria-label="요청 문장 복사">${icon("copy")}</button></div>
+    <small class="hint">Claude 데스크톱 일반 채팅에 붙여 넣으면 회사 지식 카드·위 카드·사업 자료·지난 탈락 사유를 읽고, 칸별 요약을 먼저 보여 준 뒤 양식을 새 파일로 채웁니다. '+' 메뉴의 <b>사업 문서 쓰기</b>로 시작해도 됩니다.</small>
+  </div>`;
+}
+
+// 설정 > Claude 연결: 만들어 둔 카드 목록
+function renderCardsList() {
+  const box = $("cardsList");
+  if (!box) return;
+  const list = cardsOf().filter((c) => c.kind !== "guide");
+  const topics = new Set(appsOf().map((a) => cardKey(a.topic)).filter(Boolean));
+  const programs = new Set(appsOf().map(progKey).filter(Boolean));
+  // 지원 건에는 있는데 카드가 없는 주제·사업도 보여 준다
+  const rows = [
+    cardRowHtml("guide"),
+    ...[...new Set([...list.filter((c) => c.kind === "topic").map((c) => c.name), ...topics])].sort((x, y) => x.localeCompare(y, "ko")).map((n) => cardRowHtml("topic", n)),
+    ...[...new Set([...list.filter((c) => c.kind === "program").map((c) => c.name), ...programs])].sort((x, y) => x.localeCompare(y, "ko")).map((n) => cardRowHtml("program", n)),
+  ];
+  box.innerHTML = `<ul class="card-rows">${rows.join("")}</ul>
+    <small class="hint">'Claude 로 만들기'를 누르면 요청 문장이 복사됩니다. Claude 데스크톱 일반 채팅에 붙여 넣으세요. 카드는 <code>Claude 지식</code> 폴더에 저장되고, 맨 아래 <b>사용자 메모</b>는 Claude 가 고치지 않습니다. 주제·사업은 지원 현황의 주제·사업명에서 가져옵니다.</small>`;
+}
+
+let cardEditing = null;
+async function openCardEditor(kind, name) {
+  const c = await api.cardGet(kind, name);
+  if (c.error) return toast(c.error, 5000);
+  cardEditing = { kind, name: c.name };
+  $("cardDlgTitle").textContent = kind === "guide" ? "작성 가이드" : `${CARD_LABEL[kind]} · ${c.name}`;
+  $("cardDlgSub").textContent = c.exists
+    ? `${c.rel} · 마지막으로 고친 때 ${new Date(c.updated).toLocaleString()} · 저장하면 이전 내용은 기록으로 남습니다`
+    : "아직 없어서 빈 양식을 보여 줍니다. 직접 채워 저장하거나, 닫고 'Claude 로 만들기'를 쓰세요.";
+  $("cardText").value = c.exists ? c.content : c.template;
+  $("cardDlg").showModal();
+  $("cardText").setSelectionRange(0, 0);
+  $("cardText").focus();
+  $("cardText").scrollTop = 0;
+}
+$("cardDlgCancel").onclick = () => $("cardDlg").close();
+$("cardDlgSave").onclick = async () => {
+  if (!cardEditing) return;
+  const r = await api.cardSave(cardEditing.kind, cardEditing.name, $("cardText").value);
+  if (r.error) return toast(r.error, 6000);
+  $("cardDlg").close();
+  toast(r.backup ? "저장했습니다. 이전 내용은 기록으로 남겼습니다." : "저장했습니다.");
+};
+$("cardDlgOpen").onclick = async () => {
+  if (!cardEditing) return;
+  const r = await api.cardOpen(cardEditing.kind, cardEditing.name);
+  if (r && r.error) toast(r.error);
+};
+
+document.addEventListener("click", async (e) => {
+  const b = e.target.closest("[data-c-edit], [data-c-copy]");
+  if (!b) return;
+  if (b.hasAttribute("data-c-edit")) return openCardEditor(b.dataset.cKind, b.dataset.cName);
+  try {
+    await navigator.clipboard.writeText(b.dataset.cCopy);
+    toast("복사했습니다. Claude 데스크톱 일반 채팅에 붙여 넣으세요.");
+  } catch {
+    toast("복사하지 못했습니다. 글자를 직접 선택해 복사해 주세요.");
+  }
+});

@@ -58,9 +58,11 @@ test("Claude 커넥터: 둘러보기·검색·읽기·버전·관련 문서·새
   const { client, call } = await connect(ud);
   try {
     const tools = (await client.listTools()).tools.map((t) => t.name).sort();
-    assert.deepStrictEqual(tools, ["compare_versions", "convert_document", "fill_form", "find_related_documents", "get_application", "get_knowledge", "get_program", "inspect_form", "library_overview", "list_applications", "list_versions", "prepare_new_version", "read_document", "record_application", "save_knowledge_card", "save_new_version", "search_documents"]);
+    assert.deepStrictEqual(tools, ["compare_versions", "convert_document", "fill_form", "find_related_documents", "get_application", "get_card", "get_knowledge", "get_program", "inspect_form", "library_overview", "list_applications", "list_versions", "prepare_new_version", "read_document", "record_application", "save_card", "save_knowledge_card", "save_new_version", "search_documents"]);
     const prompts = (await client.listPrompts()).prompts.map((p) => p.name);
-    assert.deepStrictEqual(prompts, ["build_knowledge_card"]);
+    assert.deepStrictEqual(prompts, ["build_knowledge_card", "build_topic_card", "build_program_card", "build_writing_guide", "write_application_document"]);
+    const wp = await client.getPrompt({ name: "write_application_document", arguments: { application: "그래핀 스텔스 × 소재부품", document: "수요조사서" } });
+    assert.match(wp.messages[0].content.text, /수요조사서를 써 줘[\s\S]*inspect_form[\s\S]*fill_form/);
     const pr = await client.getPrompt({ name: "build_knowledge_card" });
     assert.match(pr.messages[0].content.text, /save_knowledge_card/);
 
@@ -175,6 +177,19 @@ test("Claude 커넥터: 둘러보기·검색·읽기·버전·관련 문서·새
     assert.deepStrictEqual((await call("list_applications", {})).data.programs, [{ name: "소재부품기술개발", applications: 1, reference_docs: 1 }]);
     assert.strictEqual((await call("get_program", { program: "소재부품기술개발" })).data.applications.length, 1);
     assert.match((await call("get_program", { program: "없는 사업" })).text, /사업이 없습니다/);
+    // 주제·사업 카드, 작성 가이드: 없으면 양식과 만드는 순서, 저장하면 지원 건에서 있다고 보인다
+    const noCard = (await call("get_card", { kind: "topic", name: "그래핀 스텔스" })).data;
+    assert.strictEqual(noCard.exists, false);
+    assert.match(noCard.card, /^# 주제 카드: 그래핀 스텔스/);
+    assert.match(noCard.note_for_ai, /save_card/);
+    assert.match((await call("save_card", { kind: "topic", name: "그래핀 스텔스", content: noCard.card.replace("## 1. 한 줄 정의", "## 1. 한 줄 정의\n광학투명 전자파 차폐"), change_summary: "처음 만듦" })).data.saved, /^Claude 지식\/주제\/그래핀 스텔스\.md$/);
+    assert.match((await call("get_card", { kind: "topic", name: "그래핀 스텔스" })).data.card, /광학투명 전자파 차폐/);
+    assert.deepStrictEqual((await call("get_card", { kind: "topic" })).data.cards.map((c) => c.name), ["그래핀 스텔스"]);
+    const cardsOf = (await call("get_application", { id: created.id })).data.cards;
+    assert.deepStrictEqual([cardsOf.topic.exists, cardsOf.program.exists, cardsOf.guide.exists], [true, false, false]);
+    assert.match((await call("save_card", { kind: "program", content: "x" })).text, /이름/);
+    // 카드 폴더는 문서 목록에 섞이지 않는다
+    assert.ok(!(await call("search_documents", { query: "광학투명 전자파 차폐" })).text.includes("Claude 지식"));
     // 형식 바꾸기: 이 시험 환경(리눅스·한글 없음)에서는 윈도우 전용이라고 알려 준다. 지원하지 않는 조합도 알려 준다.
     if (process.platform !== "win32") assert.match((await call("convert_document", { path: report, to: "pdf" })).text, /윈도우/);
     assert.match((await call("convert_document", { path: report, to: "hwpx" })).text, /\.pdf 로만/);
