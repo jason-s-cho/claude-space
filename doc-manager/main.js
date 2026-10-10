@@ -32,6 +32,7 @@ const cards = require("./lib/cards");
 const calendar = require("./lib/calendar");
 const ocr = require("./lib/ocr");
 const ipLib = require("./lib/ip");
+const certs = require("./lib/certs");
 const { countTerms } = require("./lib/keywords");
 const duplicates = require("./lib/duplicates");
 const { convert, targetsFor } = require("./lib/convert");
@@ -232,6 +233,20 @@ function expectedDirOf(e) {
 }
 
 // 화면에 보내는 문서 정보. 본문 전체는 보내지 않고 앞부분만 보낸다.
+// 회사 증빙: 종류·발급일·유효기간·최신본 (state 를 만들 때마다 새로 계산한다. 증빙 문서만 보므로 가볍다)
+let certMap = new Map();
+function refreshCerts() {
+  if (!index) return (certMap = new Map());
+  const docs = [];
+  for (const e of Object.values(index.files)) {
+    const cat = indexer.effective(e).category;
+    if (!/^cert_/.test(cat)) continue;
+    docs.push({ rel: e.rel, name: indexer.nameParts(e.rel).name, text: e.text, category: cat, mtimeMs: e.mtimeMs, issuedAt: e.issuedAt, validUntil: e.validUntil });
+  }
+  certMap = certs.analyze(docs);
+  return certMap;
+}
+
 function docSummary(e) {
   const p = indexer.nameParts(e.rel);
   const eff = indexer.effective(e);
@@ -256,6 +271,10 @@ function docSummary(e) {
     scanned: ocr.needsOcr(e) && !e.ocr,
     ocr: e.ocr || null,
     ocrError: e.ocrError || "",
+    // 회사 증빙: { kind, issued, validUntil, latest, latestRel, daysLeft } (직접 적은 값은 issuedAt·validUntil)
+    cert: certMap.has(e.rel) ? { ...certMap.get(e.rel), daysLeft: certMap.get(e.rel).validUntil ? certs.daysLeft(certMap.get(e.rel).validUntil) : null } : null,
+    issuedAt: e.issuedAt || "",
+    validUntil: e.validUntil || "",
     protectedText: !!e.protectedText,
     category: eff.category,
     autoCategory: e.autoCategory,
@@ -323,7 +342,9 @@ function state() {
     techTags: TECH_TAGS.map(([tag, words]) => ({ tag, words })),
     scanning,
     progress,
-    docs: index ? Object.values(index.files).map(docSummary) : [],
+    docs: index ? (refreshCerts(), Object.values(index.files).map(docSummary)) : [],
+    certs: certs.latestByKind(certMap),
+    certKinds: certs.KINDS.map((k) => k[0]),
     applications: appsState(),
     ip: ipState(),
     families: (() => {
@@ -869,6 +890,38 @@ function registerIpc() {
     }
   });
 
+  // ---- 제출 서류 꾸러미: 지원 건에 고른 증빙 종류의 최신본을 한 폴더에 복사 (문서 폴더 밖) ----
+  ipcMain.handle("make-bundle", async (_e, id) => {
+    try {
+      const a = appsData.items.find((x) => x.id === id);
+      if (!a) throw new Error("없는 지원 건입니다");
+      const kinds = a.bundle || [];
+      if (!kinds.length) throw new Error("꾸러미에 넣을 서류를 먼저 골라 주세요.");
+      const latest = new Map(certs.latestByKind(refreshCerts()).map((c) => [c.kind, c]));
+      const r = await dialog.showOpenDialog(win, { title: "제출 서류를 모을 곳 고르기 (그 안에 새 폴더를 만듭니다)", defaultPath: app.getPath("desktop"), properties: ["openDirectory", "createDirectory"] });
+      if (r.canceled || !r.filePaths.length) return { cancelled: true };
+      const d = new Date();
+      const stamp = `${String(d.getFullYear()).slice(2)}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+      let dir = path.join(r.filePaths[0], safeName(`제출서류_${a.title || a.topic || "지원 건"}_${stamp}`));
+      for (let i = 2; fs.existsSync(dir); i++) dir = path.join(r.filePaths[0], safeName(`제출서류_${a.title || a.topic || "지원 건"}_${stamp} (${i})`));
+      fs.mkdirSync(dir, { recursive: true });
+      const copied = [], missing = [], expired = [];
+      kinds.forEach((kind, i) => {
+        const c = latest.get(kind);
+        if (!c) return missing.push(kind);
+        const src = fullPath(c.rel);
+        // 순서대로 번호를 붙여 제출 목록 순서와 맞춘다: "01_사업자등록증.pdf"
+        fs.copyFileSync(src, path.join(dir, `${String(i + 1).padStart(2, "0")}_${safeName(kind)}${path.extname(src)}`));
+        copied.push(kind);
+        if (c.daysLeft !== null && c.daysLeft < 0) expired.push(kind);
+      });
+      shell.openPath(dir);
+      return { folder: dir, copied, missing, expired };
+    } catch (err) {
+      return { error: String((err && err.message) || err) };
+    }
+  });
+
   // ---- 지식재산 대장 ----
   ipcMain.handle("ip-op", (_e, op) => {
     try {
@@ -1035,6 +1088,10 @@ function registerIpc() {
       else e[k] = v;
     }
     persistIndex();
+    if (patch.issuedAt !== undefined || patch.validUntil !== undefined || patch.userCategory !== undefined) {
+      refreshCerts();
+      send("state", state()); // 같은 종류의 최신본이 바뀔 수 있다
+    }
     return docSummary(e);
   });
 
@@ -1192,7 +1249,7 @@ function checkDeadlines() {
   const sent = settings.deadlineNotified || {};
   const now = Date.now();
   let changed = false;
-  for (const u of appsLib.upcoming(appsData, { withinDays: 7, overdueDays: 1 })) {
+  for (const u of settings.root ? appsLib.upcoming(appsData, { withinDays: 7, overdueDays: 1 }) : []) {
     const b = deadlineBucket(u.daysLeft);
     if (b === null) continue;
     const key = `${u.id}|${u.stage}|${u.due}|${b}`;
@@ -1207,6 +1264,25 @@ function checkDeadlines() {
       win.show();
       win.focus();
       send("open-app", u.id);
+    });
+    n.show();
+  }
+  // 회사 증빙 만료: 종류별 최신본이 30일·7일 전, 당일(지난 것 포함)
+  for (const c of certs.latestByKind(refreshCerts())) {
+    if (c.daysLeft === null || c.daysLeft > 30) continue;
+    const b = c.daysLeft <= 0 ? 0 : c.daysLeft <= 7 ? 7 : 30;
+    const key = `cert|${c.rel}|${c.validUntil}|${b}`;
+    if (sent[key]) continue;
+    sent[key] = now;
+    changed = true;
+    const when = c.daysLeft < 0 ? `${-c.daysLeft}일 전에 만료됐습니다` : c.daysLeft === 0 ? "오늘 만료됩니다" : `${c.daysLeft}일 뒤 만료됩니다`;
+    const n = new Notification({ title: `${c.kind} · ${when}`, body: `유효기간 ${c.validUntil}\n새로 발급받아 문서 보관함에 넣어 주세요.` });
+    n.on("click", () => {
+      if (!win) return;
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+      send("open-doc", c.rel);
     });
     n.show();
   }

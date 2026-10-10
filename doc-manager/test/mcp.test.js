@@ -58,7 +58,7 @@ test("Claude 커넥터: 둘러보기·검색·읽기·버전·관련 문서·새
   const { client, call } = await connect(ud);
   try {
     const tools = (await client.listTools()).tools.map((t) => t.name).sort();
-    assert.deepStrictEqual(tools, ["compare_versions", "convert_document", "fill_form", "find_related_documents", "get_application", "get_card", "get_knowledge", "get_program", "inspect_form", "library_overview", "list_applications", "list_ip", "list_versions", "prepare_new_version", "read_document", "record_application", "record_ip", "save_card", "save_knowledge_card", "save_new_version", "search_documents"]);
+    assert.deepStrictEqual(tools, ["compare_versions", "convert_document", "fill_form", "find_related_documents", "get_application", "get_card", "get_knowledge", "get_program", "inspect_form", "library_overview", "list_applications", "list_certificates", "list_ip", "list_versions", "prepare_new_version", "read_document", "record_application", "record_ip", "save_card", "save_knowledge_card", "save_new_version", "search_documents"]);
     const prompts = (await client.listPrompts()).prompts.map((p) => p.name);
     assert.deepStrictEqual(prompts, ["build_knowledge_card", "build_topic_card", "build_program_card", "build_writing_guide", "write_application_document"]);
     const wp = await client.getPrompt({ name: "write_application_document", arguments: { application: "그래핀 스텔스 × 소재부품", document: "수요조사서" } });
@@ -203,6 +203,27 @@ test("Claude 커넥터: 둘러보기·검색·읽기·버전·관련 문서·새
     const ipList = (await call("list_ip", { topic: "그래핀" })).data;
     assert.deepStrictEqual([ipList.total, ipList.items[0].status, ipList.items[0].docs], [1, "등록", [report]]);
     assert.match(ipList.table_tsv, /특허\t그래핀 스텔스 패널\t10-2024-0123456\t2024-03-05\t10-2654321/);
+    // 회사 증빙: 종류별 최신본·유효기간, 등기부등본은 있다는 것만 (AI 제외), 지원 건의 제출 서류 상태
+    {
+      await docx(path.join(root, "회사 증빙/기본 서류/사업자등록증.docx"), ["사업자등록증", "등록번호 123-45-67890", "2019년 05월 10일", "○○세무서장"]);
+      await docx(path.join(root, "회사 증빙/기본 서류/법인등기부등본.docx"), ["등기사항전부증명서", "대표이사 홍길동"]);
+      await docx(path.join(root, "회사 증빙/인증·확인서/벤처기업확인서_2021.docx"), ["벤처기업확인서", "유효기간 2021.03.02 ~ 2023.03.01"]);
+      const idx = indexer.loadIndex(store.paths(root).index, root, { anyRoot: true });
+      for (const f of ["회사 증빙/기본 서류/사업자등록증.docx", "회사 증빙/기본 서류/법인등기부등본.docx", "회사 증빙/인증·확인서/벤처기업확인서_2021.docx"]) await indexer.addFile(idx, path.join(root, ...f.split("/")), {});
+      indexer.saveIndex(store.paths(root).index, idx);
+    }
+    const certList = (await call("list_certificates", {})).data;
+    const byKind = Object.fromEntries(certList.certificates.map((c) => [c.kind, c]));
+    assert.deepStrictEqual([byKind["사업자등록증"].path, byKind["사업자등록증"].issued], ["회사 증빙/기본 서류/사업자등록증.docx", "2019-05-10"]);
+    assert.deepStrictEqual([byKind["법인등기부등본"].path, byKind["법인등기부등본"].hidden_from_ai], [undefined, true]);
+    assert.deepStrictEqual([byKind["벤처기업확인서"].valid_until, byKind["벤처기업확인서"].expired], ["2023-03-01", true]);
+    assert.ok(certList.not_in_library.includes("수출실적증명서"));
+    require("../lib/applications").update(root, { type: "bundle", id: created.id, kinds: ["사업자등록증", "벤처기업확인서", "수출실적증명서"] });
+    assert.deepStrictEqual((await call("get_application", { id: created.id })).data.submission_documents, [
+      { kind: "사업자등록증", path: "회사 증빙/기본 서류/사업자등록증.docx", valid_until: undefined, expired: undefined },
+      { kind: "벤처기업확인서", path: "회사 증빙/인증·확인서/벤처기업확인서_2021.docx", valid_until: "2023-03-01", expired: true },
+      { kind: "수출실적증명서", missing: true },
+    ].map((x) => JSON.parse(JSON.stringify(x))));
     // 카드 폴더는 문서 목록에 섞이지 않는다
     assert.ok(!(await call("search_documents", { query: "광학투명 전자파 차폐" })).text.includes("Claude 지식"));
     // 스캔 PDF: 앱이 OCR 로 읽어 둔 글자를 Claude 도 읽는다

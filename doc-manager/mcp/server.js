@@ -41,7 +41,7 @@ const INSTRUCTIONS = `이 서버는 사용자가 직접 작성한 업무 문서(
 - '주제 카드'·'사업 카드'·'작성 가이드'는 이 보관함의 작성 카드입니다. 만들거나 고쳐 달라고 하면 get_card 로 양식을 받아 그 구조대로 채워 save_card 로 저장하세요 (작성 가이드는 문서 종류마다 한 장, 수요조사서·사업계획서의 항목 종류별 쓰는 법입니다).
 - 사업에 내는 문서(수요조사서·사업계획서·발표자료)는 양식(inspect_form) × 주제 카드 × 사업 카드 × 작성 가이드(get_card)를 함께 보고 씁니다. 자세한 순서는 'write_application_document' 프롬프트와 같습니다: 바탕 자료 읽기 → 칸별 요약을 사용자에게 확인 → fill_form → record_application.
 - 사업계획서의 지식재산·선행 실적 표나 주제 카드의 실적은 list_ip(지식재산 대장)에서 가져오세요. 지식재산 분류 문서에서 번호를 읽으면 record_ip 로 대장에 기록할 수 있습니다.
-- 회사 증빙(사업자등록증·인증서·수출실적 등)은 양식의 사업자등록번호·설립일·인증번호 같은 칸을 채울 때 읽으세요. 'AI제외'인 등기부등본·주주명부는 볼 수 없습니다.
+- 회사 증빙(사업자등록증·인증서·수출실적 등)은 list_certificates 로 최신본을 찾아, 양식의 사업자등록번호·설립일·인증번호 같은 칸을 채울 때 읽으세요. 공고의 제출 서류 목록과 비교해 없거나 만료된 서류를 알려 주세요. 'AI제외'인 등기부등본·주주명부는 볼 수 없습니다.
 - 공고문·RFP·안내문을 읽다가 접수 마감·수요조사 마감 같은 날짜를 찾으면, 해당 지원 건 단계에 마감(record_application action: stage, due)을 적어 둘지 사용자에게 묻고 적으세요. 앱이 마감 전에 알려 줍니다.
 - 사업에 내는 문서를 쓸 때는 list_applications 로 같은 주제·같은 사업의 지원 건을 찾아, 단계별 결과와 탈락 사유(평가 의견)를 읽고 같은 약점을 피하세요. 통과한 건의 표현은 다시 써도 됩니다. 수요조사가 RFP 에 반영됐으면 계획서는 그 RFP 문구에 맞춥니다. 쓰기 전에 get_program(또는 get_application 의 program_reference_docs)으로 그 사업의 공고문·RFP·평가 기준·작성 양식을 먼저 읽고, 공고의 요구 사항과 평가 항목에 맞춰 쓰세요. 문서를 다 쓰면 record_application 으로 지원 건과 단계 결과를 기록하세요.
 - 새 버전을 저장했으면 compare_versions 로 원본과 바뀐 곳(특히 바뀐 숫자)을 확인해 사용자에게 짧게 알려 주세요.
@@ -395,6 +395,20 @@ tool(
   },
   async ({ content }) => lib.saveKnowledge(content),
   (a) => ({ path: `${knowledge.DIR_NAME}/${knowledge.CARD_NAME}`, change_summary: a.change_summary })
+);
+
+tool(
+  "list_certificates",
+  {
+    title: "회사 증빙 목록",
+    description:
+      "회사 증빙(사업자등록증, 법인등기부등본, 벤처기업확인서, 기업부설연구소 인정서, 이노비즈, 수출실적증명서, 재무제표, 국세·지방세 완납증명 등)의 종류별 최신본 경로와 발급일·유효기간·만료 여부를 보여 줍니다. " +
+      "양식에 회사 기본 정보(사업자등록번호, 설립일, 인증번호 등)를 채우거나, 공고의 제출 서류를 갖췄는지 확인할 때 씁니다.",
+    inputSchema: {},
+    annotations: { readOnlyHint: true },
+  },
+  async () => lib.listCertificates(),
+  (a, r) => ({ results: r ? r.certificates.length : undefined })
 );
 
 tool(

@@ -341,6 +341,35 @@ function fileIcon(d) {
   return `<span class="ficon ${d.kind}">${KIND_SHORT[d.kind] || esc(d.ext.toUpperCase())}</span>`;
 }
 
+// 회사 증빙: 만료 임박·만료·이전 발급본 표시
+function certBadge(d) {
+  const x = d.cert;
+  if (!x) return "";
+  if (!x.latest) return '<span class="old-pill" title="같은 종류의 더 새 발급본이 있습니다">이전 발급본</span>';
+  if (x.daysLeft === null) return "";
+  if (x.daysLeft < 0) return `<span class="dday dd-over" title="유효기간 ${esc(x.validUntil)}">만료됨</span>`;
+  if (x.daysLeft <= 30) return `<span class="dday ${x.daysLeft <= 7 ? "dd-soon" : "dd-near"}" title="유효기간 ${esc(x.validUntil)}">만료 D-${x.daysLeft}</span>`;
+  return "";
+}
+
+// 문서 화면: 증빙 종류·발급일·유효기간
+function certCardHtml(d) {
+  const x = d.cert;
+  if (!x) return "";
+  const latestDoc = !x.latest && byRel.get(x.latestRel);
+  const state =
+    x.daysLeft === null ? "" : x.daysLeft < 0 ? `<span class="dday dd-over">${-x.daysLeft}일 전 만료</span>` : `<span class="dday ${x.daysLeft <= 7 ? "dd-soon" : x.daysLeft <= 30 ? "dd-near" : ""}">${x.daysLeft === 0 ? "오늘 만료" : `만료까지 ${x.daysLeft}일`}</span>`;
+  return `<div class="card cert-card"><h4>${icon("badge")}회사 증빙<small>${x.kind ? esc(x.kind) : "종류를 알아보지 못함"}${x.kind ? (x.latest ? " · 최신본" : "") : ""}</small></h4>
+    ${latestDoc ? `<p class="hint">같은 종류의 더 새 발급본이 있습니다: <button class="link-btn" data-goto="${esc(latestDoc.rel)}" type="button">${esc(latestDoc.base)}</button></p>` : ""}
+    <div class="af-grid">
+      <label class="af"><span>발급일${x.issuedAuto ? " <small>(문서에서 찾음)</small>" : ""}</span><input type="date" id="certIssued" value="${esc(d.issuedAt || x.issued || "")}"></label>
+      <label class="af"><span>유효기간 (까지)${x.validAuto ? " <small>(문서에서 찾음)</small>" : ""}</span><input type="date" id="certValid" value="${esc(d.validUntil || x.validUntil || "")}"></label>
+    </div>
+    ${state ? `<div class="cert-state">${state}</div>` : ""}
+    <small class="hint">유효기간이 있으면 만료 30일·7일 전과 당일에 알려 줍니다 (같은 종류의 최신본만). 지원 건의 <b>제출 서류</b>에서 고르면 최신본을 한 폴더에 모아 줍니다.</small>
+  </div>`;
+}
+
 function rowHtml(d, opts = {}) {
   const c = catById[d.category] || catById.other;
   const r = results && results.get(d.rel);
@@ -362,6 +391,7 @@ function rowHtml(d, opts = {}) {
     </div>
     <div class="row-side">
       ${opts.child ? "" : `<span class="badge${d.userCategory ? " manual" : ""}"><span class="dot" style="background:${c.color}"></span>${esc(c.label)}</span>`}
+      ${certBadge(d)}
       ${vb}
     </div>
   </li>`;
@@ -552,6 +582,7 @@ async function renderDetail() {
     ${ocrCardHtml(d)}
     ${appsCardHtml(d)}
     ${typeof ipCardHtml === "function" ? ipCardHtml(d) : ""}
+    ${certCardHtml(d)}
     <div class="card">
       <h4>${icon("hash")}태그</h4>
       <div class="tag-edit">${tagChips}<input class="tag-input" id="tagInput" placeholder="+ 태그" list="allTags"></div>
@@ -924,7 +955,7 @@ const TOOL_LABEL = {
   find_related_documents: "관련 문서", save_new_version: "새 버전 저장", prepare_new_version: "새 버전 복사본",
   get_knowledge: "지식 카드 읽기", save_knowledge_card: "지식 카드 저장",
   inspect_form: "양식 보기", fill_form: "양식 채우기", convert_document: "형식 바꾸기", compare_versions: "바뀐 곳 비교",
-  list_applications: "지원 건 목록", get_application: "지원 건 보기", record_application: "지원 건 기록", get_program: "사업 자료 보기", get_card: "카드 읽기", save_card: "카드 저장", list_ip: "지식재산 대장", record_ip: "지식재산 기록",
+  list_applications: "지원 건 목록", get_application: "지원 건 보기", record_application: "지원 건 기록", get_program: "사업 자료 보기", get_card: "카드 읽기", save_card: "카드 저장", list_ip: "지식재산 대장", list_certificates: "회사 증빙 목록", record_ip: "지식재산 기록",
 };
 
 async function renderClaudeTab() {
@@ -1539,6 +1570,10 @@ $("detail").addEventListener("change", async (e) => {
   if (isBoardView()) return;
   const d = byRel.get(selected);
   if (!d) return;
+  if (e.target.id === "certIssued" || e.target.id === "certValid") {
+    await patchDoc(d.rel, { [e.target.id === "certIssued" ? "issuedAt" : "validUntil"]: e.target.value });
+    return;
+  }
   if (e.target.id === "aiExcludeToggle") {
     if (e.target.checked) await addTag(d, "AI제외");
     else await removeTag(d, "AI제외");
@@ -1742,3 +1777,9 @@ api.onScanError((msg) => toast(msg));
 api.onImportProgress(showProgress);
 
 api.getState().then(applyState);
+
+// 증빙 만료 알림을 누르면 그 문서를 연다
+api.onOpenDoc((rel) => {
+  filter.view = "all";
+  goto(rel);
+});

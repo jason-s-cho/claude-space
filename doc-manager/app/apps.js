@@ -300,6 +300,7 @@ function renderAppDetail() {
       <label class="af"><span>메모</span><textarea data-a-f="memo" rows="2" placeholder="공동기관, 예산 규모 등">${esc(a.memo || "")}</textarea></label>
     </div>
     ${writeCardsHtml(a)}
+    ${bundleCardHtml(a)}
     ${progKey(a) ? refsCardHtml("p:" + progKey(a), programRefs(progKey(a)), `사업 자료 · ${progKey(a)}`, "이 사업의 공고문·RFP·작성 양식을 넣어 두면 같은 사업의 지원 건 모두가 같이 봅니다.") : ""}
     ${refsCardHtml("a:" + a.id, a.refs || [], "이 과제만의 자료", "이 지원 건에만 해당하는 자료 (예: 이 과제의 RFP, 수요조사 안내)")}
     <div class="card"><h4>${icon("layers")}단계<small>${a.template ? esc(a.template) : ""}</small></h4>
@@ -481,6 +482,15 @@ $("detail").addEventListener("click", async (e) => {
     st.push({ name: `새 단계${n > 1 ? " " + n : ""}` });
     return appsOp({ type: "stages", id: a.id, stages: st });
   }
+  if (b.hasAttribute("data-a-make-bundle")) {
+    const r = await api.makeBundle(a.id);
+    if (r.error) return toast(r.error, 6000);
+    if (r.cancelled) return;
+    let msg = `${r.copied.length}개 서류를 모았습니다.\n${r.folder}`;
+    if (r.missing.length) msg += `\n보관함에 없음: ${r.missing.join(", ")}`;
+    if (r.expired.length) msg += `\n유효기간 지남: ${r.expired.join(", ")} — 새로 발급받으세요`;
+    return toast(msg, r.missing.length || r.expired.length ? 12000 : 6000);
+  }
   if (b.dataset.aCal !== undefined) {
     const r = await api.deadlineCalendar({ id: a.id, stage: a.stages[idx("aCal")].name }, b.dataset.how);
     if (r && r.error) toast(r.error, 6000);
@@ -510,6 +520,17 @@ $("detail").addEventListener("change", async (e) => {
   if (!isAppsView()) return;
   const a = appNow();
   if (!a) return;
+  if (t.dataset.aBundle !== undefined) {
+    const set = new Set(a.bundle || []);
+    t.checked ? set.add(t.dataset.aBundle) : set.delete(t.dataset.aBundle);
+    // 고른 순서는 증빙 종류 목록 순서대로 (꾸러미 파일 번호가 늘 같게)
+    const order = S.certKinds || [];
+    await appsOp({ type: "bundle", id: a.id, kinds: [...set].sort((x, y) => order.indexOf(x) - order.indexOf(y)) });
+    renderAppDetail();
+    const det = document.querySelector("details.bundle");
+    if (det) det.open = true;
+    return;
+  }
   if (t.dataset.aF) return appsOp({ type: "update", id: a.id, fields: { [t.dataset.aF]: t.value } });
   if (t.dataset.aSname !== undefined) {
     const st = stagesCopy(a);
@@ -632,6 +653,27 @@ function cardRowHtml(kind, name) {
       <button class="link-btn" data-c-copy="${esc(cardPrompt(kind, name))}" type="button" title="${esc(cardPrompt(kind, name))}">${c ? "Claude 로 새로 고치기" : "Claude 로 만들기"}</button>
     </div>
   </li>`;
+}
+
+// 제출 서류 꾸러미: 이 지원 건에 낼 회사 증빙 종류를 고르면 최신본을 한 폴더에 모아 준다
+function bundleCardHtml(a) {
+  const latest = new Map((S.certs || []).map((c) => [c.kind, c]));
+  const chosen = new Set(a.bundle || []);
+  const kinds = [...new Set([...(a.bundle || []), ...(S.certKinds || [])])];
+  const rows = kinds
+    .map((k) => {
+      const c = latest.get(k);
+      const st = !c ? '<small class="muted">보관함에 없음</small>' : c.daysLeft !== null && c.daysLeft < 0 ? '<span class="dday dd-over">만료됨</span>' : c.daysLeft !== null && c.daysLeft <= 30 ? `<span class="dday dd-near">D-${c.daysLeft}</span>` : `<small class="muted">${esc(c.issued || "")}</small>`;
+      return `<label class="bundle-row${c ? "" : " none"}${chosen.has(k) ? " on" : ""}"><input type="checkbox" data-a-bundle="${esc(k)}"${chosen.has(k) ? " checked" : ""}><span>${esc(k)}</span>${st}</label>`;
+    })
+    .join("");
+  const missing = [...chosen].filter((k) => !latest.has(k));
+  return `<div class="card"><h4>${icon("badge")}제출 서류<small>${chosen.size ? `${chosen.size}종 골랐음` : "공고의 제출 서류를 고르세요"}</small></h4>
+    <details class="bundle"${chosen.size ? "" : " open"}><summary>서류 고르기</summary><div class="bundle-list">${rows}</div></details>
+    ${chosen.size ? `<div class="bundle-chosen">${[...chosen].map((k) => `<span class="chip-sm${latest.has(k) ? "" : " warn"}">${esc(k)}</span>`).join("")}</div>` : ""}
+    ${missing.length ? `<p class="warn">보관함에 없는 서류: ${missing.map(esc).join(", ")} — 발급받아 넣어 주세요.</p>` : ""}
+    <button class="btn sm" data-a-make-bundle type="button"${chosen.size ? "" : " disabled"}>${icon("download")}최신본 모아 폴더 만들기</button>
+  </div>`;
 }
 
 // 아직 끝나지 않은 단계 가운데 처음으로 문서를 내는 단계 → 쓸 문서 이름

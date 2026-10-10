@@ -117,6 +117,7 @@ function progress(a) {
  *   { type: "stages", id, stages: [...] }                                — 단계 목록 통째로 (더하기·빼기·이름·순서)
  *   { type: "link" | "unlink", id, stage, rel }                          — 문서 연결
  *   { type: "templates", templates: [{ name, stages: [이름…] }] }
+ *   { type: "bundle", id, kinds: [증빙 종류…] }                         — 제출 서류 꾸러미에 넣을 증빙
  *   { type: "ref_link" | "ref_unlink", program | id, rel, kind? }        — 사업 자료(공고문·RFP 등) 연결. 사업 전체면 program, 이 건만이면 id
  * 결과: { data, id? }
  */
@@ -229,6 +230,13 @@ function apply(data, op) {
         if (!data.programs[name].refs.length) delete data.programs[name];
       } else touch(a);
       return { data, id: a ? a.id : undefined, program: a ? undefined : programName(op.program) };
+    }
+    case "bundle": {
+      // 이 지원 건에 낼 회사 증빙 종류 (예: 사업자등록증, 벤처기업확인서) — 꾸러미를 만들 때 최신본을 모은다
+      const a = find(data, op.id);
+      a.bundle = [...new Set((Array.isArray(op.kinds) ? op.kinds : []).map((k) => str(k, 60)).filter(Boolean))].slice(0, 40);
+      touch(a);
+      return { data, id: a.id };
     }
     case "templates": {
       if (!Array.isArray(op.templates) || !op.templates.length) throw new Error("단계 틀이 하나 이상 있어야 합니다");

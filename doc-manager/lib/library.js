@@ -17,6 +17,7 @@ const knowledge = require("./knowledge");
 const cards = require("./cards");
 const ocr = require("./ocr");
 const ipLib = require("./ip");
+const certs = require("./certs");
 const forms = require("./forms");
 const convertLib = require("./convert");
 const { compareTexts } = require("./diff");
@@ -489,6 +490,7 @@ class Library {
     if (!a) throw new Error("없는 지원 건입니다: " + id + " (list_applications 로 id 를 확인하세요)");
     return {
       ...a,
+      bundle: undefined,
       progress: appsLib.progress(a),
       stages: a.stages.map((st) => ({ ...st, docs: this.visibleDocs(st.docs) })),
       refs: undefined,
@@ -496,7 +498,17 @@ class Library {
       program_reference_docs: this.visibleRefs((data.programs[a.program] || { refs: [] }).refs),
       own_reference_docs: this.visibleRefs(a.refs),
       cards: this.cardStatus(a.topic, a.program),
+      // 제출 서류 꾸러미로 고른 증빙과 지금 상태
+      submission_documents: (a.bundle || []).length ? this.bundleStatus(a.bundle) : undefined,
     };
+  }
+
+  bundleStatus(kinds) {
+    const list = new Map(this.listCertificates().certificates.map((c) => [c.kind, c]));
+    return kinds.map((k) => {
+      const c = list.get(k);
+      return c ? { kind: k, path: c.path, valid_until: c.valid_until, expired: c.expired } : { kind: k, missing: true };
+    });
   }
 
   // 이 주제·사업으로 문서를 쓸 때 읽을 카드가 있는지
@@ -511,6 +523,37 @@ class Library {
     const guides = {};
     for (const g of cards.GUIDE_NAMES) guides[g] = one("guide", g);
     return { topic: one("topic", topic), program: one("program", program), guides };
+  }
+
+  // ---- 회사 증빙 ----
+
+  // 종류별 최신본과 발급일·유효기간. AI 제외 문서(등기부등본 등)는 있다는 것만 알리고 경로는 주지 않는다.
+  certificateInfo() {
+    const { views } = this.load();
+    const docs = [...views.values()].filter((v) => /^cert_/.test(v.category)).map((v) => ({ rel: v.rel, name: indexer.nameParts(v.rel).name, text: v.entry.text, category: v.category, mtimeMs: v.entry.mtimeMs, issuedAt: v.entry.issuedAt, validUntil: v.entry.validUntil }));
+    return { views, info: certs.analyze(docs) };
+  }
+
+  listCertificates() {
+    const { views, info } = this.certificateInfo();
+    const list = certs.latestByKind(info).map((c) => {
+      const hidden = views.get(c.rel).excluded;
+      return {
+        kind: c.kind,
+        path: hidden ? undefined : c.rel,
+        hidden_from_ai: hidden || undefined,
+        issued: c.issued || undefined,
+        valid_until: c.validUntil || undefined,
+        days_left: c.daysLeft === null ? undefined : c.daysLeft,
+        expired: c.daysLeft !== null && c.daysLeft < 0 ? true : undefined,
+      };
+    });
+    const have = new Set(list.map((c) => c.kind));
+    return {
+      certificates: list,
+      not_in_library: certs.KINDS.map((k) => k[0]).filter((k) => !have.has(k)),
+      note_for_ai: "양식의 사업자등록번호·설립일·인증번호 같은 칸은 path 의 문서를 read_document 로 읽어 채우세요. expired 인 서류는 새로 발급받아야 한다고 알려 주세요. hidden_from_ai 는 사용자가 Claude 에 보내지 않기로 한 서류입니다.",
+    };
   }
 
   // ---- 지식재산 대장 ----
