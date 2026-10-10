@@ -32,8 +32,20 @@ function check(kind, name) {
   return n;
 }
 
+// 이름 비교용: 띄어쓰기·가운뎃점·밑줄·괄호 등을 빼고 소문자로 ("소재부품기술개발 사업" = "소재부품기술개발사업")
+const loose = (n) => String(n || "").toLowerCase().replace(/[\s·・_\-–—()（）\[\]{}'"“”‘’.,]/g, "");
+
 function fileOf(root, kind, name) {
-  return path.join(root, knowledge.DIR_NAME, KINDS[kind].dir, fileSafe(check(kind, name)) + ".md");
+  const dir = path.join(root, knowledge.DIR_NAME, KINDS[kind].dir);
+  const exact = path.join(dir, fileSafe(check(kind, name)) + ".md");
+  if (fs.existsSync(exact)) return exact;
+  // Claude 나 사용자가 조금 다른 이름으로 저장해 둔 카드가 있으면 그것을 쓴다
+  try {
+    const want = loose(name);
+    const hit = fs.readdirSync(dir).find((f) => f.endsWith(".md") && loose(f.slice(0, -3)) === want);
+    if (hit) return path.join(dir, hit);
+  } catch {}
+  return exact;
 }
 
 // 예전 한 장짜리 작성 가이드는 사업계획서 가이드로 옮긴다 (그 양식이 사업계획서 항목이었다)
@@ -231,13 +243,16 @@ function list(root) {
     } catch {}
     for (const f of files.sort((a, b) => a.localeCompare(b, "ko"))) {
       const file = path.join(base, KINDS[kind].dir, f);
-      // 카드 이름은 첫 줄 제목에서 (파일 이름은 못 쓰는 글자를 바꿨을 수 있다)
+      // 카드 이름은 파일 이름. 파일 이름에 못 쓰는 글자를 '_' 로 바꿨으면 첫 줄 제목에서 원래 이름을 찾는다
+      // (제목 뒤에 붙은 설명 '(KEIT, 2027)' 같은 것은 이름이 아니다)
       let name = f.slice(0, -3);
-      try {
-        const head = fs.readFileSync(file, "utf8").slice(0, 300);
-        const m = /^#\s*(?:주제 카드|사업 카드|작성 가이드):\s*(.+)$/m.exec(head);
-        if (m) name = cleanName(m[1]);
-      } catch {}
+      if (name.includes("_")) {
+        try {
+          const head = fs.readFileSync(file, "utf8").slice(0, 300);
+          const m = /^#\s*(?:주제 카드|사업 카드|작성 가이드)\s*[:：]\s*(.+)$/m.exec(head);
+          if (m && fileSafe(cleanName(m[1])) === name) name = cleanName(m[1]);
+        } catch {}
+      }
       const st = fs.statSync(file);
       out.push({ kind, name, label: KINDS[kind].label, rel: relOf(root, file), updated: st.mtime.toISOString(), size: st.size });
     }
@@ -283,4 +298,4 @@ const WRITE_STEPS = `사업에 낼 문서(수요조사서·사업계획서 등)�
 7. record_application 으로 새 파일을 해당 단계에 연결하고(link) 단계 결과를 '진행'으로 기록한다.
 8. 이번에 새로 확인한 사실·표현이 있으면 주제 카드·사업 카드에 넣을지 사용자에게 묻는다.`;
 
-module.exports = { GUIDE_NAMES, KINDS, cleanName, fileOf, template, read, save, list, BUILD_STEPS, WRITE_STEPS };
+module.exports = { loose, GUIDE_NAMES, KINDS, cleanName, fileOf, template, read, save, list, BUILD_STEPS, WRITE_STEPS };

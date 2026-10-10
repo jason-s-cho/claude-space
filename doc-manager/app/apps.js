@@ -540,7 +540,9 @@ const CARD_LABEL = { topic: "주제 카드", program: "사업 카드", guide: "�
 const cardKey = (n) => String(n || "").replace(/\s+/g, " ").trim();
 const cardsOf = () => (S.applications && S.applications.cards) || [];
 const GUIDE_DOCS = ["수요조사서", "사업계획서"]; // 기본 작성 가이드 (문서 종류마다 한 장)
-const cardFind = (kind, name) => cardsOf().find((c) => c.kind === kind && c.name === cardKey(name));
+// 띄어쓰기·가운뎃점 등이 조금 달라도 같은 카드로 본다 (lib/cards.js 의 loose 와 같은 규칙)
+const looseName = (n) => String(n || "").toLowerCase().replace(/[\s·・_\-–—()（）\[\]{}'"“”‘’.,]/g, "");
+const cardFind = (kind, name) => cardsOf().find((c) => c.kind === kind && looseName(c.name) === looseName(name));
 // Claude 에게 보낼 요청: 어떤 카드인지, 어디에 무엇을 정리하는지까지 적어야 되묻지 않는다
 const CARD_ASK = {
   topic: (n) => `문서 보관함의 '${n}' 주제 카드를 만들어 줘(이미 있으면 새로 고쳐 줘). get_card(kind: topic, name: "${n}")로 양식을 받아 그 구조대로, 이 주제의 수요조사서·계획서·보고서·IR 문서와 지원 이력을 읽고 핵심 수치·차별점·실적·검증된 문장을 출처와 함께 정리해 save_card로 저장해 줘.`,
@@ -597,6 +599,13 @@ function writeCardsHtml(a) {
   </div>`;
 }
 
+// 띄어쓰기 등만 다른 이름은 하나로 (먼저 나온 것 = 카드 파일 이름)
+function uniqLoose(names) {
+  const seen = new Map();
+  for (const n of names) if (!seen.has(looseName(n))) seen.set(looseName(n), n);
+  return [...seen.values()].sort((x, y) => x.localeCompare(y, "ko"));
+}
+
 // 설정 > Claude 연결: 만들어 둔 카드 목록
 function renderCardsList() {
   const box = $("cardsList");
@@ -607,8 +616,8 @@ function renderCardsList() {
   // 지원 건에는 있는데 카드가 없는 주제·사업도 보여 준다
   const rows = [
     ...[...new Set([...GUIDE_DOCS, ...list.filter((c) => c.kind === "guide").map((c) => c.name)])].map((n) => cardRowHtml("guide", n)),
-    ...[...new Set([...list.filter((c) => c.kind === "topic").map((c) => c.name), ...topics])].sort((x, y) => x.localeCompare(y, "ko")).map((n) => cardRowHtml("topic", n)),
-    ...[...new Set([...list.filter((c) => c.kind === "program").map((c) => c.name), ...programs])].sort((x, y) => x.localeCompare(y, "ko")).map((n) => cardRowHtml("program", n)),
+    ...uniqLoose([...list.filter((c) => c.kind === "topic").map((c) => c.name), ...topics]).map((n) => cardRowHtml("topic", n)),
+    ...uniqLoose([...list.filter((c) => c.kind === "program").map((c) => c.name), ...programs]).map((n) => cardRowHtml("program", n)),
   ];
   box.innerHTML = `<ul class="card-rows">${rows.join("")}</ul>
     <small class="hint">'Claude 로 만들기'를 누르면 요청 문장이 복사됩니다. Claude 데스크톱 일반 채팅에 붙여 넣으세요. 카드는 <code>Claude 지식</code> 폴더에 저장되고, 맨 아래 <b>사용자 메모</b>는 Claude 가 고치지 않습니다. 주제·사업은 지원 현황의 주제·사업명에서 가져옵니다.</small>`;

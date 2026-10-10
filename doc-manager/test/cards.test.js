@@ -44,3 +44,17 @@ test("예전 한 장짜리 작성 가이드는 사업계획서 가이드로 옮�
   assert.ok(!fs.existsSync(path.join(root, "Claude 지식", "작성 가이드.md")));
   assert.deepStrictEqual(cards.list(root).map((c) => [c.kind, c.name]), [["guide", "사업계획서"]]);
 });
+
+test("카드 이름이 조금 달라도 찾는다 (띄어쓰기·제목 뒤 설명)", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "cards-loose-"));
+  fs.mkdirSync(path.join(root, "Claude 지식", "사업"), { recursive: true });
+  // Claude 가 '소재부품기술개발 사업' 으로 저장하고 제목 뒤에 설명을 붙였다
+  fs.writeFileSync(path.join(root, "Claude 지식", "사업", "소재부품기술개발 사업.md"), "# 사업 카드: 소재부품기술개발 사업 (KEIT, 2027)\n\n## 1. 사업 개요\nx\n");
+  const c = cards.read(root, "program", "소재부품기술개발사업");
+  assert.ok(c.exists);
+  assert.strictEqual(c.rel, "Claude 지식/사업/소재부품기술개발 사업.md");
+  assert.deepStrictEqual(cards.list(root).map((x) => x.name), ["소재부품기술개발 사업"]); // 제목 뒤 설명은 이름이 아니다
+  // 저장해도 새 파일을 만들지 않고 그 파일을 고친다
+  cards.save(root, "program", "소재부품기술개발사업", "# 사업 카드: 소재부품기술개발사업\n\n## 1. 사업 개요\ny\n");
+  assert.deepStrictEqual(fs.readdirSync(path.join(root, "Claude 지식", "사업")), ["소재부품기술개발 사업.md"]);
+});
