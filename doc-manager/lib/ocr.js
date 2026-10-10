@@ -9,7 +9,7 @@ const store = require("./store");
 const { runPowerShell } = require("./convert");
 const { hashFile } = require("./duplicates");
 
-const CACHE_VERSION = 1;
+const CACHE_VERSION = 2; // 2: 낱자 사이 간격으로 띄어쓰기를 정한다 (1 은 한글을 한 글자씩 띄어 놓았다)
 const AUTO_MAX_PAGES = 60; // 자동으로 읽을 때 앞에서부터 이만큼 (전부 읽기는 문서 화면 버튼으로)
 
 const { garbledText } = require("./textcheck");
@@ -43,7 +43,35 @@ function writeCache(root, sha1, data) {
   return true;
 }
 
-const joinPages = (pages) => pages.map((p) => String(p || "").trim()).filter(Boolean).join("\n");
+// 한 글자씩 띄어진 한글을 붙인다: "발 급 번 호" → "발급번호", "상호( 법 인 명 )" → "상호(법인명)".
+// 양식의 균등 분할(자간을 넓힌 글자)도 글자 인식에서는 이렇게 나온다. 한 글자 낱말이 3개 이상 이어지거나,
+// 줄 전체가 한 글자 낱말 2개뿐일 때만 붙인다 ("그 외 사항" 같은 보통 문장은 그대로).
+function joinSpacedHangul(line) {
+  const toks = line.split(" ");
+  const one = (t) => /^[가-힣]$/.test(t);
+  const out = [];
+  for (let i = 0; i < toks.length; ) {
+    let j = i;
+    while (j < toks.length && one(toks[j])) j++;
+    const n = j - i;
+    if (n >= 3 || (n === 2 && toks.length === 2)) {
+      out.push(toks.slice(i, j).join(""));
+      i = j;
+    } else {
+      out.push(toks[i]);
+      i++;
+    }
+  }
+  return out.join(" ").replace(/([(\[]) (?=[가-힣])/g, "$1").replace(/(?<=[가-힣]) ([)\]])/g, "$1");
+}
+
+const tidyOcr = (page) =>
+  String(page || "")
+    .split("\n")
+    .map((l) => joinSpacedHangul(l.replace(/[ \t]+/g, " ").trim()))
+    .join("\n")
+    .trim();
+const joinPages = (pages) => pages.map(tidyOcr).filter(Boolean).join("\n");
 
 // 파일의 OCR 결과가 남아 있으면 글자를 돌려준다 (없으면 null)
 async function cachedText(root, full) {
@@ -74,6 +102,21 @@ try {
 $asTaskOp = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation` + "`" + String.raw`1' })[0]
 $asTaskAction = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncAction' })[0]
 function Await($op, [Type]$type) { $t = $asTaskOp.MakeGenericMethod($type).Invoke($null, @($op)); $t.Wait(-1) | Out-Null; $t.Result }
+# 줄 글자: 낱말 사이 실제 간격이 글자 높이의 18%보다 넓을 때만 띄운다 (한글은 낱자마다 낱말로 나오기 때문)
+function LineText($line) {
+  $ws = @($line.Words)
+  if ($ws.Count -eq 0) { return '' }
+  $sb = New-Object System.Text.StringBuilder
+  [void]$sb.Append($ws[0].Text)
+  for ($k = 1; $k -lt $ws.Count; $k++) {
+    $p = $ws[$k - 1].BoundingRect; $c = $ws[$k].BoundingRect
+    $gap = $c.X - ($p.X + $p.Width)
+    $h = [Math]::Max($p.Height, $c.Height)
+    if ($gap -gt ($h * 0.18)) { [void]$sb.Append(' ') }
+    [void]$sb.Append($ws[$k].Text)
+  }
+  $sb.ToString()
+}
 function AwaitAction($action) { $t = $asTaskAction.Invoke($null, @($action)); $t.Wait(-1) | Out-Null }
 
 try {
@@ -109,7 +152,7 @@ try {
       $decoder = Await ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)) ([Windows.Graphics.Imaging.BitmapDecoder])
       $bitmap = Await ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
       $result = Await ($engine.RecognizeAsync($bitmap)) ([Windows.Media.Ocr.OcrResult])
-      $pages += ,((@($result.Lines) | ForEach-Object { $_.Text }) -join "` + "`n" + String.raw`")
+      $pages += ,((@($result.Lines) | ForEach-Object { LineText $_ }) -join "` + "`n" + String.raw`")
       $bitmap.Dispose(); $stream.Dispose()
     } finally { $page.Dispose() }
   }
@@ -155,4 +198,6 @@ async function ocrWithCache(root, full, opts = {}) {
   return { text: joinPages(r.pages), pages: r.pages.length, total: r.total, lang: r.lang, fromCache: false };
 }
 
-module.exports = { AUTO_MAX_PAGES, garbledText, needsOcr, readCache, writeCache, cachedText, ocrPdf, ocrWithCache, joinPages, SCRIPT };
+const OCR_VERSION = CACHE_VERSION;
+
+module.exports = { OCR_VERSION, joinSpacedHangul, AUTO_MAX_PAGES, garbledText, needsOcr, readCache, writeCache, cachedText, ocrPdf, ocrWithCache, joinPages, SCRIPT };

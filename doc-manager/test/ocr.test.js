@@ -62,7 +62,8 @@ test("윈도우 글자 인식으로 스캔 PDF 읽기", { skip: process.platform
   }
   assert.strictEqual(r.total, 2);
   assert.strictEqual(r.pages.length, 2);
-  assert.match(r.pages[0], /GRAPHENE/i);
+  assert.match(r.pages[0], /GRAPHENE\s+SHIELD/i); // 낱말 사이 띄어쓰기는 남긴다 (간격으로 정함)
+  assert.doesNotMatch(r.pages[0], /G R A P H/i);
   assert.match(r.pages[1], /SECOND/i);
 });
 
@@ -81,4 +82,15 @@ test("글자 정보가 깨진 PDF 도 글자 인식 대상 (보통 문서·목�
   // 깨진 글자는 '영문'으로 보지 않는다
   const { classify } = require("../lib/classify");
   assert.ok(!classify({ name: "25년 표준재무제표_엠씨케이테크", dir: "", text: garbage }).tags.includes("영문"));
+});
+
+test("한 글자씩 띄어 읽힌 한글을 붙인다 (보통 문장의 띄어쓰기는 그대로)", () => {
+  const j = ocr.joinSpacedHangul;
+  assert.strictEqual(j("발 급 번 호"), "발급번호");
+  assert.strictEqual(j("상호( 법 인 명 )"), "상호(법인명)");
+  assert.strictEqual(j("처 리"), "처리"); // 줄 전체가 두 글자
+  assert.strictEqual(j("그 외 사항은 별도 공지"), "그 외 사항은 별도 공지");
+  assert.strictEqual(j("9333-745-7222-901"), "9333-745-7222-901");
+  assert.strictEqual(j("GRAPHENE SHIELD PROPOSAL"), "GRAPHENE SHIELD PROPOSAL");
+  assert.strictEqual(ocr.joinPages(["표 준 재 무 제 표 증 명\n발 급 번 호  9333-745", "", "2쪽"]), "표준재무제표증명\n발급번호 9333-745\n2쪽");
 });

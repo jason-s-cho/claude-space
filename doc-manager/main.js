@@ -425,7 +425,9 @@ const stampOf = (e) => `${e.size}:${e.mtimeMs}`;
 function queueOcr() {
   if (!index || process.platform !== "win32" || settings.ocrAuto === false || ocrStopped) return;
   for (const e of Object.values(index.files)) {
-    if (e.ocr || e.ocrTried === stampOf(e) || !ocr.needsOcr(e)) continue;
+    // 예전 방식으로 읽은 것(한글이 한 글자씩 띄어진 것)은 다시 읽는다
+    const stale = e.ocr && e.ocr.v !== ocr.OCR_VERSION;
+    if (!stale && (e.ocr || e.ocrTried === stampOf(e) || !ocr.needsOcr(e))) continue;
     if (!ocrQueue.some((q) => q.rel === e.rel)) ocrQueue.push({ rel: e.rel, maxPages: ocr.AUTO_MAX_PAGES });
   }
   runOcrQueue();
@@ -461,7 +463,7 @@ async function ocrOne(job) {
     if (!cur || stampOf(cur) !== stamp) return { error: "읽는 동안 파일이 바뀌었습니다" };
     cur.text = r.text.replace(/[ \t]+/g, " ").slice(0, 30000);
     cur.terms = countTerms([cur.title, cur.text].join("\n"));
-    cur.ocr = { pages: r.pages, total: r.total, lang: r.lang };
+    cur.ocr = { pages: r.pages, total: r.total, lang: r.lang, v: ocr.OCR_VERSION };
     cur.ocrTried = stamp;
     delete cur.ocrError;
     indexer.reclassify(cur, classifyOptions()); // 이제 본문으로 분류·태그를 다시 정한다 (직접 고친 분류는 그대로)
