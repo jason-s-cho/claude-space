@@ -251,6 +251,8 @@ $("detail").addEventListener("dragleave", (e) => {
   if (e.target.classList && e.target.classList.contains("ref-drop") && !e.target.contains(e.relatedTarget)) e.target.classList.remove("over");
 });
 
+const openNotes = new Set(); // "+ 메모"를 눌러 연 단계 (메모가 비어 있어도 칸을 보여 준다)
+
 function renderAppDetail() {
   const box = $("detail");
   const a = appsOf().find((x) => x.id === selectedApp);
@@ -270,25 +272,25 @@ function renderAppDetail() {
           return `<span class="doc-chip${d ? "" : " missing"}" title="${esc(rel)}"><button data-a-open-doc="${esc(rel)}" type="button">${esc(d ? d.base : rel.split("/").pop() + " (없음)")}</button><button data-a-unlink="${i}" data-rel="${esc(rel)}" type="button" aria-label="연결 끊기">${icon("x")}</button></span>`;
         })
         .join("");
+      // 한 단계 = 두 줄: [이름 · 결과 · (↑↓✕)] / [결과일 · 마감 · D-day · 캘린더], 메모·문서는 있을 때만 크게
+      const noteOpen = s.note || openNotes.has(`${a.id}|${i}`);
       return `<li class="stage ${STAGE_CLASS[s.status] || ""}">
-        <div class="stage-head">
+        <div class="stage-row">
           <input class="stage-name" data-a-sname="${i}" value="${esc(s.name)}" aria-label="단계 이름">
           <select class="select" data-a-sstatus="${i}" aria-label="결과">${statusOpts(s.status)}</select>
-          <input type="date" data-a-sdate="${i}" value="${esc(s.date)}" aria-label="결과 날짜" title="결과 날짜 (제출·발표·통보한 날)">
           <span class="stage-tools">
             <button class="icon-btn" data-a-sup="${i}" type="button" title="위로"${i ? "" : " disabled"}>↑</button>
             <button class="icon-btn" data-a-sdown="${i}" type="button" title="아래로"${i < a.stages.length - 1 ? "" : " disabled"}>↓</button>
             <button class="icon-btn danger" data-a-sdel="${i}" type="button" title="이 단계 빼기">${icon("x")}</button>
           </span>
         </div>
-        <div class="stage-due">
-          <span class="lbl">마감</span>
-          <input type="date" data-a-sdue="${i}" value="${esc((s.due || "").slice(0, 10))}" aria-label="마감 날짜">
-          <input type="time" data-a-sduetime="${i}" value="${esc((s.due || "").slice(11, 16))}" aria-label="마감 시각"${s.due ? "" : " disabled"}>
-          ${s.due ? `${dueBadge(s)}<button class="link-btn" data-a-cal="${i}" data-how="google" type="button" title="브라우저로 구글 캘린더 일정 추가 화면을 엽니다">구글 캘린더</button><button class="link-btn" data-a-cal="${i}" data-how="ics" type="button" title="일정 파일을 열어 아웃룩·윈도우 일정에 추가">일정 파일</button>` : ""}
+        <div class="stage-row meta">
+          <label title="결과 날짜 (제출·발표·통보한 날)"><span>결과일</span><input type="date" data-a-sdate="${i}" value="${esc(s.date)}" aria-label="결과 날짜"></label>
+          <label title="마감 (날짜만 넣어도 됩니다)"><span>마감</span><input type="date" data-a-sdue="${i}" value="${esc((s.due || "").slice(0, 10))}" aria-label="마감 날짜"><input type="time" data-a-sduetime="${i}" value="${esc((s.due || "").slice(11, 16))}" aria-label="마감 시각"${s.due ? "" : " hidden"}></label>
+          ${s.due ? `${dueBadge(s)}<span class="cal-links"><button class="mini-btn" data-a-cal="${i}" data-how="google" type="button" title="구글 캘린더에 일정 추가 (브라우저)">${icon("calendar")}구글</button><button class="mini-btn" data-a-cal="${i}" data-how="ics" type="button" title="일정 파일을 열어 아웃룩·윈도우 일정에 추가">${icon("calendar")}파일</button></span>` : ""}
         </div>
-        <textarea data-a-snote="${i}" rows="${s.note ? 3 : 1}" placeholder="평가 의견 · 탈락 사유 · 메모">${esc(s.note)}</textarea>
-        <div class="stage-docs">${docs}<button class="link-btn" data-a-slink="${i}" type="button">+ 문서 연결</button></div>
+        ${noteOpen ? `<textarea data-a-snote="${i}" rows="${s.note ? Math.min(4, s.note.split("\n").length + 1) : 2}" placeholder="평가 의견 · 탈락 사유 · 메모">${esc(s.note)}</textarea>` : ""}
+        <div class="stage-docs">${docs}${noteOpen ? "" : `<button class="link-btn" data-a-snote-open="${i}" type="button">+ 메모</button>`}<button class="link-btn" data-a-slink="${i}" type="button">+ 문서 연결</button></div>
       </li>`;
     })
     .join("");
@@ -507,6 +509,13 @@ $("detail").addEventListener("click", async (e) => {
     if (r.missing.length) msg += `\n보관함에 없음: ${r.missing.join(", ")}`;
     if (r.expired.length) msg += `\n유효기간 지남: ${r.expired.join(", ")} — 새로 발급받으세요`;
     return toast(msg, r.missing.length || r.expired.length ? 12000 : 6000);
+  }
+  if (b.dataset.aSnoteOpen !== undefined) {
+    openNotes.add(`${a.id}|${b.dataset.aSnoteOpen}`);
+    renderAppDetail();
+    const ta = document.querySelector(`[data-a-snote="${b.dataset.aSnoteOpen}"]`);
+    if (ta) ta.focus();
+    return;
   }
   if (b.dataset.aCal !== undefined) {
     const r = await api.deadlineCalendar({ id: a.id, stage: a.stages[idx("aCal")].name }, b.dataset.how);
