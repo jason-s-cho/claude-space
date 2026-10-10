@@ -16,6 +16,7 @@ const { docFrequency, topKeywords } = require("./keywords");
 const knowledge = require("./knowledge");
 const cards = require("./cards");
 const ocr = require("./ocr");
+const ipLib = require("./ip");
 const forms = require("./forms");
 const convertLib = require("./convert");
 const { compareTexts } = require("./diff");
@@ -510,6 +511,32 @@ class Library {
     const guides = {};
     for (const g of cards.GUIDE_NAMES) guides[g] = one("guide", g);
     return { topic: one("topic", topic), program: one("program", program), guides };
+  }
+
+  // ---- 지식재산 대장 ----
+
+  listIp({ query = "", right = "", status = "", topic = "" } = {}) {
+    const data = ipLib.load(this.root());
+    const q = String(query || "").toLowerCase().replace(/\s+/g, "");
+    const tq = String(topic || "").toLowerCase().replace(/\s+/g, "");
+    const flat = (it) => [it.title, it.appNo, it.regNo, it.pubNo, it.applicants, it.inventors, it.topic, it.project, it.memo].join(" ").toLowerCase().replace(/\s+/g, "");
+    const items = data.items
+      .filter((it) => (!q || flat(it).includes(q)) && (!right || it.right === right) && (!status || it.status === status) && (!tq || String(it.topic || "").toLowerCase().replace(/\s+/g, "").includes(tq)))
+      .sort((a, b) => String(b.appDate || "").localeCompare(String(a.appDate || "")));
+    return {
+      total: items.length,
+      items: items.map((it) => ({ ...it, docs: this.visibleDocs(it.docs), createdAt: undefined, updatedAt: undefined })),
+      // 사업계획서 '지식재산 보유 현황' 표에 그대로 쓸 수 있는 탭 구분 표
+      table_tsv: items.length ? ipLib.toTsv(items) : undefined,
+      note_for_ai: items.length ? undefined : "대장이 비었거나 맞는 건이 없습니다. 지식재산 분류 문서(search_documents)를 읽어 record_ip 로 채울 수 있습니다.",
+    };
+  }
+
+  saveIp(op) {
+    const r = ipLib.update(this.root(), op);
+    if (!r.id) return { done: true };
+    const it = ipLib.load(this.root()).items.find((x) => x.id === r.id);
+    return { ...it, docs: this.visibleDocs(it.docs) };
   }
 
   // ---- 주제 카드·사업 카드·작성 가이드 ----

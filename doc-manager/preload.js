@@ -49,6 +49,8 @@ contextBridge.exposeInMainWorld("docs", {
   cardGet: (kind, name) => ipcRenderer.invoke("card-get", kind, name),
   cardSave: (kind, name, content) => ipcRenderer.invoke("card-save", kind, name, content),
   cardOpen: (kind, name) => ipcRenderer.invoke("card-open", kind, name),
+  ipOp: (op) => ipcRenderer.invoke("ip-op", op),
+  ipCopy: (ids) => ipcRenderer.invoke("ip-copy", ids),
   ocrDoc: (rel, all) => ipcRenderer.invoke("ocr-doc", rel, all),
   onOcrProgress: on("ocr-progress"),
   onOcrUnavailable: on("ocr-unavailable"),

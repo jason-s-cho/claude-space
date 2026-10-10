@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, shell, ipcMain, dialog, nativeTheme, net, Notification } = require("electron");
+const { app, BrowserWindow, Menu, shell, ipcMain, dialog, nativeTheme, net, Notification, clipboard } = require("electron");
 const fs = require("fs");
 const path = require("path");
 const indexer = require("./lib/indexer");
@@ -31,6 +31,7 @@ const knowledge = require("./lib/knowledge");
 const cards = require("./lib/cards");
 const calendar = require("./lib/calendar");
 const ocr = require("./lib/ocr");
+const ipLib = require("./lib/ip");
 const { countTerms } = require("./lib/keywords");
 const duplicates = require("./lib/duplicates");
 const { convert, targetsFor } = require("./lib/convert");
@@ -101,6 +102,21 @@ function loadFolderSettings(root) {
 // ---- 지원 건 (.docmanager/applications.json) ----
 let appsData = appsLib.empty();
 let appsMtime = 0;
+let ipData = ipLib.empty();
+let ipMtime = 0;
+function loadIp(root) {
+  ipData = ipLib.load(root);
+  ipMtime = mtimeOf(ipLib.fileOf(root));
+}
+// 화면에 보낼 지식재산 대장 + 지식재산 문서에서 찾았지만 대장에 없는 번호
+function ipState() {
+  let suggestions = [];
+  try {
+    const docs = index ? Object.values(index.files).map((e) => ({ rel: e.rel, text: e.text, category: indexer.effective(e).category })).filter((d) => /^ip_/.test(d.category)) : [];
+    suggestions = ipLib.suggestions(ipData, docs);
+  } catch {}
+  return { rights: ipLib.RIGHTS, statuses: ipLib.STATUSES, items: ipData.items, suggestions };
+}
 function loadApps(root) {
   appsData = appsLib.load(root);
   appsMtime = mtimeOf(appsLib.fileOf(root));
@@ -123,6 +139,7 @@ function loadRoot(root) {
   indexFile = loc.file;
   indexInFolder = loc.inFolder;
   loadApps(root);
+  loadIp(root);
   textFile = store.textCacheFile(app.getPath("userData"), root);
   index = indexer.loadIndex(indexFile, root, { anyRoot: indexInFolder, textFile });
   indexDiskMtime = mtimeOf(indexFile);
@@ -140,6 +157,11 @@ function syncFromDisk() {
   const sMtime = mtimeOf(sFile);
   if (sMtime && sMtime !== folderSettingsMtime) {
     loadFolderSettings(settings.root);
+    changed = true;
+  }
+  const pMtime = mtimeOf(ipLib.fileOf(settings.root));
+  if (pMtime !== ipMtime) {
+    loadIp(settings.root); // Claude 커넥터나 다른 PC가 대장을 고쳤다
     changed = true;
   }
   const aMtime = mtimeOf(appsLib.fileOf(settings.root));
@@ -303,6 +325,7 @@ function state() {
     progress,
     docs: index ? Object.values(index.files).map(docSummary) : [],
     applications: appsState(),
+    ip: ipState(),
     families: (() => {
       const out = {};
       for (const v of versionMap().values()) out[v.key] = v.order;
@@ -761,6 +784,7 @@ function registerIpc() {
       const newRel = await moveToFolder(index, rel, expectedFolder(eff.category, eff.tags, settings.partners, settings.projects));
       persistIndex();
       if (appsLib.renameDocs(settings.root, [{ from: rel, to: newRel }])) loadApps(settings.root);
+      if (ipLib.renameDocs(settings.root, [{ from: rel, to: newRel }])) loadIp(settings.root);
       keywordCache = versionCache = null;
       send("state", state());
       return { rel: newRel };
@@ -843,6 +867,26 @@ function registerIpc() {
       send("ocr-progress", null);
       runOcrQueue();
     }
+  });
+
+  // ---- 지식재산 대장 ----
+  ipcMain.handle("ip-op", (_e, op) => {
+    try {
+      if (!settings.root) throw new Error("문서 폴더를 먼저 골라 주세요.");
+      const r = ipLib.update(settings.root, op);
+      loadIp(settings.root);
+      send("state", state());
+      return { id: r.id };
+    } catch (err) {
+      return { error: String((err && err.message) || err) };
+    }
+  });
+  // 고른 건들을 표(탭 구분)로 복사 → 사업계획서의 지식재산 표에 붙여 넣기
+  ipcMain.handle("ip-copy", (_e, ids) => {
+    const set = new Set(ids || []);
+    const items = ipData.items.filter((x) => !ids || set.has(x.id));
+    clipboard.writeText(ipLib.toTsv(items));
+    return { count: items.length };
   });
 
   // ---- 마감 → 캘린더 ----
@@ -950,6 +994,7 @@ function registerIpc() {
     if (r.moved.length) {
       persistIndex();
       if (appsLib.renameDocs(settings.root, r.moved)) loadApps(settings.root);
+      if (ipLib.renameDocs(settings.root, r.moved)) loadIp(settings.root);
       keywordCache = versionCache = null;
       send("state", state());
     }

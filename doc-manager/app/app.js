@@ -157,6 +157,7 @@ function rebuildDupMap() {
 // ---------- 걸러내기 ----------
 
 const isAppsView = () => filter.view === "apps" || filter.view.startsWith("apps:");
+const isBoardView = () => isAppsView() || filter.view === "ip"; // 문서 목록 대신 대장 화면을 쓰는 보기
 
 function matchesView(d, view) {
   if (view === "all") return true;
@@ -229,6 +230,7 @@ function renderSide() {
     for (const [p, n] of programs) h += navItem("apps:" + p, p || "사업명 없음", n, { sub: true });
     h += "</div></div>";
   } else h += navItem("apps", "지원 현황", appItems.length, { icon: "briefcase" });
+  h += navItem("ip", "지식재산 대장", ((S.ip && S.ip.items) || []).length, { icon: "bulb" });
   if (lastImported.size) h += navItem("imported", "방금 넣은 문서", count((d) => lastImported.has(d.rel)), { icon: "inbox" });
   const misplacedN = count((d) => d.misplaced);
   if (misplacedN || filter.view === "misplaced") h += navItem("misplaced", "제자리가 아닌 문서", misplacedN, { icon: "move" });
@@ -328,6 +330,7 @@ function viewLabel(view) {
   if (view === "misplaced") return "제자리가 아닌 문서";
   if (view === "apps") return "지원 현황";
   if (view.startsWith("apps:")) return view.slice(5) || "사업명 없음";
+  if (view === "ip") return "지식재산 대장";
   if (view === "duplicates") return "중복 파일";
   if (view.startsWith("group:")) return view.slice(6);
   if (view.startsWith("cat:")) return catLabel(view.slice(4));
@@ -365,6 +368,7 @@ function rowHtml(d, opts = {}) {
 }
 
 function renderList() {
+  if (filter.view === "ip") return renderIpView(); // ip.js
   if (isAppsView()) return renderAppsView();
   if (typeof leaveAppsView === "function") leaveAppsView(); // apps.js 는 app.js 다음에 읽힌다
   visible = filtered();
@@ -464,6 +468,7 @@ function ensureRowShown(rel) {
 }
 
 async function renderDetail() {
+  if (filter.view === "ip") return renderIpDetail();
   if (isAppsView()) return renderAppDetail();
   const box = $("detail");
   const d = byRel.get(selected);
@@ -546,6 +551,7 @@ async function renderDetail() {
     ${timeline}
     ${ocrCardHtml(d)}
     ${appsCardHtml(d)}
+    ${typeof ipCardHtml === "function" ? ipCardHtml(d) : ""}
     <div class="card">
       <h4>${icon("hash")}태그</h4>
       <div class="tag-edit">${tagChips}<input class="tag-input" id="tagInput" placeholder="+ 태그" list="allTags"></div>
@@ -631,7 +637,7 @@ api.onOcrProgress((p) => {
     pill.textContent = `스캔 PDF 글자 읽는 중 · ${d ? d.base : p.rel.split("/").pop()}${p.of ? ` ${p.page}/${p.of}쪽` : ""}${p.left ? ` · 남은 문서 ${p.left}` : ""}`;
     pill.hidden = false;
   }
-  if (selected && (!p || p.rel === selected) && !isAppsView()) {
+  if (selected && (!p || p.rel === selected) && !isBoardView()) {
     const card = document.querySelector(".ocr-card");
     const d = byRel.get(selected);
     if (card && d) card.outerHTML = ocrCardHtml(d);
@@ -918,7 +924,7 @@ const TOOL_LABEL = {
   find_related_documents: "관련 문서", save_new_version: "새 버전 저장", prepare_new_version: "새 버전 복사본",
   get_knowledge: "지식 카드 읽기", save_knowledge_card: "지식 카드 저장",
   inspect_form: "양식 보기", fill_form: "양식 채우기", convert_document: "형식 바꾸기", compare_versions: "바뀐 곳 비교",
-  list_applications: "지원 건 목록", get_application: "지원 건 보기", record_application: "지원 건 기록", get_program: "사업 자료 보기", get_card: "카드 읽기", save_card: "카드 저장",
+  list_applications: "지원 건 목록", get_application: "지원 건 보기", record_application: "지원 건 기록", get_program: "사업 자료 보기", get_card: "카드 읽기", save_card: "카드 저장", list_ip: "지식재산 대장", record_ip: "지식재산 기록",
 };
 
 async function renderClaudeTab() {
@@ -1479,7 +1485,7 @@ $("list").addEventListener("dblclick", (e) => {
 });
 
 $("detail").addEventListener("click", async (e) => {
-  if (isAppsView()) return; // 지원 건 화면은 apps.js 가 맡는다
+  if (isBoardView()) return; // 지원 건·지식재산 대장 화면은 apps.js·ip.js 가 맡는다
   const b = e.target.closest("button");
   const d = byRel.get(selected);
   if (!b || !d) return;
@@ -1530,7 +1536,7 @@ $("detail").addEventListener("click", async (e) => {
 });
 
 $("detail").addEventListener("change", async (e) => {
-  if (isAppsView()) return;
+  if (isBoardView()) return;
   const d = byRel.get(selected);
   if (!d) return;
   if (e.target.id === "aiExcludeToggle") {

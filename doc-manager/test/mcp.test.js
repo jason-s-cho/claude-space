@@ -58,7 +58,7 @@ test("Claude 커넥터: 둘러보기·검색·읽기·버전·관련 문서·새
   const { client, call } = await connect(ud);
   try {
     const tools = (await client.listTools()).tools.map((t) => t.name).sort();
-    assert.deepStrictEqual(tools, ["compare_versions", "convert_document", "fill_form", "find_related_documents", "get_application", "get_card", "get_knowledge", "get_program", "inspect_form", "library_overview", "list_applications", "list_versions", "prepare_new_version", "read_document", "record_application", "save_card", "save_knowledge_card", "save_new_version", "search_documents"]);
+    assert.deepStrictEqual(tools, ["compare_versions", "convert_document", "fill_form", "find_related_documents", "get_application", "get_card", "get_knowledge", "get_program", "inspect_form", "library_overview", "list_applications", "list_ip", "list_versions", "prepare_new_version", "read_document", "record_application", "record_ip", "save_card", "save_knowledge_card", "save_new_version", "search_documents"]);
     const prompts = (await client.listPrompts()).prompts.map((p) => p.name);
     assert.deepStrictEqual(prompts, ["build_knowledge_card", "build_topic_card", "build_program_card", "build_writing_guide", "write_application_document"]);
     const wp = await client.getPrompt({ name: "write_application_document", arguments: { application: "그래핀 스텔스 × 소재부품", document: "수요조사서" } });
@@ -193,6 +193,16 @@ test("Claude 커넥터: 둘러보기·검색·읽기·버전·관련 문서·새
     assert.match((await call("get_card", { kind: "guide" })).data.note_for_ai, /수요조사서, 사업계획서/);
     assert.match((await call("get_card", { kind: "guide", name: "수요조사서" })).data.card, /^# 작성 가이드: 수요조사서/);
     assert.match((await call("save_card", { kind: "program", content: "x" })).text, /이름/);
+    // 지식재산 대장: 넣고, 문서 잇고, 표로 받는다. AI 제외 문서는 연결하지 못한다
+    assert.match((await call("list_ip", {})).data.note_for_ai, /비었거나/);
+    const pat = (await call("record_ip", { action: "create", fields: { title: "그래핀 스텔스 패널", appNo: "1020240123456", appDate: "2024-03-05", topic: "그래핀 스텔스" } })).data;
+    assert.strictEqual(pat.appNo, "10-2024-0123456");
+    await call("record_ip", { action: "update", id: pat.id, fields: { regNo: "10-2654321" } });
+    await call("record_ip", { action: "link", id: pat.id, path: report });
+    assert.match((await call("record_ip", { action: "link", id: pat.id, path: "구매·견적/장비 견적.docx" })).text, /AI 제외/);
+    const ipList = (await call("list_ip", { topic: "그래핀" })).data;
+    assert.deepStrictEqual([ipList.total, ipList.items[0].status, ipList.items[0].docs], [1, "등록", [report]]);
+    assert.match(ipList.table_tsv, /특허\t그래핀 스텔스 패널\t10-2024-0123456\t2024-03-05\t10-2654321/);
     // 카드 폴더는 문서 목록에 섞이지 않는다
     assert.ok(!(await call("search_documents", { query: "광학투명 전자파 차폐" })).text.includes("Claude 지식"));
     // 스캔 PDF: 앱이 OCR 로 읽어 둔 글자를 Claude 도 읽는다
