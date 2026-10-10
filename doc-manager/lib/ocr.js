@@ -12,13 +12,15 @@ const { hashFile } = require("./duplicates");
 const CACHE_VERSION = 1;
 const AUTO_MAX_PAGES = 60; // 자동으로 읽을 때 앞에서부터 이만큼 (전부 읽기는 문서 화면 버튼으로)
 
-// 글자가 거의 없는 PDF = 스캔본으로 본다 (페이지당 20자 미만)
+const { garbledText } = require("./textcheck");
+
+// 스캔본(페이지당 글자 20자 미만)이거나 글자가 깨진 PDF 는 글자 인식으로 읽는다
 function needsOcr(entry) {
   if (!entry || !/\.pdf$/i.test(entry.rel || "") || entry.error || entry.protectedText) return false;
   const pages = entry.pages || 0;
   if (!pages) return false;
   const len = String(entry.text || "").replace(/\s+/g, "").length;
-  return len < 20 * pages;
+  return len < 20 * pages || garbledText(entry.text);
 }
 
 const cacheDir = (root) => path.join(store.paths(root).dir, "ocr");
@@ -153,4 +155,4 @@ async function ocrWithCache(root, full, opts = {}) {
   return { text: joinPages(r.pages), pages: r.pages.length, total: r.total, lang: r.lang, fromCache: false };
 }
 
-module.exports = { AUTO_MAX_PAGES, needsOcr, readCache, writeCache, cachedText, ocrPdf, ocrWithCache, joinPages, SCRIPT };
+module.exports = { AUTO_MAX_PAGES, garbledText, needsOcr, readCache, writeCache, cachedText, ocrPdf, ocrWithCache, joinPages, SCRIPT };

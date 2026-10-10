@@ -65,3 +65,20 @@ test("윈도우 글자 인식으로 스캔 PDF 읽기", { skip: process.platform
   assert.match(r.pages[0], /GRAPHENE/i);
   assert.match(r.pages[1], /SECOND/i);
 });
+
+test("글자 정보가 깨진 PDF 도 글자 인식 대상 (보통 문서·목차·표는 아니다)", () => {
+  const { garbledText } = require("../lib/textcheck");
+  const garbage = fs.readFileSync(path.join(__dirname, "fixtures", "garbled-pdf-text.txt"), "utf8"); // 홈택스 표준재무제표 PDF 에서 나온 글자
+  assert.ok(garbledText(garbage));
+  assert.ok(ocr.needsOcr({ rel: "a/25년 표준재무제표.pdf", pages: 2, text: garbage }));
+  for (const t of [
+    "사업계획서 그래핀 기반 투명 전자파 차폐 필름의 개발 목표는 광투과율 85% 이상, 차폐효율 40 dB 이상이며 2027년까지 300 mm 대면적 공정을 확보한다.",
+    "Graphene-based transparent EMI shielding film with optical transmittance above 85% and shielding effectiveness of 40 dB. Revenue 2026: 1,234 (KRW mn).",
+    "표 1. 재무상태표 (단위: 원) 자산총계 1,234,567,890 부채총계 234,567,890 자본총계 1,000,000,000 매출액 3,456,789,012 영업이익 123,456,789",
+    "목차\n1. 개요 ........ 3\n2. 기술 현황 ........ 5\n3. 시장 ........ 9\n4. 사업화 계획 ........ 12",
+  ])
+    assert.ok(!garbledText(t), t);
+  // 깨진 글자는 '영문'으로 보지 않는다
+  const { classify } = require("../lib/classify");
+  assert.ok(!classify({ name: "25년 표준재무제표_엠씨케이테크", dir: "", text: garbage }).tags.includes("영문"));
+});

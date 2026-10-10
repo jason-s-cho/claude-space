@@ -1,8 +1,10 @@
 // 파일 이름 · 폴더 이름 · 본문 글자에서 키워드를 찾아 문서 종류를 정하고 태그를 붙인다.
 // 파일 이름에 나온 단어가 가장 강한 근거이고, 그다음이 폴더 이름, 본문 앞부분, 본문 순서다.
 
+const { garbledText } = require("./textcheck");
+
 // 분류가 바뀌면 이 숫자를 올린다. 앱을 켤 때 색인의 숫자와 다르면 모든 문서를 다시 분류한다.
-const CLASSIFIER_VERSION = 4;
+const CLASSIFIER_VERSION = 5;
 
 // folder: 문서 폴더 안에서 이 분류가 들어갈 하위 폴더 이름 (group 폴더 아래)
 const CATEGORIES = [
@@ -417,7 +419,7 @@ function classify(doc, options = {}) {
   if (tags.has("최종보고") && tags.has("최종본") && !/최종본|final/i.test(sec.name)) tags.delete("최종본");
   // 폴더 이름의 [완료] 표시
   if (/\[\s*완료\s*\]/.test(sec.dir + " " + sec.name)) tags.add("완료");
-  if (isEnglish(doc.text || "")) tags.add("영문");
+  if (isEnglish(doc.text || "") && !garbledText(doc.text)) tags.add("영문"); // 깨진 글자(기호 덩어리)는 영문이 아니다
   // 개인정보가 들어 있는 서류(등기부등본·주주명부, 주민등록번호가 그대로 보이는 문서)는 기본으로 Claude 에 보내지 않는다.
   // 화면에서 'AI제외' 태그를 지우면(숨기면) 보낼 수 있다.
   if (PRIVATE_DOC.some((w) => countIn(sec.name, w, 1) || countIn(sec.head, w, 1)) || RRN.test(doc.text || "")) tags.add("AI제외");

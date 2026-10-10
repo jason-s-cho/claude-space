@@ -31,6 +31,7 @@ const knowledge = require("./lib/knowledge");
 const cards = require("./lib/cards");
 const calendar = require("./lib/calendar");
 const ocr = require("./lib/ocr");
+const { garbledText } = require("./lib/textcheck");
 const ipLib = require("./lib/ip");
 const certs = require("./lib/certs");
 const { countTerms } = require("./lib/keywords");
@@ -269,6 +270,7 @@ function docSummary(e) {
     hasText: !!e.text,
     // 스캔 PDF: 글자가 거의 없어 OCR 이 필요한 것. ocr: 읽은 결과 { pages, total }
     scanned: ocr.needsOcr(e) && !e.ocr,
+    garbled: !e.ocr && garbledText(e.text), // PDF 안의 글자가 깨져 있다 (글자 인식으로 다시 읽어야 함)
     ocr: e.ocr || null,
     ocrError: e.ocrError || "",
     // 회사 증빙: { kind, issued, validUntil, latest, latestRel, daysLeft } (직접 적은 값은 issuedAt·validUntil)

@@ -16,6 +16,7 @@ const { docFrequency, topKeywords } = require("./keywords");
 const knowledge = require("./knowledge");
 const cards = require("./cards");
 const ocr = require("./ocr");
+const { garbledText } = require("./textcheck");
 const ipLib = require("./ip");
 const certs = require("./certs");
 const forms = require("./forms");
@@ -211,6 +212,9 @@ class Library {
       fromOcr = await ocr.cachedText(this.root(), full);
       if (fromOcr) text = fromOcr.text.slice(0, READ_MAX);
     }
+    // 글자 정보가 깨진 PDF 의 기호 덩어리는 보내지 않는다 (읽어도 뜻이 없고 오해만 부른다)
+    const garbled = !fromOcr && /\.pdf$/i.test(v.rel) && garbledText(text);
+    if (garbled) text = "";
     const start = Math.max(0, Math.min(offset, text.length));
     const end = Math.min(text.length, start + PAGE);
     return {
@@ -224,7 +228,9 @@ class Library {
         ? "암호·배포용 한글 문서라 앞부분(미리보기)만 읽을 수 있습니다."
         : fromOcr
           ? `스캔 PDF 를 글자 인식(OCR)으로 읽은 글자입니다 (${fromOcr.pages}/${fromOcr.total}쪽). 인식 오류가 있을 수 있으니 수치·고유명사는 사용자에게 확인하세요.${fromOcr.total > fromOcr.pages ? " 나머지 쪽은 앱의 문서 화면에서 '나머지 쪽도 읽기'를 누르면 읽힙니다." : ""}`
-          : !text && /\.pdf$/i.test(v.rel)
+          : garbled
+            ? "PDF 안의 글자 정보가 깨져 있어(글꼴 글자표 없음) 본문을 읽을 수 없습니다. 문서 보관함 앱(윈도우)이 글자 인식(OCR)으로 다시 읽는 중이거나 아직 읽지 않았습니다. 사용자에게 앱에서 이 문서를 열어 '지금 글자 읽기'를 눌러 달라고 하세요."
+            : !text && /\.pdf$/i.test(v.rel)
             ? "글자가 없는 스캔 PDF 입니다. 문서 보관함 앱(윈도우)이 글자 인식(OCR)으로 읽는 중이거나 아직 읽지 않았습니다. 사용자에게 앱에서 이 문서를 열어 '지금 글자 읽기'를 눌러 달라고 하세요."
             : !text
               ? "본문 글자를 읽을 수 없는 문서입니다(옛 형식 .ppt/.xls, 그림만 있는 문서 등)."

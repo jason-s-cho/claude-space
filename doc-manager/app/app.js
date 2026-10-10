@@ -611,7 +611,10 @@ async function renderDetail() {
       ${d.hasText ? '<pre class="preview" id="preview">불러오는 중…</pre>' : !d.error ? `<div class="muted small">${["ppt", "xls"].includes(d.ext) ? "옛 형식(." + esc(d.ext) + ")은 본문을 읽지 않고 파일 이름으로만 분류합니다. ." + esc(d.ext) + "x 로 저장하면 본문까지 읽습니다." : "본문 글자가 없습니다. (스캔한 PDF, 그림만 있는 문서 등)"}</div>` : ""}
     </div>`;
 
-  if (d.hasText) {
+  if (d.hasText && d.garbled) {
+    const pre = $("preview");
+    if (pre) pre.textContent = "(PDF 안의 글자가 깨져 있어 보여 드리지 않습니다. 위의 '지금 글자 읽기'로 다시 읽어 주세요.)";
+  } else if (d.hasText) {
     const rel = d.rel;
     const text = await api.getText(rel);
     const pre = $("preview");
@@ -647,9 +650,9 @@ function ocrCardHtml(d) {
   } else if (d.ocrError) body = `<p class="warn">글자를 읽지 못했습니다: ${esc(d.ocrError)}</p>${win ? '<button class="btn sm" data-act="ocr" type="button">다시 읽기</button>' : ""}`;
   else
     body = win
-      ? `<p class="hint">글자가 없는 스캔 PDF 입니다. 글자를 읽어 두면 검색·자동 분류가 되고 Claude 도 내용을 읽을 수 있습니다.${S.settings.ocrAuto !== false ? " (차례대로 자동으로 읽는 중)" : ""}</p><button class="btn sm primary" data-act="ocr" type="button">지금 글자 읽기</button>`
-      : '<p class="hint">글자가 없는 스캔 PDF 입니다. 글자 읽기(OCR)는 윈도우에서만 됩니다.</p>';
-  return `<div class="card ocr-card"><h4>${icon("search")}스캔 PDF</h4>${body}</div>`;
+      ? `<p class="hint">${d.garbled ? "화면에는 제대로 보이지만 PDF 안의 글자 정보가 깨져 있습니다(글꼴 글자표 없음). 글자 인식으로 다시 읽어야 검색·분류가 되고 Claude 도 읽을 수 있습니다." : "글자가 없는 스캔 PDF 입니다. 글자를 읽어 두면 검색·자동 분류가 되고 Claude 도 내용을 읽을 수 있습니다."}${S.settings.ocrAuto !== false ? " (차례대로 자동으로 읽는 중)" : ""}</p><button class="btn sm primary" data-act="ocr" type="button">지금 글자 읽기</button>`
+      : `<p class="hint">${d.garbled ? "PDF 안의 글자 정보가 깨져 있습니다." : "글자가 없는 스캔 PDF 입니다."} 글자 읽기(OCR)는 윈도우에서만 됩니다.</p>`;
+  return `<div class="card ocr-card"><h4>${icon("search")}${d.garbled ? "글자가 깨진 PDF" : "스캔 PDF"}</h4>${body}</div>`;
 }
 
 async function runOcr(d, all) {
