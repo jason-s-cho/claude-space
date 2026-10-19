@@ -796,8 +796,8 @@ dialog[open] .move-form { animation: pop 0.16s var(--ease); }
 .todo-list.tidy li > button:first-child > b { flex: 0 1 auto; max-width: none; }
 .todo-card h3 .todo-all { margin-left: auto; font-size: 11.5px; font-weight: 500; }
 /* 할 일의 '아직 없는 작성 카드': 좁은 창에서도 한 줄로 (모두 '없음'이라 상태는 뺀다) */
-.todo-card .card-rows { display: grid; gap: 4px; }
-.todo-card .card-row { padding: 5px 8px; }
+.todo-card .card-rows { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; } /* 칸이 글자 길이만큼 늘어나지 않게 */
+.todo-card .card-row { padding: 5px 8px; min-width: 0; }
 .todo-card .card-row-main { flex-wrap: nowrap; align-items: center; }
 .todo-card .card-row-main b { flex: none; }
 .todo-card .card-row-main span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; overflow-wrap: normal; }
@@ -841,3 +841,11 @@ dialog[open] .move-form { animation: pop 0.16s var(--ease); }
 .list-dense .row-main:has(.snippet) { flex-wrap: wrap; row-gap: 2px; }
 .list-dense .snippet { flex-basis: 100%; font-size: 12px; } /* 검색 결과는 찾은 문장을 둘째 줄에 */
 .list-dense .row-side { display: flex; align-items: center; gap: 6px; }
+/* 카드 칸이 좁으면 이름을 한 줄 다 쓰고, '직접 쓰기 · Claude 로 만들기'는 아랫줄 오른쪽으로 */
+.todo-card { container-type: inline-size; }
+@container (max-width: 440px) {
+  .todo-card .card-row { flex-wrap: wrap; row-gap: 0; }
+  .todo-card .card-row > .card-row-main { flex: 1 1 calc(100% - 40px); }
+  .todo-card .card-row > .todo-hide { order: 1; }
+  .todo-card .card-row > .card-row-act { order: 2; flex: 1 1 100%; justify-content: flex-end; }
+}
