@@ -4,6 +4,7 @@
 온라인 조회가 모두 실패하면 PDF 자체 정보로 채우고 needs_review 를 켠다.
 """
 
+import datetime
 import html
 import http.cookiejar
 import json
@@ -938,7 +939,9 @@ def parse_author_string(s):
 
 
 def year_from_text(text):
-    years = [int(y) for y in re.findall(r"\b(19[5-9]\d|20[0-4]\d)\b", text or "")]
+    # 출판 연도는 올해(+1)를 넘을 수 없다: '2025-2035 전망' 같은 미래 연도는 뺀다
+    limit = datetime.date.today().year + 1
+    years = [int(y) for y in re.findall(r"\b(19[5-9]\d|20[0-9]\d)\b", text or "") if int(y) <= limit]
     return max(years) if years else None
 
 
@@ -1063,6 +1066,12 @@ def extract(path, filename="", online=True, log=None, supplement=None):
         if re.search(r"(?i)\b(dissertation|doctoral thesis|master'?s thesis|ph\.?\s?d\.? thesis|thesis submitted|"
                      r"in partial fulfil+ment)\b|학위\s*논문|석사\s*학위|박사\s*학위", head):
             record["type"] = "dissertation"
+        elif MARKET_RE.search(head):
+            # 시장 분석 보고서는 쪽수가 많아도 책이 아니다. 조사기관 이름이 보이면 발행 기관으로
+            record["type"] = "report-market"
+            firm = MARKET_FIRM_RE.search(head)
+            if firm and not record.get("publisher"):
+                record["publisher"] = MARKET_FIRMS.get(firm.group(1).lower().replace(" ", ""), firm.group(1))
         elif isbns or pdf["page_count"] >= 120:
             record["type"] = "book"
         else:
@@ -1083,6 +1092,25 @@ def extract(path, filename="", online=True, log=None, supplement=None):
     if not record.get("abstract") and record.get("type") not in BOOK_TYPES:
         record["abstract"] = abstract_from_text(pdf["first"])
     return record
+
+
+# 시장 분석·시장 조사 보고서의 앞부분에 흔한 표현과 조사기관
+MARKET_RE = re.compile(
+    r"(?i)\b(market (?:report|research|analysis|outlook|forecast|size|share|study|intelligence)|"
+    r"cagr|compound annual growth rate|forecast period|market (?:by|to reach)|"
+    r"idtechex|yole|marketsandmarkets|grand view research|mordor intelligence|frost\s*&\s*sullivan|lux research|"
+    r"fortune business insights|allied market research|precedence research|technavio|bcc research)\b"
+    r"|시장\s*(?:분석|전망|규모|동향|보고서|조사|현황)|시장\s*점유율|연평균\s*성장률")
+
+
+MARKET_FIRMS = {"idtechex": "IDTechEx", "yole": "Yole Group", "marketsandmarkets": "MarketsandMarkets",
+                "grandviewresearch": "Grand View Research", "mordorintelligence": "Mordor Intelligence",
+                "frost&sullivan": "Frost & Sullivan", "luxresearch": "Lux Research",
+                "fortunebusinessinsights": "Fortune Business Insights", "alliedmarketresearch": "Allied Market Research",
+                "precedenceresearch": "Precedence Research", "technavio": "Technavio", "bccresearch": "BCC Research"}
+MARKET_FIRM_RE = re.compile(r"(?i)\b(idtechex|yole|marketsandmarkets|grand view research|mordor intelligence|frost\s*&\s*sullivan|"
+                            r"lux research|fortune business insights|allied market research|precedence research|technavio|"
+                            r"bcc research)\b")
 
 
 def abstract_from_text(text):
@@ -1219,9 +1247,13 @@ def citations(p):
     elif is_report:
         # Author (Year). Title (Report No. 12). 발행 기관. URL
         institution = publisher or journal
-        apa = f"{apa_authors} ({year}). {title}" + (f" (Report No. {report_no})" if report_no else "") + "."
-        if institution:
-            apa += f" {institution}."
+        if apa_authors:
+            apa = f"{apa_authors} ({year}). {title}" + (f" (Report No. {report_no})" if report_no else "") + "."
+            if institution:
+                apa += f" {institution}."
+        else:
+            # 저자가 없는 기관 보고서(시장 분석 등): 기관이 저자 자리에 온다
+            apa = (f"{institution}. " if institution else "") + f"({year}). {title}" + (f" (Report No. {report_no})" if report_no else "") + "."
         journal = vol = ""
     elif is_chapter:
         apa = f"{apa_authors} ({year}). {title}. In {journal}" + (f" (pp. {pages})" if pages else "") + "."

@@ -28,6 +28,7 @@ DOC_GROUPS = {
     "journal": ("journal-article",),
     "proceedings": ("proceedings-article", "proceedings", "proceedings-series"),
     "report": ("report", "report-component", "report-series"),
+    "market": ("report-market",),  # 시장 분석·시장 조사 보고서 (인용은 보고서 형식)
     "thesis": ("dissertation", "thesis"),
     "book": BOOK_TYPES + ("book-chapter", "book-part", "book-section"),
 }
@@ -207,7 +208,9 @@ def safe_component(s, limit):
 def nice_file_name(p):
     """'Vaswani et al. - 2017 - Attention Is All You Need.pdf' 같은 이름."""
     authors = p.get("authors") or []
-    who = safe_component(md.first_author_key(authors), 40) or "Unknown"
+    # 저자가 없는 기관 보고서(시장 분석 등)는 발행 기관 이름으로
+    who = (safe_component(md.first_author_key(authors), 40) if authors else "") \
+        or safe_component(p.get("publisher") or "", 40) or "Unknown"
     if len(authors) == 2:
         who += " & " + safe_component(md.first_author_key(authors[1:]), 40)
     elif len(authors) > 2:

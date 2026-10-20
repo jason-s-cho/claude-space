@@ -42,6 +42,7 @@
   --t-book: #b45309;
   --t-report: #0f766e;
   --t-thesis: #be185d;
+  --t-market: #c2410c;
   --t-other: #64748b;
   --shadow-sm: 0 1px 2px rgb(16 24 40 / 0.05);
   --shadow-md: 0 6px 20px rgb(16 24 40 / 0.08);
@@ -57,7 +58,7 @@
     --rule: #252a35; --rule-strong: #333948; --accent: #8b8cf8; --accent-hover: #a5a6fb; --accent-soft: #24264a; --on-accent: #10121a;
     --byline: #aab2c2; --good: #4ade80; --warn: #f5b051; --warn-soft: #3a2a14; --danger: #f28b7c; --mark: #5c4c10;
     --star: #f2c94c; --star-soft: #3a3212;
-    --t-journal: #7aa7ff; --t-proceedings: #b794f6; --t-book: #f0b35a; --t-report: #4fd1c5; --t-thesis: #f472b6; --t-other: #94a3b8;
+    --t-journal: #7aa7ff; --t-proceedings: #b794f6; --t-book: #f0b35a; --t-report: #4fd1c5; --t-thesis: #f472b6; --t-market: #fb923c; --t-other: #94a3b8;
     --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3); --shadow-md: 0 8px 24px rgb(0 0 0 / 0.35); --shadow-lg: 0 18px 50px rgb(0 0 0 / 0.55);
     color-scheme: dark;
   }
@@ -67,7 +68,7 @@
   --rule: #252a35; --rule-strong: #333948; --accent: #8b8cf8; --accent-hover: #a5a6fb; --accent-soft: #24264a; --on-accent: #10121a;
   --byline: #aab2c2; --good: #4ade80; --warn: #f5b051; --warn-soft: #3a2a14; --danger: #f28b7c; --mark: #5c4c10;
   --star: #f2c94c; --star-soft: #3a3212;
-  --t-journal: #7aa7ff; --t-proceedings: #b794f6; --t-book: #f0b35a; --t-report: #4fd1c5; --t-thesis: #f472b6; --t-other: #94a3b8;
+  --t-journal: #7aa7ff; --t-proceedings: #b794f6; --t-book: #f0b35a; --t-report: #4fd1c5; --t-thesis: #f472b6; --t-market: #fb923c; --t-other: #94a3b8;
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.3); --shadow-md: 0 8px 24px rgb(0 0 0 / 0.35); --shadow-lg: 0 18px 50px rgb(0 0 0 / 0.55);
   color-scheme: dark;
 }
@@ -602,6 +603,7 @@ dialog::backdrop { background: rgb(10 12 20 / 0.42); backdrop-filter: blur(3px);
             <label><input type="radio" name="doctype" value="journal-article"><span>학술지 논문</span></label>
             <label><input type="radio" name="doctype" value="proceedings-article"><span>학술대회 논문</span></label>
             <label><input type="radio" name="doctype" value="report"><span>보고서</span></label>
+            <label><input type="radio" name="doctype" value="report-market"><span>시장 분석</span></label>
             <label><input type="radio" name="doctype" value="book"><span>책</span></label>
             <label><input type="radio" name="doctype" value="dissertation"><span>학위논문</span></label>
             <label><input type="radio" name="doctype" value="other"><span>기타</span></label>
@@ -640,6 +642,7 @@ dialog::backdrop { background: rgb(10 12 20 / 0.42); backdrop-filter: blur(3px);
             <option value="edited-book">편저 (편집자가 엮은 책)</option>
             <option value="dissertation">학위논문</option>
             <option value="report">보고서</option>
+            <option value="report-market">시장 분석 자료</option>
             <option value="">기타</option>
           </select>
         </div>
@@ -777,7 +780,7 @@ dialog::backdrop { background: rgb(10 12 20 / 0.42); backdrop-filter: blur(3px);
 const $ = (s) => document.querySelector(s);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const thisYear = new Date().getFullYear();
-const TYPE_LABEL = { "journal-article": "", "proceedings-article": "학술대회", "proceedings": "학술대회", "preprint": "프리프린트", "posted-content": "프리프린트", "book-chapter": "책의 장", "book": "책", "monograph": "책", "edited-book": "편저", "reference-book": "책", "dissertation": "학위논문", "thesis": "학위논문", "report": "보고서" };
+const TYPE_LABEL = { "journal-article": "", "proceedings-article": "학술대회", "proceedings": "학술대회", "preprint": "프리프린트", "posted-content": "프리프린트", "book-chapter": "책의 장", "book": "책", "monograph": "책", "edited-book": "편저", "reference-book": "책", "dissertation": "학위논문", "thesis": "학위논문", "report": "보고서", "report-market": "시장 분석" };
 
 const view = { q: "", field: "all", from: "", to: "", sort: "relevance", review: false, doc: "all", mine: false, read: "", coll: null, page: 1 };
 const READ_STATES = { "": { label: "안 읽음", icon: "circle" }, reading: { label: "읽는 중", icon: "bookopen" }, read: { label: "읽음", icon: "check" } };
@@ -800,6 +803,7 @@ const GROUPS = {
   book: { label: "책", icon: "book", color: "var(--t-book)" },
   report: { label: "보고서", icon: "report", color: "var(--t-report)" },
   thesis: { label: "학위논문", icon: "cap", color: "var(--t-thesis)" },
+  market: { label: "시장 분석", icon: "trend", color: "var(--t-market)" },
   other: { label: "기타", icon: "box", color: "var(--t-other)" },
 };
 
@@ -829,7 +833,7 @@ function renderSide() {
     `<button type="button" class="opt ${String(view.from) === String(y) && !view.to ? "on" : ""}" data-from="${y}">${label}</button>`).join("");
   // 내 논문·책을 보는 동안에는 종류별 개수도 내 것 기준
   const g = (view.mine ? lastInfo?.mine_groups : lastInfo?.groups) || {};
-  const docs = ["all", "journal", "proceedings", "book", "report", "thesis", "other"];
+  const docs = ["all", "journal", "proceedings", "book", "report", "market", "thesis", "other"];
   $("#docOpts").innerHTML = docs
     .filter((k) => k === "all" || k === view.doc || g[k] || !lastInfo)  // 하나도 없는 종류는 숨김
     .map((k) => k === "all"
@@ -1508,10 +1512,11 @@ function fillEdit(p) {
   f.elements.authors.value = authorsToText(p.authors);
   syncTypeFields();
 }
-const CHIP_TYPES = ["journal-article", "proceedings-article", "report", "book", "dissertation"];
+const CHIP_TYPES = ["journal-article", "proceedings-article", "report", "report-market", "book", "dissertation"];
 function chipFor(t) {
   if (BOOK_TYPES.includes(t)) return "book";
   if ((t || "").startsWith("proceedings")) return "proceedings-article";
+  if (t === "report-market") return "report-market";
   if ((t || "").startsWith("report")) return "report";
   if (t === "thesis") return "dissertation";
   return CHIP_TYPES.includes(t) ? t : "other";
