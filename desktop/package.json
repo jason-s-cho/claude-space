@@ -17,7 +17,7 @@
     "dist:dir": "npm run prepare-app && electron-builder --dir"
   },
   "devDependencies": {
-    "electron": "^39.0.0",
+    "electron": "^44.9.3",
     "electron-builder": "^26.0.0"
   },
   "build": {

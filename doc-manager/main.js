@@ -27,6 +27,15 @@ let progress = null;
 let watcher = null;
 let watchTimer = null;
 let lastFocusScan = 0;
+// 파일 가져오기 창이 처음 열릴 곳. Electron 43 부터는 따로 정하지 않으면 늘 '다운로드'에서 열리고
+// 지난번 폴더도 기억하지 않아서, 마지막으로 고른 곳을 앱이 직접 기억한다.
+let lastPickDir = null;
+function pickDefaultPath() {
+  return lastPickDir || app.getPath("documents");
+}
+function rememberPick(filePaths) {
+  if (filePaths && filePaths[0]) lastPickDir = path.dirname(filePaths[0]);
+}
 
 const userFile = (name) => path.join(app.getPath("userData"), name);
 const store = require("./lib/store");
@@ -672,13 +681,15 @@ function registerIpc() {
   ipcMain.handle("pick-and-import", async (_e, kind) => {
     const folder = kind === "folder";
     const r = await dialog.showOpenDialog(win, folder
-      ? { title: "문서 폴더에 넣을 폴더 고르기 (안의 문서를 모두 넣습니다)", properties: ["openDirectory", "multiSelections"] }
+      ? { title: "문서 폴더에 넣을 폴더 고르기 (안의 문서를 모두 넣습니다)", properties: ["openDirectory", "multiSelections"], defaultPath: pickDefaultPath() }
       : {
           title: "문서 폴더에 넣을 파일 고르기 (Ctrl·Shift 로 여러 개)",
           properties: ["openFile", "multiSelections"],
           filters: [{ name: "문서", extensions: Object.keys(SUPPORTED).map((x) => x.slice(1)) }],
+          defaultPath: pickDefaultPath(),
         });
     if (r.canceled || !r.filePaths.length) return null;
+    rememberPick(r.filePaths);
     return doImport(r.filePaths);
   });
 
@@ -863,8 +874,10 @@ function registerIpc() {
           title: `${program || "지원 건"} 자료 넣기 (${kind || "참고 자료"}) · Ctrl·Shift 로 여러 개`,
           properties: ["openFile", "multiSelections"],
           filters: [{ name: "문서", extensions: Object.keys(SUPPORTED).map((x) => x.slice(1)) }],
+          defaultPath: pickDefaultPath(),
         });
         if (r.canceled || !r.filePaths.length) return { cancelled: true };
+        rememberPick(r.filePaths);
         paths = r.filePaths;
       }
       const base = expectedFolder("gov_notice", [], settings.partners, settings.projects);
@@ -953,10 +966,10 @@ function registerIpc() {
     }
   });
   // 고른 건들을 표(탭 구분)로 복사 → 사업계획서의 지식재산 표에 붙여 넣기
-  ipcMain.handle("ip-copy", (_e, ids) => {
+  ipcMain.handle("ip-copy", async (_e, ids) => {
     const set = new Set(ids || []);
     const items = ipData.items.filter((x) => !ids || set.has(x.id));
-    clipboard.writeText(ipLib.toTsv(items));
+    await clipboard.writeText(ipLib.toTsv(items)); // Electron 44 부터 Promise 를 돌려준다
     return { count: items.length };
   });
 
