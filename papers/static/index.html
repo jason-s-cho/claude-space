@@ -250,6 +250,59 @@ details.pop[open] > summary, details.pop > summary:hover { border-color: var(--r
 .floating .menu-btn { text-align: left; border: 0; background: none; padding: 7px 8px; border-radius: 7px; cursor: pointer; font-size: 0.88rem; color: var(--ink); display: flex; gap: 9px; align-items: center; font-family: inherit; }
 .floating .menu-btn.danger { color: var(--danger); }
 #nameDlg { width: min(420px, calc(100vw - 32px)); }
+/* 표 보기 */
+.mode-seg button { display: inline-flex; align-items: center; gap: 5px; }
+.table-only { display: none; }
+body.table-mode .table-only { display: block; }
+body.table-mode .cards-only { display: none; }
+body.table-mode #sortOpts { display: none; }
+.col-checks { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 10px; }
+.col-checks label { display: flex; gap: 6px; align-items: center; font-size: 0.84rem; cursor: pointer; }
+.col-checks input { accent-color: var(--accent); }
+body.table-mode .scroll { padding: 0 16px 10px; overflow-x: auto; }
+.ptable { min-width: 760px; }
+.ptable td, .ptable th { -webkit-user-select: none; user-select: none; }
+body.table-mode #results { display: block; max-width: none; }
+body.table-mode .selbar { margin: 0 16px 8px; }
+.ptable { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; font-size: 0.85rem; background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; }
+.ptable th { position: sticky; top: 0; z-index: 2; background: var(--bg); text-align: left; font-weight: 650; font-size: 0.78rem; color: var(--ink-soft); padding: 7px 8px; border-bottom: 1px solid var(--rule-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; user-select: none; }
+.ptable th:first-child { border-top-left-radius: 10px; } .ptable th:last-child { border-top-right-radius: 10px; }
+.ptable th.sortable { cursor: pointer; }
+.ptable th.sortable:hover { color: var(--ink); }
+.ptable th.sorted { color: var(--accent); }
+.ptable th .rz { position: absolute; right: 0; top: 0; bottom: 0; width: 7px; cursor: col-resize; }
+.ptable th .rz:hover { background: var(--accent-soft); }
+.ptable td { padding: 5px 8px; border-bottom: 1px solid var(--rule); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ptable tr:last-child td { border-bottom: 0; }
+.ptable tr.prow { cursor: default; }
+.ptable tr.prow:hover td { background: color-mix(in srgb, var(--ink) 3%, transparent); }
+.ptable tr.prow.picked td { background: color-mix(in srgb, var(--accent) 9%, transparent); }
+.ptable tr.prow.focus td { background: var(--accent-soft); }
+.ptable tr.prow.focus td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.ptable tr.unread .c-title { font-weight: 650; }
+.ptable td.c-sel, .ptable th.c-sel { text-align: center; padding: 0 4px; }
+.ptable td.c-sel input, .ptable th.c-sel input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; vertical-align: middle; }
+.ptable td.c-dot, .ptable td.c-pdf { text-align: center; padding: 0 2px; color: var(--ink-faint); }
+.ptable .d { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+.ptable .d.half { background: linear-gradient(90deg, var(--accent) 50%, transparent 50%); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.ptable .c-year, .ptable .c-cited { text-align: right; font-variant-numeric: tabular-nums; }
+.ptable .c-rating { color: var(--star); letter-spacing: 1px; }
+.ptable .c-read, .ptable .c-added { color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.ptable .muted { color: var(--ink-faint); }
+body.table-mode .pager { padding: 10px 0 2px; }
+.pv-resize { display: none; flex: none; height: 6px; cursor: row-resize; background: var(--rule); }
+.pv-resize:hover, .pv-resize.on { background: var(--accent); }
+.preview { display: none; flex: none; height: var(--pvh, 42vh); min-height: 140px; background: var(--bg); }
+body.table-mode .pv-resize { display: block; }
+body.table-mode .preview { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(320px, 1fr); }
+.pv-pdf { min-width: 0; border-right: 1px solid var(--rule); background: color-mix(in srgb, var(--ink) 8%, var(--bg)); }
+.pv-pdf iframe { width: 100%; height: 100%; border: 0; display: block; background: #fff; }
+.pv-empty { display: grid; place-items: center; height: 100%; color: var(--ink-faint); text-align: center; padding: 20px; font-size: 0.9rem; }
+.pv-info { overflow: auto; padding: 10px 12px; min-width: 0; }
+.pv-info .result { box-shadow: none; border: 0; background: transparent; padding: 4px 6px; grid-template-columns: minmax(0, 1fr); }
+.pv-info .result .open { grid-column: 1; grid-row: auto; justify-self: start; }
+.pv-info .result .grip, .pv-info .result .sel { display: none; }
+body.dragging-rows .ptable, body.resizing * { cursor: grabbing; }
 .tries { margin-top: 4px; }
 #reviewDlg { width: min(760px, calc(100vw - 32px)); }
 .rev-cur { border: 1px solid var(--rule); border-radius: 12px; padding: 12px 14px; display: grid; gap: 4px; background: var(--bg); }
@@ -449,6 +502,8 @@ dialog::backdrop { background: rgb(10 12 20 / 0.42); backdrop-filter: blur(3px);
   <symbol id="i-film" viewBox="0 0 24 24"><rect x="2.5" y="2.5" width="19" height="19" rx="2.5"/><path d="M7 2.5v19M17 2.5v19M2.5 12h19M2.5 7H7M2.5 17H7M17 7h4.5M17 17h4.5"/></symbol>
   <symbol id="i-note" viewBox="0 0 24 24"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5Z"/><path d="M14 2v6h6"/><path d="m9.5 17.5 1-3.5 5-5 2.5 2.5-5 5Z"/></symbol>
   <symbol id="i-grip" viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.4" fill="currentColor" stroke="none"/><circle cx="15" cy="6" r="1.4" fill="currentColor" stroke="none"/><circle cx="9" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="9" cy="18" r="1.4" fill="currentColor" stroke="none"/><circle cx="15" cy="18" r="1.4" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-cards" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/></symbol>
+  <symbol id="i-table" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M3 14h18M9 9v11"/></symbol>
   <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
   <symbol id="i-dots" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.3"/><circle cx="12" cy="12" r="1.3"/><circle cx="19" cy="12" r="1.3"/></symbol>
   <symbol id="i-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/></symbol>
@@ -506,7 +561,7 @@ dialog::backdrop { background: rgb(10 12 20 / 0.42); backdrop-filter: blur(3px);
     </div>
   </aside>
 
-  <div class="main">
+  <div class="main" id="mainArea">
     <header class="toolbar">
       <form class="search" id="searchForm" role="search">
         <svg class="ic"><use href="#i-search"/></svg>
@@ -527,11 +582,25 @@ dialog::backdrop { background: rgb(10 12 20 / 0.42); backdrop-filter: blur(3px);
         <span class="mono" id="libPath"></span>
       </div>
       <div class="subbar-right">
+        <div class="seg mode-seg" id="modeOpts" role="radiogroup" aria-label="보기 방식">
+          <button type="button" data-mode="cards" role="radio" title="카드로 보기"><svg class="ic sm"><use href="#i-cards"/></svg>카드</button>
+          <button type="button" data-mode="table" role="radio" title="표로 보기 (아래에 미리 보기)"><svg class="ic sm"><use href="#i-table"/></svg>표</button>
+        </div>
         <div class="seg" id="sortOpts" role="group" aria-label="정렬"></div>
         <details class="pop view-opts">
           <summary><svg class="ic sm"><use href="#i-sliders"/></svg>보기</summary>
           <div class="pop-panel">
-            <div class="perpage">
+            <div class="table-only">
+              <div class="lbl">표 한 쪽에</div>
+              <div class="seg" id="tpOpts" role="radiogroup" aria-label="표 한 쪽에 보일 개수">
+                <button type="button" data-tp="50" role="radio">50</button><button type="button" data-tp="100" role="radio">100</button><button type="button" data-tp="200" role="radio">200</button>
+              </div>
+            </div>
+            <div class="table-only">
+              <div class="lbl">표에 보일 칸</div>
+              <div class="col-checks" id="colOpts"></div>
+            </div>
+            <div class="perpage cards-only">
               <div class="lbl">한 화면에</div>
               <div class="row">
                 <button type="button" class="step" id="ppDown" aria-label="10개 줄이기">−</button>
@@ -541,7 +610,7 @@ dialog::backdrop { background: rgb(10 12 20 / 0.42); backdrop-filter: blur(3px);
               </div>
               <datalist id="ppTicks"><option value="10"><option value="20"><option value="30"><option value="40"><option value="50"></datalist>
             </div>
-            <div>
+            <div class="cards-only">
               <div class="lbl">초록</div>
               <div class="seg" id="absOpts" role="radiogroup" aria-label="초록 보기">
                 <button type="button" data-abs="off" role="radio">숨김</button>
@@ -568,6 +637,11 @@ dialog::backdrop { background: rgb(10 12 20 / 0.42); backdrop-filter: blur(3px);
     <div class="scroll" id="scroller">
       <div id="results"></div>
     </div>
+    <div class="pv-resize" id="pvResize" title="끌어서 미리 보기 높이 조절" aria-hidden="true"></div>
+    <section class="preview" id="preview" aria-label="미리 보기">
+      <div class="pv-pdf" id="pvPdf"></div>
+      <div class="pv-info" id="pvInfo"></div>
+    </section>
   </div>
 </div>
 
@@ -787,6 +861,10 @@ const READ_STATES = { "": { label: "안 읽음", icon: "circle" }, reading: { la
 let collById = new Map();
 const clampPer = (n) => Math.min(50, Math.max(10, Math.round((Number(n) || 10) / 10) * 10));
 view.perPage = clampPer(store("papershelf.perPage"));
+view.mode = store("papershelf.mode") === "table" ? "table" : "cards";
+view.tablePer = [50, 100, 200].includes(Number(store("papershelf.tablePer"))) ? Number(store("papershelf.tablePer")) : 100;
+view.order = "";
+const perPage = () => (view.mode === "table" ? view.tablePer : view.perPage);
 view.abs = ["off", "short", "full"].includes(store("papershelf.abs")) ? store("papershelf.abs") : "short";
 const expanded = new Set();  // '짧게'에서 펼친 초록
 let lastRes = null, lastInfo = null;
@@ -1067,8 +1145,9 @@ async function refresh(keepPage = false) {
   renderSide();
   const params = listParams();
   // 지금 보는 쪽만 받아 온다
-  params.set("offset", String((view.page - 1) * view.perPage));
-  params.set("limit", String(view.perPage));
+  params.set("offset", String((view.page - 1) * perPage()));
+  params.set("limit", String(perPage()));
+  if (view.mode === "table" && view.order) params.set("order", view.order);
   try {
     const [res, info] = await Promise.all([api("/api/papers?" + params), api("/api/info")]);
     lastTerms = res.terms;
@@ -1091,6 +1170,7 @@ function renderResults(res, info) {
   papersById = new Map(res.papers.map((p) => [p.id, p]));
   const box = $("#results");
   if (!res.papers.length) {
+    focusId = null; if (view.mode === "table") renderPreview();
     box.innerHTML = info.total
       ? `<div class="empty">${EMPTY_ART_SEARCH}<h2>찾는 항목이 없습니다</h2>${activeFiltersHTML()}</div>`
       : `<div class="empty">${EMPTY_ART}<h2>서재가 비어 있습니다</h2>
@@ -1099,12 +1179,16 @@ function renderResults(res, info) {
           <div class="tips"><span>${ic("link", "sm")}PDF 없이 DOI·ISBN으로도 추가</span><span>${ic("clip", "sm")}보충자료는 본문에 자동으로 묶임</span><span>${ic("film", "sm")}동영상도 보충자료로</span><span>${ic("book", "sm")}책은 ISBN으로</span></div></div>`;
     return;
   }
-  const pages = Math.max(1, Math.ceil(res.total / view.perPage));
+  const pages = Math.max(1, Math.ceil(res.total / perPage()));
   const start = res.offset || 0;
-  view.page = Math.floor(start / view.perPage) + 1;
+  view.page = Math.floor(start / perPage()) + 1;
   const shown = res.papers;
   if (pages > 1) $("#count").innerHTML += ` <span>· ${start + 1}–${start + shown.length}번째</span>`;
-  box.innerHTML = shown.map(resultHTML).join("") + pagerHTML(view.page, pages);
+  if (view.mode === "table") {
+    if (!shown.some((p) => p.id === focusId)) focusId = shown[0]?.id ?? null;
+    box.innerHTML = tableHTML(shown) + pagerHTML(view.page, pages);
+    renderPreview();
+  } else box.innerHTML = shown.map(resultHTML).join("") + pagerHTML(view.page, pages);
   $("#count").innerHTML += ` <button type="button" class="linkbtn" data-selall>${res.total > 1 ? `결과 ${res.total}편 모두 고르기` : "고르기"}</button>`;
   updateSel();
 }
@@ -1281,7 +1365,7 @@ function resultHTML(p) {
   </article>`;
 }
 
-$("#results").addEventListener("click", async (e) => {
+$("#mainArea").addEventListener("click", async (e) => {
   const b = e.target.closest("[data-act]"); if (!b) return;
   const id = Number(b.closest(".result").dataset.id);
   if (b.dataset.act === "more" || b.dataset.act === "less") {
@@ -1312,7 +1396,7 @@ $("#results").addEventListener("click", async (e) => {
   else if (b.dataset.act === "reveal") api(`/api/papers/${id}/reveal`, { method: "POST" }).catch((err) => toast(err.message));
 });
 
-$("#results").addEventListener("click", (e) => {
+$("#mainArea").addEventListener("click", (e) => {
   const s = e.target.closest("[data-star]");
   if (s) {
     const id = Number(s.closest(".result").dataset.id), n = Number(s.dataset.star);
@@ -1321,16 +1405,16 @@ $("#results").addEventListener("click", (e) => {
   const g = e.target.closest("[data-goto-coll]");
   if (g) { view.coll = Number(g.dataset.gotoColl); refresh(); }
 });
-$("#results").addEventListener("change", (e) => {
+$("#mainArea").addEventListener("change", (e) => {
   const sel = e.target.closest("[data-status]"); if (!sel) return;
   setMark(Number(sel.closest(".result").dataset.id), { read_status: sel.value });
 });
-$("#results").addEventListener("mouseover", (e) => {
+$("#mainArea").addEventListener("mouseover", (e) => {
   const s = e.target.closest("[data-star]"); const box = e.target.closest(".stars");
   if (!box) return;
   box.querySelectorAll("[data-star]").forEach((x) => x.classList.toggle("hov", !!s && Number(x.dataset.star) <= Number(s.dataset.star)));
 });
-$("#results").addEventListener("mouseout", (e) => { const box = e.target.closest(".stars"); if (box && !box.contains(e.relatedTarget)) box.querySelectorAll(".hov").forEach((x) => x.classList.remove("hov")); });
+$("#mainArea").addEventListener("mouseout", (e) => { const box = e.target.closest(".stars"); if (box && !box.contains(e.relatedTarget)) box.querySelectorAll(".hov").forEach((x) => x.classList.remove("hov")); });
 async function setMark(id, change) {
   try {
     const r = await api(`/api/papers/${id}/mark`, jsonOpts("PUT", change));
@@ -1339,6 +1423,8 @@ async function setMark(id, change) {
     if (view.read || view.sort === "rating") return refresh(true);  // 걸러 보는 중이면 목록을 다시
     const card = document.querySelector(`.result[data-id="${id}"]`);
     if (card && p) card.outerHTML = resultHTML(p);
+    const row = document.querySelector(`tr.prow[data-id="${id}"]`);
+    if (row && p) row.outerHTML = rowHTML(p, tableCols());
     lastInfo = await api("/api/info"); renderSide();
   } catch (err) { toast(err.message); }
 }
@@ -1356,7 +1442,9 @@ function updateSel() {
   $("#selPage").hidden = !(lastRes?.papers || []).some((p) => !selected.has(p.id));
   $("#selUncoll").hidden = !view.coll;
   if (view.coll) $("#selUncoll").textContent = `‘${collById.get(view.coll)?.name || ""}’에서 빼기`;
-  document.querySelectorAll(".result").forEach((c) => {
+  const pageBox = $("#selAllPage");
+  if (pageBox) { const ids = (lastRes?.papers || []).map((p) => p.id); pageBox.checked = ids.length > 0 && ids.every((i) => selected.has(i)); pageBox.indeterminate = !pageBox.checked && ids.some((i) => selected.has(i)); }
+  document.querySelectorAll("#results .result, tr.prow").forEach((c) => {
     const on = selected.has(Number(c.dataset.id));
     c.classList.toggle("picked", on);
     const cb = c.querySelector("[data-sel]"); if (cb) cb.checked = on;
@@ -1421,12 +1509,12 @@ $("#selRead").addEventListener("click", (e) => {
 // 제목이나 손잡이(⋮⋮)를 끌어 왼쪽 컬렉션에 놓기 (고른 것 중 하나를 끌면 고른 것 모두).
 // 브라우저 고유의 끌어다 놓기는 자체 창(WebView2·WebKit)과 글자 선택에서 동작이 달라, 마우스 움직임을 직접 따라간다.
 let pdrag = null;
-$("#results").addEventListener("pointerdown", (e) => {
+$("#mainArea").addEventListener("pointerdown", (e) => {
   if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
-  const h = e.target.closest(".r-title, .grip"); if (!h) return;
-  const card = h.closest(".result"); if (!card) return;
-  e.preventDefault();  // 제목 글자가 선택되지 않게 (누르기만 하면 PDF 열기는 그대로)
-  pdrag = { x: e.clientX, y: e.clientY, id: Number(card.dataset.id), title: card.querySelector(".r-title").textContent.trim(), started: false, target: null };
+  const h = e.target.closest(".r-title, .grip, tr.prow td:not(.c-sel)"); if (!h) return;
+  const card = h.closest(".result, tr.prow"); if (!card) return;
+  e.preventDefault();  // 제목 글자가 선택되지 않게 (누르기만 하면 PDF 열기·줄 고르기는 그대로)
+  pdrag = { x: e.clientX, y: e.clientY, id: Number(card.dataset.id), title: card.querySelector(".r-title, .c-title").textContent.trim(), started: false, target: null };
 });
 function endPaperDrag() {
   document.body.classList.remove("dragging-papers", "nosel");
@@ -1469,6 +1557,206 @@ document.addEventListener("pointerup", () => {
 });
 document.addEventListener("pointercancel", () => { if (pdrag?.started) endPaperDrag(); pdrag = null; });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && pdrag?.started) { endPaperDrag(); pdrag = null; } });
+
+/* ---------- 표 보기 ---------- */
+const TCOLS = [
+  { k: "sel", label: "", w: 34, fixed: true },
+  { k: "dot", label: "", w: 26, fixed: true, title: "읽음 (● 안 읽음, ◐ 읽는 중)" },
+  { k: "pdf", label: "", w: 28, fixed: true, title: "PDF" },
+  { k: "author", label: "저자", w: 170, sort: "author" },
+  { k: "title", label: "제목", w: 360, sort: "title" },
+  { k: "source", label: "출처", w: 200, sort: "source" },
+  { k: "year", label: "연도", w: 62, sort: "year" },
+  { k: "rating", label: "별점", w: 86, sort: "rating" },
+  { k: "cited", label: "인용", w: 70, sort: "cited" },
+  { k: "type", label: "종류", w: 100, sort: "type" },
+  { k: "read", label: "마지막 읽음", w: 110, sort: "last_read" },
+  { k: "added", label: "추가한 날", w: 110, sort: "added" },
+];
+const DESC_FIRST = ["rating", "cited", "year", "last_read", "added", "relevance"];
+let tcols = (() => {
+  try { const t = JSON.parse(store("papershelf.tcols") || "null"); if (t && Array.isArray(t.visible)) return { visible: t.visible, widths: t.widths || {} }; } catch {}
+  return { visible: ["author", "title", "source", "year", "rating", "read", "added"], widths: {} };
+})();
+const saveTcols = () => store("papershelf.tcols", JSON.stringify(tcols));
+const tableCols = () => TCOLS.filter((c) => c.fixed || tcols.visible.includes(c.k));
+let focusId = null;
+const fmtDate = (t) => (t ? new Date(t * 1000).toLocaleDateString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit" }).replace(/\.\s?$/, "") : "");
+function tableHTML(papers) {
+  const cols = tableCols();
+  const sortKey = view.sort === "relevance" && !view.q ? "added" : view.sort;  // 검색어 없으면 관련도 = 추가한 순
+  const desc = view.order ? view.order === "desc" : DESC_FIRST.includes(sortKey);
+  return `<table class="ptable"><colgroup>${cols.map((c) => `<col data-col="${c.k}"${c.k === "title" && !tcols.widths.title ? "" : ` style="width:${tcols.widths[c.k] || c.w}px"`}>`).join("")}</colgroup>
+    <thead><tr>${cols.map((c) => {
+      const sorted = c.sort && c.sort === sortKey;
+      return `<th class="c-${c.k} ${c.sort ? "sortable" : ""} ${sorted ? "sorted" : ""}" ${c.sort ? `data-tsort="${c.sort}"` : ""} title="${esc(c.title || (c.sort ? c.label + " 순으로 정렬" : c.label))}">`
+        + (c.k === "sel" ? `<input type="checkbox" id="selAllPage" aria-label="이 쪽 모두 고르기">` : esc(c.label))
+        + (sorted ? ` ${desc ? "▼" : "▲"}` : "") + (c.fixed ? "" : `<span class="rz" data-rz="${c.k}"></span>`) + `</th>`;
+    }).join("")}</tr></thead><tbody>${papers.map((p) => rowHTML(p, cols)).join("")}</tbody></table>`;
+}
+function rowHTML(p, cols) {
+  const g = GROUPS[p.doc_group] || GROUPS.other;
+  const cell = {
+    sel: () => `<input type="checkbox" class="sel" data-sel="${p.id}" ${selected.has(p.id) ? "checked" : ""} aria-label="고르기">`,
+    dot: () => (p.read_status === "read" ? "" : `<span class="d ${p.read_status === "reading" ? "half" : ""}" title="${p.read_status === "reading" ? "읽는 중" : "안 읽음"}"></span>`),
+    pdf: () => (p.has_file === false ? `<span class="muted" title="PDF 없음">–</span>` : `<span title="PDF 있음${(p.attachments || []).length ? " · 내 정리 " + p.attachments.length : ""}">${ic("file", "sm")}</span>`),
+    author: () => esc(p.scholar_authors || p.publisher || ""),
+    title: () => highlight(p.title || "제목 없음"),
+    source: () => esc(p.journal || p.publisher || ""),
+    year: () => esc(p.year || ""),
+    rating: () => "★".repeat(p.rating || 0),
+    cited: () => (p.cited_by == null ? "" : Number(p.cited_by).toLocaleString("ko-KR")),
+    type: () => esc(TYPE_LABEL[p.type] || g.label),
+    read: () => fmtDate(p.last_read),
+    added: () => fmtDate(p.added_at),
+  };
+  const tip = { author: p.scholar_authors, title: p.title, source: [p.journal, p.publisher].filter(Boolean).join(" · ") };
+  return `<tr class="prow ${p.read_status ? "" : "unread"} ${p.id === focusId ? "focus" : ""} ${selected.has(p.id) ? "picked" : ""}" data-id="${p.id}">`
+    + cols.map((c) => `<td class="c-${c.k}"${tip[c.k] ? ` title="${esc(tip[c.k])}"` : ""}>${cell[c.k]()}</td>`).join("") + `</tr>`;
+}
+let pvTimer = null, pvLoaded = null;
+function renderPreview() {
+  if (view.mode !== "table") return;
+  const p = papersById.get(focusId);
+  if (!p) { $("#pvPdf").innerHTML = `<div class="pv-empty">표에서 논문을 고르면 여기에 PDF가 보입니다</div>`; $("#pvInfo").innerHTML = ""; pvLoaded = null; return; }
+  expanded.add(p.id);  // 초록은 다 보여 준다
+  $("#pvInfo").innerHTML = resultHTML(p);
+  if (pvLoaded === p.id) return;
+  clearTimeout(pvTimer);
+  // ↑↓로 빨리 넘길 때 PDF를 매번 다 불러오지 않도록 잠깐 기다린다
+  pvTimer = setTimeout(() => {
+    pvLoaded = p.id;
+    $("#pvPdf").innerHTML = p.has_file === false
+      ? `<div class="pv-empty">PDF 없음<br><small>오른쪽의 ‘무료 PDF 찾기’나 ‘브라우저로 받기’를 누르거나, PDF를 표의 이 줄 위에 끌어다 놓으세요</small></div>`
+      : `<iframe title="PDF 미리 보기" src="/pdf/${p.id}/${encodeURIComponent(p.file_name)}?preview=1#view=FitH&navpanes=0"></iframe>`;
+  }, 180);
+}
+function setFocus(id, scroll = false) {
+  focusId = id;
+  document.querySelectorAll("tr.prow.focus").forEach((r) => r.classList.remove("focus"));
+  const row = document.querySelector(`tr.prow[data-id="${id}"]`);
+  row?.classList.add("focus");
+  if (scroll) row?.scrollIntoView({ block: "nearest" });
+  renderPreview();
+}
+function setMode(m) {
+  view.mode = m; store("papershelf.mode", m);
+  document.body.classList.toggle("table-mode", m === "table");
+  document.querySelectorAll("#modeOpts [data-mode]").forEach((b) => { b.classList.toggle("on", b.dataset.mode === m); b.setAttribute("aria-checked", b.dataset.mode === m); });
+  pvLoaded = null;
+}
+setMode(view.mode);
+$("#modeOpts").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-mode]"); if (!b || b.dataset.mode === view.mode) return;
+  const first = (view.page - 1) * perPage();
+  setMode(b.dataset.mode);
+  view.page = Math.floor(first / perPage()) + 1;
+  refresh(true);
+});
+function renderTableOpts() {
+  $("#colOpts").innerHTML = TCOLS.filter((c) => !c.fixed).map((c) => `<label><input type="checkbox" data-colk="${c.k}" ${tcols.visible.includes(c.k) ? "checked" : ""} ${c.k === "title" ? "disabled" : ""}> ${c.label}</label>`).join("");
+  document.querySelectorAll("#tpOpts [data-tp]").forEach((b) => { const on = Number(b.dataset.tp) === view.tablePer; b.classList.toggle("on", on); b.setAttribute("aria-checked", on); });
+}
+renderTableOpts();
+$("#colOpts").addEventListener("change", (e) => {
+  const cb = e.target.closest("[data-colk]"); if (!cb) return;
+  tcols.visible = TCOLS.filter((c) => !c.fixed && (c.k === cb.dataset.colk ? cb.checked : tcols.visible.includes(c.k))).map((c) => c.k);
+  saveTcols(); rerender();
+});
+$("#tpOpts").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-tp]"); if (!b) return;
+  const first = (view.page - 1) * perPage();
+  view.tablePer = Number(b.dataset.tp); store("papershelf.tablePer", String(view.tablePer));
+  view.page = Math.floor(first / perPage()) + 1;
+  renderTableOpts(); refresh(true);
+});
+// 칸 제목: 정렬(다시 누르면 반대로), 오른쪽 끝을 끌어 너비 조절
+$("#results").addEventListener("click", (e) => {
+  if (e.target.closest(".rz") || e.target.closest("#selAllPage")) return;
+  const th = e.target.closest("th[data-tsort]"); if (!th) return;
+  const key = th.dataset.tsort;
+  if (view.sort === "relevance" && !view.q) view.sort = "added";
+  if (view.sort === key) {
+    const desc = view.order ? view.order === "desc" : DESC_FIRST.includes(key);
+    view.order = desc ? "asc" : "desc";
+  } else { view.sort = key; view.order = ""; }
+  refresh();
+});
+$("#results").addEventListener("change", (e) => {
+  if (e.target.id !== "selAllPage") return;
+  for (const p of lastRes?.papers || []) e.target.checked ? selected.add(p.id) : selected.delete(p.id);
+  updateSel();
+});
+$("#results").addEventListener("pointerdown", (e) => {
+  const rz = e.target.closest("[data-rz]"); if (!rz) return;
+  e.preventDefault(); e.stopPropagation();
+  const k = rz.dataset.rz, col = document.querySelector(`.ptable col[data-col="${k}"]`);
+  const startX = e.clientX, startW = col.getBoundingClientRect().width || (tcols.widths[k] || 100);
+  document.body.classList.add("resizing");
+  const move = (ev) => { col.style.width = Math.max(40, Math.round(startW + ev.clientX - startX)) + "px"; };
+  const up = () => {
+    document.removeEventListener("pointermove", move); document.removeEventListener("pointerup", up);
+    document.body.classList.remove("resizing");
+    tcols.widths[k] = parseInt(col.style.width, 10); saveTcols();
+  };
+  document.addEventListener("pointermove", move); document.addEventListener("pointerup", up);
+}, true);
+// 줄 누르기: 미리 보기. Ctrl(⌘)은 고르기 켜고 끄기, Shift는 사이의 것까지 고르기. 두 번 누르면 PDF 열기
+$("#results").addEventListener("click", (e) => {
+  const row = e.target.closest("tr.prow"); if (!row || e.target.closest("input, a, button")) return;
+  const id = Number(row.dataset.id);
+  if (e.shiftKey && focusId != null) {
+    const ids = [...document.querySelectorAll("tr.prow")].map((r) => Number(r.dataset.id));
+    const a = ids.indexOf(focusId), b = ids.indexOf(id);
+    if (a >= 0 && b >= 0) for (const x of ids.slice(Math.min(a, b), Math.max(a, b) + 1)) selected.add(x);
+    updateSel();
+  } else if (e.ctrlKey || e.metaKey) {
+    selected.has(id) ? selected.delete(id) : selected.add(id);
+    updateSel();
+  }
+  setFocus(id);
+});
+function openPaper(id) {
+  const p = papersById.get(id); if (!p) return;
+  if (p.has_file === false) return browserGet(id);
+  api(`/api/papers/${id}/open`, { method: "POST" }).then(() => { p.last_read = Date.now() / 1000; const r = document.querySelector(`tr.prow[data-id="${id}"]`); if (r) r.outerHTML = rowHTML(p, tableCols()); })
+    .catch((err) => toast(err.message));
+}
+$("#results").addEventListener("dblclick", (e) => {
+  const row = e.target.closest("tr.prow"); if (!row || e.target.closest("input")) return;
+  openPaper(Number(row.dataset.id));
+});
+document.addEventListener("keydown", (e) => {
+  if (view.mode !== "table" || document.querySelector("dialog[open], .floating.on") || /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) return;
+  const ids = [...document.querySelectorAll("tr.prow")].map((r) => Number(r.dataset.id));
+  if (!ids.length) return;
+  const i = ids.indexOf(focusId);
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    e.preventDefault();
+    const j = Math.max(0, Math.min(ids.length - 1, (i < 0 ? -1 : i) + (e.key === "ArrowDown" ? 1 : -1)));
+    if (e.shiftKey) { selected.add(ids[j]); if (i >= 0) selected.add(ids[i]); updateSel(); }
+    setFocus(ids[j], true);
+  } else if (e.key === "Enter" && focusId != null) { e.preventDefault(); openPaper(focusId); }
+  else if (e.key === " " && focusId != null) { e.preventDefault(); selected.has(focusId) ? selected.delete(focusId) : selected.add(focusId); updateSel(); }
+});
+// 미리 보기 높이 조절
+(() => {
+  const h = Number(store("papershelf.pvh"));
+  if (h) document.documentElement.style.setProperty("--pvh", h + "px");
+  $("#pvResize").addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    const startY = e.clientY, startH = $("#preview").getBoundingClientRect().height;
+    $("#pvResize").classList.add("on"); document.body.classList.add("resizing");
+    $("#pvPdf").style.pointerEvents = "none";  // PDF 창이 마우스를 가로채지 않게
+    const move = (ev) => document.documentElement.style.setProperty("--pvh", Math.max(140, Math.min(innerHeight - 220, startH - (ev.clientY - startY))) + "px");
+    const up = () => {
+      document.removeEventListener("pointermove", move); document.removeEventListener("pointerup", up);
+      $("#pvResize").classList.remove("on"); document.body.classList.remove("resizing"); $("#pvPdf").style.pointerEvents = "";
+      store("papershelf.pvh", String(Math.round($("#preview").getBoundingClientRect().height)));
+    };
+    document.addEventListener("pointermove", move); document.addEventListener("pointerup", up);
+  });
+})();
 
 /* ---------- 인용 ---------- */
 let citeData = null, citeKind = store("papershelf.cite") || "APA";

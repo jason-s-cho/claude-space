@@ -127,7 +127,8 @@ MIGRATIONS = [
     ("rename_pending", "ALTER TABLE papers ADD COLUMN rename_pending INTEGER DEFAULT 0"),
     ("read_status", "ALTER TABLE papers ADD COLUMN read_status TEXT DEFAULT ''"),  # '' 안 읽음, reading, read
     ("rating", "ALTER TABLE papers ADD COLUMN rating INTEGER DEFAULT 0"),  # 0~5
-    ("file_mtime", "ALTER TABLE papers ADD COLUMN file_mtime REAL"),  # 정리 자료를 마지막으로 읽었을 때 파일 수정 시각  # 파일이 열려 있어 이름을 못 바꿈  # 1 내 저작, 0 아님, NULL 이름으로 자동 판단
+    ("file_mtime", "ALTER TABLE papers ADD COLUMN file_mtime REAL"),
+    ("last_read", "ALTER TABLE papers ADD COLUMN last_read REAL"),  # 앱에서 PDF를 마지막으로 연 때  # 정리 자료를 마지막으로 읽었을 때 파일 수정 시각  # 파일이 열려 있어 이름을 못 바꿈  # 1 내 저작, 0 아님, NULL 이름으로 자동 판단
 ]
 READ_STATUSES = ("", "reading", "read")
 SUPP_SUFFIX = " - Supplementary"
@@ -915,6 +916,15 @@ class Library:
             pass
         return True
 
+    def touch_read(self, pid):
+        """PDF를 연 때를 기록(보충자료·다른 판을 열면 본문 논문에)."""
+        with self.lock, self.connect() as c:
+            row = c.execute("SELECT id, kind, parent_id FROM papers WHERE id=?", (pid,)).fetchone()
+            if row is None:
+                return
+            target = row["parent_id"] if is_child(row) else row["id"]
+            c.execute("UPDATE papers SET last_read=? WHERE id=?", (time.time(), target))
+
     def mark_reviewed(self, pid):
         with self.lock, self.connect() as c:
             c.execute("UPDATE papers SET needs_review=0 WHERE id=?", (pid,))
@@ -1619,7 +1629,7 @@ class Library:
 
     def search(self, q="", field="all", year_from=None, year_to=None, sort="relevance",
                review_only=False, doc="all", mine_only=False, offset=0, limit=None,
-               read=None, collection=None, rating_min=0):
+               read=None, collection=None, rating_min=0, order=None):
         """검색. 본문(fulltext)은 데이터베이스 안에서만 찾고, 걸린 대목만 꺼낸다.
 
         offset/limit 을 주면 그 쪽만 돌려준다(total 은 전체 개수).
@@ -1703,19 +1713,26 @@ class Library:
         if rating_min:
             results = [p for p in results if (p.get("rating") or 0) >= int(rating_min)]
 
-        if sort == "rating":
-            results.sort(key=lambda p: (p.get("rating") or 0, p.get("year") or 0), reverse=True)
-        elif sort == "cited":
-            results.sort(key=lambda p: (p.get("cited_by") is not None, p.get("cited_by") or 0, p.get("year") or 0),
-                         reverse=True)
-        elif sort == "year":
-            results.sort(key=lambda p: (p.get("year") or 0, p.get("added_at") or 0), reverse=True)
-        elif sort == "title":
-            results.sort(key=lambda p: md.norm_key(p.get("title")))
-        elif sort == "added" or not terms:
-            results.sort(key=lambda p: p.get("added_at") or 0, reverse=True)
-        else:
-            results.sort(key=lambda p: (p["score"], p.get("year") or 0), reverse=True)
+        # 정렬: (기준, 기본 방향이 내림차순인지). order 로 방향을 바꿀 수 있다(표 보기의 칸 제목)
+        sorts = {
+            "rating": (lambda p: (p.get("rating") or 0, p.get("year") or 0), True),
+            "cited": (lambda p: (p.get("cited_by") is not None, p.get("cited_by") or 0, p.get("year") or 0), True),
+            "year": (lambda p: (p.get("year") or 0, p.get("added_at") or 0), True),
+            "title": (lambda p: md.norm_key(p.get("title")), False),
+            "author": (lambda p: (md.norm_key(md.first_author_key(p.get("authors") or []) if p.get("authors")
+                                              else p.get("publisher") or "~"), p.get("year") or 0), False),
+            "source": (lambda p: (md.norm_key(p.get("journal") or p.get("publisher") or "") or "~", p.get("year") or 0), False),
+            "type": (lambda p: (p.get("doc_group") or "", p.get("type") or ""), False),
+            "last_read": (lambda p: p.get("last_read") or 0, True),
+            "added": (lambda p: p.get("added_at") or 0, True),
+            "relevance": (lambda p: (p["score"], p.get("year") or 0), True),
+        }
+        if sort not in sorts or (sort == "relevance" and not terms):
+            sort = "added" if sort not in sorts or not terms else sort
+        key, desc = sorts[sort]
+        if order in ("asc", "desc"):
+            desc = order == "desc"
+        results.sort(key=key, reverse=desc)
         total = len(results)
         if limit:
             # 없는 쪽을 달라고 하면(지운 뒤 등) 마지막 쪽을 준다

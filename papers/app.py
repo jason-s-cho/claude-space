@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import metadata as md  # noqa: E402
 from library import BLOCKED_EXTS, Library, is_video, parse_my_names  # noqa: E402
 
-APP_VERSION = "1.6.2"
+APP_VERSION = "1.6.3"
 HERE = Path(__file__).resolve().parent
 # 설치판(PyInstaller)으로 묶였을 때는 화면 파일이 압축 해제 폴더에 있다
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", HERE))
@@ -310,6 +310,9 @@ class Handler(BaseHTTPRequestHandler):
         path = lib.path_of(p)
         size = path.stat().st_size
         ctype = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        # 브라우저 탭에서 PDF를 연 것도 '마지막 읽음'으로 (아래 미리 보기는 제외, 이어받기 요청은 한 번만)
+        if qs.get("preview") != "1" and not re.match(r"bytes=[1-9]", self.headers.get("Range") or ""):
+            lib.touch_read(p["id"])
         start, end = 0, size - 1
         m = re.match(r"bytes=(\d*)-(\d*)$", self.headers.get("Range") or "")
         if m and size:
@@ -382,7 +385,7 @@ class Handler(BaseHTTPRequestHandler):
             sort=qs.get("sort", "relevance"), review_only=qs.get("review") == "1", doc=qs.get("doc", "all"),
             mine_only=qs.get("mine") == "1", read=qs.get("read") or None,
             collection=int(qs["coll"]) if (qs.get("coll") or "").isdigit() else None,
-            rating_min=int(qs["stars"]) if (qs.get("stars") or "").isdigit() else 0,
+            rating_min=int(qs["stars"]) if (qs.get("stars") or "").isdigit() else 0, order=qs.get("order"),
             offset=int(qs.get("offset") or 0) if (qs.get("offset") or "0").isdigit() else 0,
             limit=None if qs.get("ids_only") == "1" else
             min(int(qs["limit"]), 200) if (qs.get("limit") or "").isdigit() and int(qs["limit"]) > 0 else None)
@@ -581,6 +584,7 @@ class Handler(BaseHTTPRequestHandler):
         if not p or p["missing"] or not p["has_file"]:
             return self.send_error_json(404, "파일이 없습니다")
         open_file(lib.path_of(p))
+        lib.touch_read(p["id"])
         self.send_json({"ok": True})
 
     def open_url(self, qs):
