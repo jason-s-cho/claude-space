@@ -764,7 +764,7 @@ dialog::backdrop { background: rgb(10 12 20 / 0.42); backdrop-filter: blur(3px);
       </div>
       <div class="field">
         <label>백업</label>
-        <div class="hint" id="bkInfo">서지 정보·컬렉션·메모 등이 든 색인(DB)을 하루에 한 번 <span class="mono">.papershelf/backups</span>에 보관합니다(최근 7개). PDF 파일은 그대로 폴더에 있습니다.</div>
+        <div class="hint" id="bkInfo">서지 정보·컬렉션·메모·읽음 상태 등이 든 색인(DB)을 하루에 한 번 <span class="mono">.papershelf/backups</span>에 보관합니다(최근 7개). 검색용 본문 글은 PDF에서 다시 뽑을 수 있어 백업에서 빼므로 작습니다. PDF 파일은 그대로 폴더에 있습니다.</div>
         <div class="inline" style="margin-top:6px"><select id="bkSel" style="flex:1;border:1px solid var(--rule);border-radius:9px;padding:6px 9px;background:var(--panel)"></select><button class="btn small" type="button" id="bkRestore">이 백업으로 되돌리기</button></div>
         <div class="inline" style="margin-top:6px"><button class="btn small" type="button" id="bkNow">지금 백업</button><button class="btn small" type="button" id="bkOpen">백업 폴더 열기</button></div>
         <div class="msg" id="bkMsg"></div>
@@ -2242,9 +2242,21 @@ $("#bkOpen").addEventListener("click", () => api("/api/backups/open", { method: 
 $("#bkRestore").addEventListener("click", async () => {
   const name = $("#bkSel").value; if (!name) return;
   if (!confirm(`${$("#bkSel").selectedOptions[0].textContent} 백업으로 되돌릴까요?\n그 뒤에 바뀐 서지 정보·컬렉션·메모는 사라집니다(지금 상태도 따로 백업해 둡니다).\n되돌린 뒤에는 ‘폴더 다시 읽기’로 파일과 맞춰 주세요.`)) return;
-  try { await api("/api/backups/restore", jsonOpts("POST", { name })); $("#settingsDlg").close(); toast("백업으로 되돌렸습니다. 왼쪽 아래 ‘폴더 다시 읽기’를 한 번 눌러 주세요."); refresh(); }
+  try {
+    const r = await api("/api/backups/restore", jsonOpts("POST", { name }));
+    $("#settingsDlg").close(); refresh();
+    toast("백업으로 되돌렸습니다. 왼쪽 아래 ‘폴더 다시 읽기’를 한 번 눌러 주세요." + (r.reindex ? " 본문 검색 내용은 뒤에서 PDF를 다시 읽어 채웁니다." : ""));
+    if (r.reindex) watchReindex();
+  }
   catch (err) { $("#bkMsg").style.color = ""; $("#bkMsg").textContent = err.message; }
 });
+async function watchReindex() {
+  const st = await api("/api/reindex").catch(() => null);
+  if (!st) return;
+  if (st.running) { $("#citeStatus").textContent = st.total ? `본문 다시 읽는 중 ${st.done}/${st.total}` : "본문 다시 읽는 중…"; setTimeout(watchReindex, 2000); }
+  else { $("#citeStatus").textContent = ""; toast("본문 검색 내용을 다 채웠습니다"); }
+}
+setTimeout(async () => { const st = await api("/api/reindex").catch(() => null); if (st?.running) watchReindex(); }, 4000);
 let citePoll = null;
 async function watchCitations() {
   clearTimeout(citePoll);

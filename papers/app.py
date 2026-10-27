@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import metadata as md  # noqa: E402
 from library import BLOCKED_EXTS, Library, is_video, parse_my_names  # noqa: E402
 
-APP_VERSION = "1.7.0"
+APP_VERSION = "1.7.1"
 HERE = Path(__file__).resolve().parent
 # 설치판(PyInstaller)으로 묶였을 때는 화면 파일이 압축 해제 폴더에 있다
 RESOURCE_DIR = Path(getattr(sys, "_MEIPASS", HERE))
@@ -157,6 +157,28 @@ def _watch_loop():
                     watch["items"].pop(pid, None)
                 break
         time.sleep(2)
+
+
+reindex_job = {"running": False, "done": 0, "total": 0}
+
+
+def start_reindex():
+    """작은 백업으로 되돌린 뒤 본문 검색용 글을 뒤에서 PDF에서 다시 읽는다."""
+    if reindex_job["running"]:
+        return
+    lib = state["lib"]
+    reindex_job.update(running=True, done=0, total=0)
+
+    def run():
+        try:
+            n = lib.rebuild_fulltext(progress=lambda d, t: reindex_job.update(done=d, total=t),
+                                     stop=lambda: state["lib"] is not lib, log=log)
+            log(f"본문 검색 내용을 다시 읽었습니다: {n}개")
+        except Exception as e:
+            log("본문 다시 읽기 실패:", e)
+        finally:
+            reindex_job["running"] = False
+    threading.Thread(target=run, daemon=True).start()
 
 
 def log(*a):
@@ -758,11 +780,16 @@ class Handler(BaseHTTPRequestHandler):
     def restore(self, qs):
         name = str(self.read_json().get("name", ""))
         try:
-            state["lib"].restore(name)
+            slim = state["lib"].restore(name)
         except LookupError as e:
             return self.send_error_json(400, str(e))
         log(f"백업 {name} 으로 되돌렸습니다")
-        self.send_json({"ok": True})
+        if slim:
+            start_reindex()
+        self.send_json({"ok": True, "reindex": slim})
+
+    def reindex_status(self, qs):
+        self.send_json(reindex_job)
 
     def open_backups(self, qs):
         folder = state["lib"].backup_dir
@@ -837,6 +864,7 @@ ROUTES = [
     ("GET", r"/api/backups", Handler.backups),
     ("POST", r"/api/backups", Handler.backup_now),
     ("POST", r"/api/backups/restore", Handler.restore),
+    ("GET", r"/api/reindex", Handler.reindex_status),
     ("POST", r"/api/backups/open", Handler.open_backups),
     ("POST", r"/api/collections/(\d+)/papers", Handler.collection_many),
     ("POST", r"/api/papers/mark-many", Handler.mark_many),
@@ -922,6 +950,9 @@ def main():
     log(f"논문 폴더: {state['lib'].root}")
     # 한 달 넘게 지난 인용 수는 켤 때마다 뒤에서 조용히 갱신
     threading.Timer(3, start_citation_job).start()
+    # 되돌리기 뒤 본문 다시 읽기가 끝나지 않은 채 꺼졌으면 이어서
+    if state["lib"].reindex_pending():
+        threading.Timer(2, start_reindex).start()
     # 열려 있어서 이름을 못 바꾼 PDF는 1분마다 다시 시도
     def retry_loop():
         while True:

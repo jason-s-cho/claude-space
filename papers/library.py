@@ -102,6 +102,10 @@ CREATE TABLE IF NOT EXISTS collections (
     name TEXT NOT NULL UNIQUE,
     created_at REAL
 );
+CREATE TABLE IF NOT EXISTS meta (
+    key TEXT PRIMARY KEY,
+    value TEXT
+);
 CREATE TABLE IF NOT EXISTS dup_ignore (
     key TEXT PRIMARY KEY
 );
@@ -940,7 +944,7 @@ class Library:
 
     def backups(self):
         out = []
-        for f in sorted(self.backup_dir.glob("library-*.db"), reverse=True):
+        for f in sorted(self.backup_dir.glob("library-*.db"), key=lambda f: f.stat().st_mtime, reverse=True):
             st = f.stat()
             out.append({"name": f.name, "size": st.st_size, "time": st.st_mtime})
         return out
@@ -951,13 +955,22 @@ class Library:
         target = self.backup_dir / (f"library-{stamp}.db" if not force else f"library-{stamp}-{time.strftime('%H%M%S')}.db")
         if target.exists() and not force:
             return None
+        n = 2
+        while target.exists():  # 같은 초에 두 번(예: 되돌리기 직전의 안전 백업) 만들어도 덮어쓰지 않게
+            target = self.backup_dir / f"library-{stamp}-{time.strftime('%H%M%S')}-{n}.db"
+            n += 1
         with self.connect() as src:
             dst = sqlite3.connect(target)
             try:
                 src.backup(dst)  # 쓰는 중이어도 일관된 사본
+                # 본문 검색용 글은 PDF에서 언제든 다시 뽑을 수 있으니 백업에서는 빼서 작게 (되돌릴 때 다시 읽음)
+                dst.execute("UPDATE papers SET fulltext=''")
+                dst.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('slim_backup', '1')")
+                dst.commit()
+                dst.execute("VACUUM")
             finally:
                 dst.close()
-        files = sorted(self.backup_dir.glob("library-*.db"), reverse=True)
+        files = sorted(self.backup_dir.glob("library-*.db"), key=lambda f: f.stat().st_mtime, reverse=True)
         for old in files[keep:]:
             try:
                 old.unlink()
@@ -980,8 +993,51 @@ class Library:
                 b.close()
         if hasattr(self, "_cols"):
             del self._cols
+        # 작은 백업(본문 글 없음)이면 본문 글을 PDF에서 다시 읽어야 한다
+        with self.connect() as c:
+            slim = c.execute("SELECT value FROM meta WHERE key='slim_backup'").fetchone()
+            c.execute("DELETE FROM meta WHERE key='slim_backup'")
+            if slim:
+                c.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('reindex_pending', '1')")
         # 백업 뒤에 바뀐 파일 이름은 폴더 다시 읽기로 맞춘다
-        return True
+        return bool(slim)
+
+    def reindex_pending(self):
+        with self.connect() as c:
+            return c.execute("SELECT 1 FROM meta WHERE key='reindex_pending'").fetchone() is not None
+
+    def rebuild_fulltext(self, progress=None, stop=None, log=None):
+        """본문 검색용 글이 비어 있는 항목을 PDF·정리 자료 파일에서 다시 읽는다(작은 백업으로 되돌린 뒤)."""
+        with self.connect() as c:
+            rows = c.execute("SELECT id, kind, file_name FROM papers WHERE file_name<>'' "
+                             "AND coalesce(fulltext,'')=''").fetchall()
+        done = 0
+        for i, r in enumerate(rows):
+            if stop and stop():
+                return done
+            path = self.root / r["file_name"]
+            text = ""
+            try:
+                if r["kind"] == "note":
+                    text = md.extract_any_text(path)
+                elif path.suffix.lower() == ".pdf":
+                    text = md.read_pdf(path)["full"]
+            except Exception as e:
+                (log or (lambda *a: None))(f"본문 다시 읽기 실패 {r['file_name']}: {e}")
+            if text:
+                with self.lock, self.connect() as c:
+                    c.execute("UPDATE papers SET fulltext=? WHERE id=?", (text, r["id"]))
+                    if r["kind"] == "note":
+                        try:
+                            c.execute("UPDATE papers SET file_mtime=? WHERE id=?", (path.stat().st_mtime, r["id"]))
+                        except OSError:
+                            pass
+                done += 1
+            if progress:
+                progress(i + 1, len(rows))
+        with self.lock, self.connect() as c:
+            c.execute("DELETE FROM meta WHERE key='reindex_pending'")
+        return done
 
     # ------------------------------------------------------------ 같은 논문의 다른 판
 
