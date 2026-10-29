@@ -10,6 +10,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 :root{
+  color-scheme:light;
   --ink:#0d0f12; --ink-2:#3a3f47; --ink-3:#6b717b; --line:#e3e5e8; --line-2:#cfd3d8;
   --bg:#ffffff; --bg-2:#f5f6f7; --accent:#1f5cff; --accent-ink:#ffffff;
   --note-blue:#1f5cff; --note-red:#d81e1e;
@@ -59,12 +60,12 @@ p{margin:0}
 .note.red{background:var(--note-red)}
 .note.abs{position:absolute;right:var(--gutter);top:20px;z-index:5;margin:0}
 body.show-notes .note{display:block}
-.notes-toggle{position:fixed;right:18px;bottom:18px;z-index:90;display:flex;align-items:center;gap:8px;background:var(--ink);color:#fff;font-family:"Noto Sans KR",sans-serif;font-size:13px;padding:10px 16px;border-radius:999px;box-shadow:0 6px 24px rgba(0,0,0,.2)}
+.notes-toggle{position:fixed;right:calc(18px + env(safe-area-inset-right,0px));bottom:calc(18px + env(safe-area-inset-bottom,0px));z-index:90;display:flex;align-items:center;gap:8px;background:var(--ink);color:#fff;font-family:"Noto Sans KR",sans-serif;font-size:13px;padding:10px 16px;border-radius:999px;box-shadow:0 6px 24px rgba(0,0,0,.2)}
 .notes-toggle .dot{width:8px;height:8px;border-radius:50%;background:#666;transition:background .2s}
 body.show-notes .notes-toggle .dot{background:#4ade80}
 
 /* Header */
-.hdr{position:fixed;inset:0 0 auto 0;z-index:50;height:72px;transition:background .3s,color .3s,box-shadow .3s,transform .3s}
+.hdr{position:fixed;inset:0 0 auto 0;z-index:50;height:calc(72px + env(safe-area-inset-top,0px));padding-top:env(safe-area-inset-top,0px);transition:background .3s,color .3s,box-shadow .3s,transform .3s}
 .hdr .wrap{height:100%;display:flex;align-items:center;justify-content:space-between;max-width:1400px}
 .hdr{background:rgba(255,255,255,.92);backdrop-filter:blur(12px);box-shadow:0 1px 0 var(--line)}
 .hdr.over{background:transparent;color:#fff;box-shadow:none;backdrop-filter:none}
@@ -130,8 +131,9 @@ body.show-notes .notes-toggle .dot{background:#4ade80}
 .tabs a.on::after{content:"";position:absolute;left:18px;right:18px;bottom:-1px;height:2px;background:var(--ink)}
 
 /* Reveal */
-.rv{opacity:0;transform:translateY(28px);transition:opacity .8s ease,transform .8s cubic-bezier(.2,.7,.2,1)}
-.rv.in{opacity:1;transform:none}
+.rv{transform:translateY(24px);transition:opacity .8s ease,transform .8s cubic-bezier(.2,.7,.2,1)}
+.zig .rv{opacity:.15}
+.rv.in,.zig .rv.in{opacity:1;transform:none}
 .rv.d1{transition-delay:.1s}.rv.d2{transition-delay:.2s}.rv.d3{transition-delay:.3s}.rv.d4{transition-delay:.4s}
 
 /* ===== HOME ===== */
@@ -925,9 +927,12 @@ function notFound(){
 /* ---------- Router ---------- */
 let heroTimer=null;
 function route(){
-  const raw=(location.hash||'#/').slice(2);
-  const [path,q]=raw.split('?');
+  let raw=(location.hash||'').slice(1);
+  if(raw.startsWith('/')) raw=raw.slice(1); else raw=raw.replace(/--/g,'/');
+  if(raw==='home') raw='';
+  let [path,q]=raw.split('?');
   const seg=path.split('/').filter(Boolean);
+  if(seg[0]==='company' && seg[2]){ q=seg[2]; seg.length=2; }
   let html, section=seg[0]||'';
   clearInterval(heroTimer);
   try{
@@ -942,7 +947,7 @@ function route(){
     else if(seg[0]==='support' && ['notice','news','inquiry','faq'].includes(seg[1]||'notice')) html=supportPage(seg[1]||'notice', seg[2]!==undefined?+seg[2]:undefined);
     else html=notFound();
   }catch(e){console.error(e);html=notFound()}
-  const app=$('#app'); app.innerHTML=html;
+  const app=$('#app'); app.innerHTML=html; fixLinks(app);
   $$('#gnb>li').forEach(li=>li.classList.toggle('on',li.dataset.k===section));
   $('#fullmenu').classList.remove('open');
   document.body.style.overflow='';
@@ -950,6 +955,10 @@ function route(){
   if(q){ const el=document.getElementById(q); if(el) setTimeout(()=>el.scrollIntoView({behavior:'smooth'}),80); }
   initPage(!seg.length);
 }
+
+/* Links are written as #/a/b?c in templates; the viewer only passes plain #names, so rewrite to #a--b--c */
+function toHash(h){ const p=h.slice(2); return '#'+(p? p.replace('?','/').replace(/\//g,'--') : 'home'); }
+function fixLinks(root){ $$('a[href^="#/"]',root).forEach(a=>a.setAttribute('href',toHash(a.getAttribute('href')))); }
 
 /* ---------- Interactions ---------- */
 let io;
@@ -1052,6 +1061,7 @@ function buildNav(){
   $('#fmGrid').innerHTML=NAV.map(n=>`<div><h3><a href="#/${n.href}">${n.label}</a></h3><ul>${n.items.map(i=>`<li><a href="#/${i.href}">${i.label}</a>${i.sub&&i.sub.length>1?`<ul>${i.sub.map(s=>`<li><a href="#/${s[1]}">${s[0]}</a></li>`).join('')}</ul>`:''}</li>`).join('')}</ul></div>`).join('');
 }
 buildNav();
+fixLinks(document);
 $('#burger').addEventListener('click',()=>{$('#fullmenu').classList.add('open');document.body.style.overflow='hidden';});
 $('#fmClose').addEventListener('click',()=>{$('#fullmenu').classList.remove('open');document.body.style.overflow='';});
 $('#lang>button').addEventListener('click',e=>{e.stopPropagation();$('#lang').classList.toggle('open');});
