@@ -87,3 +87,31 @@ test("Claude 가 남긴 커넥터 기록의 끝부분을 읽는다", () => {
   assert.strictEqual(log.tail, "줄 27\n줄 28\n줄 29");
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test("사용자용(AppData) 설치 + 스토어판 Claude 면 설치 위치 경고", () => {
+  const env = { LOCALAPPDATA: "C:\\Users\\seung\\AppData\\Local", APPDATA: "C:\\Users\\seung\\AppData\\Roaming" };
+  const home = "C:\\Users\\seung";
+  const perUser = "C:\\Users\\seung\\AppData\\Local\\Programs\\doc-manager\\doc-manager.exe";
+  const allUsers = "C:\\Program Files\\doc-manager\\doc-manager.exe";
+  assert.equal(cc.perUserInstall(perUser, env, home), true);
+  assert.equal(cc.perUserInstall(allUsers, env, home), false);
+  assert.equal(cc.perUserInstall("C:\\Users\\seung\\appdata\\local\\programs\\x.exe", env, home), true); // 대소문자 무시
+  assert.ok(cc.installWarning(perUser, { platform: "win32", env, home, msix: true }));
+  assert.equal(cc.installWarning(perUser, { platform: "win32", env, home, msix: false }), null); // 일반 설치판 Claude 는 괜찮다
+  assert.equal(cc.installWarning(allUsers, { platform: "win32", env, home, msix: true }), null);
+  assert.equal(cc.installWarning("/opt/워크데스크/doc-manager", { platform: "linux", env, home, msix: true }), null);
+});
+
+test("커넥터 실행 기록: 최근 것부터, 연결 테스트는 빼고 마지막 Claude 실행", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dm-starts-"));
+  assert.deepEqual(cc.readStarts(dir), []);
+  assert.equal(cc.lastClientStart(cc.readStarts(dir)), null);
+  cc.recordStart(dir, { name: "claude-ai", version: "0.1.0" }, new Date("2026-11-17T10:00:00Z"));
+  cc.recordStart(dir, { name: cc.SELF_TEST_CLIENT, version: "1.0.0" }, new Date("2026-11-17T10:05:00Z"));
+  const list = cc.readStarts(dir);
+  assert.equal(list.length, 2);
+  assert.equal(list[0].client, cc.SELF_TEST_CLIENT);
+  assert.equal(cc.lastClientStart(list).client, "claude-ai");
+  for (let i = 0; i < 30; i++) cc.recordStart(dir, { name: "x" });
+  assert.equal(cc.readStarts(dir).length, 20); // 오래된 것은 버린다
+});

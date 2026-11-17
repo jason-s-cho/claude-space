@@ -240,7 +240,7 @@ function renderSide() {
 
   // 업무: 할 일 · 지원 현황(사업명별) · 지식재산 대장
   h += `<div class="side-label">업무<button class="side-toggle" id="sideToggle" type="button" title="${isSideRail() ? "메뉴 펼치기" : "메뉴 접기 (아이콘만)"}" aria-label="메뉴 접기·펼치기">${icon("panel")}</button></div>`;
-  h += navItem("todo", "할 일", typeof todoCount === "function" ? todoCount() : 0, { icon: "check" });
+  h += navItem("todo", "대시보드", typeof todoCount === "function" ? todoCount() : 0, { icon: "grid" });
   const appItems = (S.applications && S.applications.items) || [];
   const programs = appProgramCounts(appItems);
   if (programs.length) {
@@ -366,7 +366,7 @@ function viewLabel(view) {
   if (view === "apps") return "지원 현황";
   if (view.startsWith("apps:")) return view.slice(5) || "사업명 없음";
   if (view === "ip") return "지식재산 대장";
-  if (view === "todo") return "할 일";
+  if (view === "todo") return "대시보드";
   if (view === "duplicates") return "중복 파일";
   if (view.startsWith("group:")) return view.slice(6);
   if (view.startsWith("cat:")) return catLabel(view.slice(4));
@@ -436,6 +436,8 @@ function rowHtml(d, opts = {}) {
 
 function renderList() {
   if ($("filterBtn")) renderFilterPop();
+  document.body.classList.toggle("dash-view", filter.view === "todo"); // 대시보드는 오른쪽 칸 없이 넓게
+  if (filter.view !== "todo" && typeof leaveDash === "function") leaveDash(); // home.js (뒤에 읽힌다)
   if (filter.view === "todo") return typeof renderTodoView === "function" ? renderTodoView() : null; // home.js (뒤에 읽힌다)
   if (filter.view === "ip") return renderIpView(); // ip.js
   if (isAppsView()) return renderAppsView();
@@ -1051,6 +1053,13 @@ const TOOL_LABEL = {
   list_applications: "지원 건 목록", get_application: "지원 건 보기", record_application: "지원 건 기록", get_program: "사업 자료 보기", get_card: "카드 읽기", save_card: "카드 저장", list_ip: "지식재산 대장", list_certificates: "회사 증빙 목록", record_ip: "지식재산 기록",
 };
 
+// 커넥터가 시작될 때 문서 폴더에 남긴 기록 (연결 테스트는 빼고) → 한 줄
+function claudeStartHtml(ls) {
+  if (!ls) return "Claude 가 커넥터를 실행한 기록이 아직 없습니다.";
+  const who = /claude/i.test(ls.client || "") ? "Claude" : esc(ls.client || "Claude");
+  return `${who} 가 커넥터를 마지막으로 실행: ${esc(new Date(ls.time).toLocaleString())}`;
+}
+
 async function renderClaudeTab() {
   const st = await api.claudeStatus();
   const main = st.targets[0] || {};
@@ -1064,6 +1073,9 @@ async function renderClaudeTab() {
         ? `<span class="state-warn">연결되어 있지만 예전 위치를 가리킵니다. '다시 연결'을 눌러 주세요.</span>`
         : `<span class="state-on">연결됨</span> · Claude 앱을 다시 켜면 '워크데스크' 도구가 보입니다.`
       : `연결되어 있지 않습니다. <span class="muted">(${esc(main.path || "")})</span>`;
+  const startedHtml = claudeStartHtml(st.lastStart);
+  if (connected && !anyBad) $("claudeState").innerHTML += `<br><small class="muted">${startedHtml}</small>`;
+  if (st.install) $("claudeState").innerHTML = `<span class="state-warn">${esc(st.install.message)}</span><br><small class="muted">지금 설치 위치: <code>${esc(st.install.path)}</code></small><br>` + $("claudeState").innerHTML;
   $("claudeConnectBtn").textContent = connected ? "다시 연결" : "연결";
   $("claudeDisconnectBtn").hidden = !connected;
   $("claudeCodeCmd").textContent = st.claudeCode;
@@ -1111,22 +1123,22 @@ $("claudeTestBtn").onclick = async () => {
   box.hidden = false;
   box.innerHTML = '<p class="hint">커넥터를 Claude 와 같은 방법으로 실행해 보는 중…</p>';
   try {
-    const { test, logs, targets } = await api.claudeTest();
+    const { test, logs, targets, install, lastStart } = await api.claudeTest();
     const rows = [];
     rows.push(
       test.ok
         ? `<p><span class="state-on">✔ 커넥터 정상</span> · 도구 ${test.tools.length}개, 보이는 문서 ${test.documents ?? "?"}개 (${(test.ms / 1000).toFixed(1)}초)</p>`
         : `<p><span class="state-warn">✖ 커넥터를 실행하지 못했습니다</span>: ${esc(test.error)}</p>${test.stderr ? `<pre>${esc(test.stderr)}</pre>` : ""}`
     );
-    targets.forEach((t, i) => {
-      const lg = logs[i] || {};
-      rows.push(`<p class="hint"><b>Claude 설정</b> ${t.connected ? "✔ 들어 있음" : "✖ 없음"} — <code>${esc(t.path)}</code></p>`);
-      rows.push(
-        lg.exists
-          ? `<p class="hint"><b>Claude 가 커넥터를 실행한 기록</b> (마지막 ${esc(new Date(lg.modified).toLocaleString())}) — <code>${esc(lg.file)}</code></p><pre>${esc(lg.tail)}</pre>`
-          : `<p class="hint"><b>Claude 가 커넥터를 실행한 기록 없음</b> — Claude 앱이 이 설정을 아직 읽지 않았습니다. Claude 를 트레이 아이콘에서 완전히 종료한 뒤 다시 켜 보세요. 그래도 없으면 Claude 가 다른 위치의 설정을 쓰는 설치판일 수 있습니다.</p>`
-      );
-    });
+    if (install) rows.push(`<p><span class="state-warn">✖ ${esc(install.message)}</span></p>`);
+    targets.forEach((t) => rows.push(`<p class="hint"><b>Claude 설정</b> ${t.connected ? (t.matches ? "✔ 들어 있음" : "⚠ 예전 위치를 가리킴 — '다시 연결'을 눌러 주세요") : "✖ 없음"} — <code>${esc(t.path)}</code></p>`));
+    rows.push(
+      lastStart
+        ? `<p class="hint"><b>✔ ${claudeStartHtml(lastStart)}</b></p>`
+        : `<p class="hint"><b>Claude 가 커넥터를 실행한 기록 없음</b> — Claude 를 트레이 아이콘에서 완전히 종료한 뒤 다시 켜 보세요. 그래도 없으면 Claude 설정 → 개발자 → doc-manager 의 오류 문구를 확인해 주세요${install ? " (위 설치 위치 문제일 가능성이 큽니다)" : ""}.</p>`
+    );
+    // Claude 데스크톱이 남긴 기록 파일이 있으면 끝부분을 덧붙인다 (설치판에 따라 없을 수 있다)
+    for (const lg of logs || []) if (lg.exists) rows.push(`<details class="hint"><summary>Claude 기록 파일 끝부분 — <code>${esc(lg.file)}</code></summary><pre>${esc(lg.tail)}</pre></details>`);
     box.innerHTML = rows.join("");
   } catch (e) {
     box.innerHTML = `<p class="state-warn">${esc(String(e))}</p>`;
