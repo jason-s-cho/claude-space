@@ -666,6 +666,13 @@ const CARD_ASK = {
       : `워크데스크의 '${n}' 작성 가이드를 만들어 줘(이미 있으면 새로 고쳐 줘). get_card(kind: guide, name: "${n}")로 양식을 받아 그 구조대로, 우리 회사가 낸 ${n}(선정된 것 먼저)와 작성 안내 자료를 읽고 요약·목표·필요성·국내외 현황·개발 내용·수행 역량·추진 체계·사업화·기대 효과·연구비 같은 항목 종류마다 쓰는 법과 예시를 정리해 save_card로 저장해 줘. 탈락 사유는 '탈락 사유에서 배운 점'에 넣어 줘.`,
 };
 const cardPrompt = (kind, name) => CARD_ASK[kind](cardKey(name));
+// 아직 없는 카드 여러 장을 한 번에: 주제 → 사업 → 작성 가이드 순서 (사실을 먼저 모아야 가이드 예시가 산다)
+const CARD_ORDER = { topic: 0, program: 1, guide: 2 };
+function cardsBatchPrompt(list) {
+  const sorted = [...list].sort((a, b) => CARD_ORDER[a.kind] - CARD_ORDER[b.kind]);
+  const steps = sorted.map((c, i) => `${i + 1}. ${CARD_ASK[c.kind](cardKey(c.name)).replace(/^워크데스크의 /, "").replace("(이미 있으면 새로 고쳐 줘)", "")}`);
+  return `워크데스크에 아직 없는 작성 카드 ${sorted.length}장을 차례로 만들어 줘. 한 장을 끝까지 정리해 save_card로 저장한 다음 다음 카드로 넘어가고, 장마다 저장했다고 한 줄로 알려 줘. 대화가 길어져 다 못 하면 어디까지 했는지 말해 줘 — 내가 '이어서'라고 하면 남은 카드부터 할게.\n\n${steps.join("\n")}`;
+}
 
 // 카드 한 줄: 이름·있는지·고치기·Claude 에게 보낼 문장 복사
 function cardRowHtml(kind, name) {
