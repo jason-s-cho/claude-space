@@ -32,6 +32,7 @@
   "build": {
     "appId": "com.jasonscho.docmanager",
     "productName": "워크데스크",
+    "executableName": "doc-manager",
     "artifactName": "docmanager-${version}-${os}-${arch}.${ext}",
     "directories": {
       "output": "dist",
