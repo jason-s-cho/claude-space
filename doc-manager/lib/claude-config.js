@@ -107,7 +107,7 @@ async function selfTest(entry, { timeoutMs = 20000 } = {}) {
   const transport = new StdioClientTransport({ command: entry.command, args: entry.args, env: { ...process.env, ...(entry.env || {}) }, stderr: "pipe" });
   let stderr = "";
   if (transport.stderr) transport.stderr.on("data", (d) => (stderr = (stderr + d).slice(-2000)));
-  const client = new Client({ name: "doc-manager-self-test", version: "1.0.0" });
+  const client = new Client({ name: SELF_TEST_CLIENT, version: "1.0.0" });
   let timer;
   const timeout = new Promise((_, rej) => (timer = setTimeout(() => rej(new Error(`${timeoutMs / 1000}초 안에 응답이 없습니다`)), timeoutMs)));
   try {
@@ -155,4 +155,62 @@ function claudeLogs(paths = configPaths(), lines = 12) {
   });
 }
 
-module.exports = { SERVER_KEY, configPaths, status, connect, disconnect, claudeCodeCommand, readConfig, selfTest, claudeLogs };
+// 스토어판(MSIX) Claude 데스크톱이 깔려 있는지 (윈도우). 스토어판은 가상화된 파일 시스템 안에서 돌아서
+// 사용자 폴더(AppData\Local\Programs)에 설치된 앱을 실행하지 못한다 (spawn ... ENOENT).
+function msixClaude(env = process.env, home = os.homedir()) {
+  const pkgs = path.join(env.LOCALAPPDATA || path.join(home, "AppData", "Local"), "Packages");
+  try {
+    return fs.readdirSync(pkgs).some((d) => /^(AnthropicPBC\.)?Claude_/i.test(d));
+  } catch {
+    return false;
+  }
+}
+
+// 이 실행 파일이 사용자용 설치 위치(AppData 아래)에 있는지
+function perUserInstall(execPath, env = process.env, home = os.homedir()) {
+  const norm = (x) => path.win32.normalize(String(x || "")).toLowerCase().replace(/\\+$/, "") + "\\";
+  const roots = [env.LOCALAPPDATA || path.win32.join(home, "AppData", "Local"), env.APPDATA || path.win32.join(home, "AppData", "Roaming")];
+  return roots.some((r) => norm(execPath).startsWith(norm(r)));
+}
+
+// Claude 연결 화면에 띄울 설치 위치 경고 (문제가 없으면 null)
+function installWarning(execPath, { platform = process.platform, env = process.env, home = os.homedir(), msix } = {}) {
+  if (platform !== "win32") return null;
+  if (!perUserInstall(execPath, env, home)) return null;
+  const isMsix = msix === undefined ? msixClaude(env, home) : msix;
+  if (!isMsix) return null;
+  return {
+    path: execPath,
+    message: "워크데스크가 사용자 폴더(AppData)에 설치되어 있어서, 스토어판 Claude 데스크톱이 커넥터를 실행하지 못합니다 (Claude 설정 → 개발자 화면에 'spawn … ENOENT'). 설치 파일을 다시 실행해 '이 컴퓨터를 사용하는 모든 사람(모든 사용자)'으로 설치한 뒤, 예전 설치는 지우고 여기서 '다시 연결'을 눌러 주세요.",
+  };
+}
+
+// 커넥터가 시작될 때 남기는 실행 기록 (문서 폴더의 .docmanager/mcp-starts.json — 가상화되지 않는 곳).
+// Claude 데스크톱의 기록 폴더는 설치판마다 위치가 달라 믿기 어렵다.
+const STARTS_FILE = "mcp-starts.json";
+function recordStart(dir, client, now = new Date()) {
+  const file = path.join(dir, STARTS_FILE);
+  let list = [];
+  try {
+    list = JSON.parse(fs.readFileSync(file, "utf8"));
+    if (!Array.isArray(list)) list = [];
+  } catch {}
+  list.unshift({ time: now.toISOString(), client: (client && client.name) || "", version: (client && client.version) || "" });
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(file, JSON.stringify(list.slice(0, 20), null, 1));
+  } catch {}
+}
+function readStarts(dir) {
+  try {
+    const list = JSON.parse(fs.readFileSync(path.join(dir, STARTS_FILE), "utf8"));
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+// 연결 테스트(앱이 스스로 실행)는 빼고, 진짜 Claude 가 실행한 마지막 기록
+const SELF_TEST_CLIENT = "doc-manager-self-test";
+const lastClientStart = (list) => list.find((x) => x.client !== SELF_TEST_CLIENT) || null;
+
+module.exports = { SERVER_KEY, configPaths, status, connect, disconnect, claudeCodeCommand, readConfig, selfTest, claudeLogs, msixClaude, perUserInstall, installWarning, recordStart, readStarts, lastClientStart, SELF_TEST_CLIENT };

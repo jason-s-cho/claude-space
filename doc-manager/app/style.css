@@ -850,7 +850,7 @@ dialog[open] .move-form { animation: pop 0.16s var(--ease); }
 .apps-board.dash-board { padding: 12px; overflow: hidden; }
 .dash { flex: 1; min-height: 0; display: grid; grid-template-columns: 268px minmax(0, 1fr) 300px; gap: 12px; }
 @media (max-width: 1240px) { .dash { grid-template-columns: 240px minmax(0, 1fr) 270px; } }
-.dash-col { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding-bottom: 4px; scrollbar-width: thin; }
+.dash-col { min-height: 0; min-width: 0; overflow-y: auto; overflow-x: hidden; display: flex; flex-direction: column; gap: 12px; padding-bottom: 4px; scrollbar-width: thin; }
 .dash-panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 12px 14px; min-width: 0; }
 .dash-panel > h3 { display: flex; align-items: center; gap: 7px; margin: 0 0 10px; font-size: 13px; font-weight: 650; }
 .dash-panel > h3 > svg { width: 15px; height: 15px; color: var(--accent); }
@@ -883,7 +883,8 @@ button.cal-cell { font-weight: 700; cursor: pointer; }
 .cal-cell.h-soon { background: rgba(209, 67, 67, 0.25); color: #b23434; }
 .cal-cell.h-over { background: #c03a3a; color: #fff; }
 .cal-cell i { position: absolute; top: 1px; right: 3px; font-style: normal; font-size: 8.5px; font-weight: 700; opacity: 0.8; }
-.dash-mini { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 1px; }
+.dash-mini { list-style: none; margin: 10px 0 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 1px; }
+.dash-mini > li { min-width: 0; }
 .dash-panel > .dash-mini:first-child { margin-top: 0; }
 .dash-mini button { width: 100%; display: flex; align-items: center; gap: 8px; border: 0; background: none; text-align: left; padding: 5px 6px; border-radius: 8px; font-size: 12.5px; color: var(--text); min-width: 0; }
 .dash-mini button:hover { background: var(--surface-2); }

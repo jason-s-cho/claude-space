@@ -15,6 +15,8 @@ const { z } = require("zod");
 const { Library } = require("../lib/library");
 const knowledge = require("../lib/knowledge");
 const cards = require("../lib/cards");
+const store = require("../lib/store");
+const claudeConfig = require("../lib/claude-config");
 
 const pkg = require("../package.json");
 
@@ -561,6 +563,15 @@ server.registerPrompt(
 );
 
 async function main() {
+  // 누가 커넥터를 실행했는지 문서 폴더에 남긴다 (앱의 '연결 테스트'가 Claude 가 실제로 실행했는지 보여 줄 수 있게)
+  // (initialize 응답을 다 처리한 뒤에 읽는다: 'initialized' 알림이 같은 묶음으로 먼저 처리되는 경우가 있다)
+  server.server.oninitialized = () =>
+    setTimeout(() => {
+      try {
+        const root = lib.root();
+        if (root) claudeConfig.recordStart(store.paths(root).dir, server.server.getClientVersion());
+      } catch {}
+    }, 50);
   await server.connect(new StdioServerTransport());
 }
 

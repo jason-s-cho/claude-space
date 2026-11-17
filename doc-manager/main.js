@@ -748,9 +748,11 @@ function registerIpc() {
   });
 
   // ---- Claude 연결 ----
+  const installWarn = () => (app.isPackaged ? claudeConfig.installWarning(process.execPath) : null);
+  const lastStart = () => (settings.root ? claudeConfig.lastClientStart(claudeConfig.readStarts(store.paths(settings.root).dir)) : null);
   ipcMain.handle("claude-status", () => {
     const entry = mcpEntry();
-    return { targets: claudeConfig.status(entry), claudeCode: claudeConfig.claudeCodeCommand(entry) };
+    return { targets: claudeConfig.status(entry), claudeCode: claudeConfig.claudeCodeCommand(entry), install: installWarn(), lastStart: lastStart() };
   });
   ipcMain.handle("claude-connect", () => {
     try {
@@ -769,7 +771,7 @@ function registerIpc() {
   ipcMain.handle("claude-test", async () => {
     const entry = mcpEntry();
     const test = await claudeConfig.selfTest(entry);
-    return { test, logs: claudeConfig.claudeLogs(), targets: claudeConfig.status(entry) };
+    return { test, logs: claudeConfig.claudeLogs(), targets: claudeConfig.status(entry), install: installWarn(), lastStart: lastStart() };
   });
   // ---- 회사 지식 카드 ----
   ipcMain.handle("knowledge-get", () => {

@@ -320,7 +320,7 @@ function startBrain(groups) {
     const L = order.map((g, i) => {
       const a = -Math.PI / 2 + (i / order.length) * Math.PI * 2;
       const r = Math.max(14, rMax * Math.sqrt(g.n / maxN));
-      return { g, x: cx + Math.cos(a) * W * 0.34, y: cy + Math.sin(a) * H * 0.32, r, pts: spherePts(Math.min(g.n, Math.round(60 + 320 * (r / rMax) ** 2))) };
+      return { g, x: cx + Math.cos(a) * W * 0.34, y: cy + Math.sin(a) * H * 0.32, r, pts: spherePts(Math.round(70 + 380 * (r / rMax) ** 2)) }; // 점 수는 공 크기에 맞춘다 (문서가 적은 분류도 촘촘한 공으로)
     });
     const core = groups.find((g) => g.core);
     if (core) L.push({ g: core, x: cx, y: cy, r: Math.max(18, rMax * 0.42), pts: spherePts(Math.max(24, core.n * 18)), core: true });
