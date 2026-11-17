@@ -30,3 +30,10 @@ test("화면 스크립트를 같이 읽어도 이름이 겹치지 않는다 (겹
   const code = scripts.map((s) => fs.readFileSync(path.join(__dirname, "..", "app", s), "utf8")).join("\n;\n");
   assert.doesNotThrow(() => new vm.Script(code));
 });
+
+// 스토어판 Claude 는 사용자용 설치(AppData)의 실행 파일을 못 띄운다 → 윈도우 설치는 늘 모든 사용자용으로.
+test("윈도우 설치 파일은 늘 모든 사용자용(Program Files)으로 설치한다", () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
+  assert.equal(pkg.build.nsis.perMachine, true);
+  assert.equal(pkg.build.executableName, "doc-manager");
+});

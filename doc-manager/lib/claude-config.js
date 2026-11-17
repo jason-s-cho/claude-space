@@ -181,7 +181,7 @@ function installWarning(execPath, { platform = process.platform, env = process.e
   if (!isMsix) return null;
   return {
     path: execPath,
-    message: "워크데스크가 사용자 폴더(AppData)에 설치되어 있어서, 스토어판 Claude 데스크톱이 커넥터를 실행하지 못합니다 (Claude 설정 → 개발자 화면에 'spawn … ENOENT'). 설치 파일을 다시 실행해 '이 컴퓨터를 사용하는 모든 사람(모든 사용자)'으로 설치한 뒤, 예전 설치는 지우고 여기서 '다시 연결'을 눌러 주세요.",
+    message: "워크데스크가 사용자 폴더(AppData)에 설치되어 있어서, 스토어판 Claude 데스크톱이 커넥터를 실행하지 못합니다 (Claude 설정 → 개발자 화면에 'spawn … ENOENT'). 최신 설치 파일을 실행하면 모든 사용자용(C:\\Program Files\\doc-manager)으로 설치됩니다. 그다음 윈도우 설정 → 앱에서 예전 설치를 지우고, 새로 설치한 워크데스크에서 '다시 연결'을 눌러 주세요.",
   };
 }
 
