@@ -68,11 +68,10 @@ function todoData() {
   };
 }
 
-// 왼쪽 메뉴 '할 일' 옆 숫자: 바로 챙겨야 하는 것 (7일 안 마감·지난 마감, 30일 안 만료 증빙)
+// 왼쪽 메뉴 '대시보드' 옆 숫자: 대시보드 '할 일' 칸에 보이는 항목 수와 같게
 function todoCount() {
   if (!S.docs) return 0;
-  const t = todoData();
-  return t.deadlines.filter((u) => u.daysLeft <= 7).length + t.certs.length; // 대장에 넣을 번호는 급하지 않아 세지 않는다
+  return dashTodoRows(todoData()).length;
 }
 
 // ---------- 대시보드: 왼쪽 지표·마감 달력·최근 문서 / 가운데 세컨드 브레인 / 오른쪽 할 일·작성 카드·Claude 활동 ----------
@@ -89,12 +88,14 @@ function dashStats() {
   const open = apps.filter((a) => a.progress.state !== "선정" && a.progress.state !== "탈락").length;
   const won = apps.filter((a) => a.progress.state === "선정").length;
   const ips = typeof ipOf === "function" ? ipOf() : [];
+  const ipCats = new Set((S.categories || []).filter((c) => c.group === "지식재산").map((c) => c.id));
+  const ipDocs = docs.filter((d) => ipCats.has(d.category)).length;
   const cards = cardsOf();
   const tile = (label, n, sub, view) => `<button class="dash-stat" data-t-view="${view}" type="button"><span>${label}</span><b>${Number(n).toLocaleString()}</b><small>${sub}</small></button>`;
   return `<div class="dash-stats">
     ${tile("문서", docs.length, `이번 주 +${docs.filter((d) => d.mtimeMs > weekAgo).length}`, "all")}
     ${tile("진행 중 지원", open, `선정 ${won} · 전체 ${apps.length}`, "apps")}
-    ${tile("지식재산", ips.length, `등록 ${ips.filter((x) => x.status === "등록").length}`, "ip")}
+    ${tile("지식재산 문서", ipDocs, `대장 ${ips.length}건 · 등록 ${ips.filter((x) => x.status === "등록").length}`, "ip")}
     ${tile("Claude 카드", cards.length, `주제 ${cards.filter((c) => c.kind === "topic").length} · 사업 ${cards.filter((c) => c.kind === "program").length}`, "cards")}
   </div>`;
 }
@@ -177,7 +178,7 @@ function dashShortcuts() {
 }
 
 // 오른쪽: 할 일 (급한 것부터 한 목록으로)
-function dashTodo(t) {
+function dashTodoRows(t) {
   const rows = [];
   for (const u of t.deadlines) rows.push(`<li><button data-t-app="${esc(u.id)}" type="button"><span class="dday ${ddayClass(u.daysLeft)}">${ddayText(u.daysLeft)}</span><span class="t-sub"><b>${esc(u.stage)}</b> ${esc(u.title)}</span></button>${hideBtn(todoKey.due(u))}</li>`);
   for (const c of t.certs) rows.push(`<li><button data-t-doc="${esc(c.rel)}" type="button"><span class="dday ${c.daysLeft < 0 ? "dd-over" : c.daysLeft <= 7 ? "dd-soon" : "dd-near"}">${c.daysLeft < 0 ? "만료됨" : `D-${c.daysLeft}`}</span><span class="t-sub"><b>${esc(c.kind)}</b> 만료</span></button>${hideBtn(todoKey.cert(c))}</li>`);
@@ -188,6 +189,10 @@ function dashTodo(t) {
   if (t.unclassified.length && !isHiddenTodo(tidyKey("other", t.unclassified.length))) rows.push(`<li><button data-t-view="cat:other" type="button"><span class="tag-k">정리</span><span class="t-sub">미분류 문서 ${t.unclassified.length}개</span></button>${hideBtn(tidyKey("other", t.unclassified.length))}</li>`);
   for (const d of t.scanned.slice(0, 2)) rows.push(`<li><button data-t-doc="${esc(d.rel)}" type="button"><span class="tag-k">OCR</span><span class="t-sub">${esc(d.base)}</span></button>${hideBtn(todoKey.ocr(d))}</li>`);
   for (const d of t.ocrFailed.slice(0, 2)) rows.push(`<li><button data-t-doc="${esc(d.rel)}" type="button"><span class="tag-k warn">OCR</span><span class="t-sub">읽지 못함 · ${esc(d.base)}</span></button>${hideBtn(todoKey.ocr(d))}</li>`);
+  return rows;
+}
+function dashTodo(t) {
+  const rows = dashTodoRows(t);
   const nHidden = Object.keys(todoHidden).length;
   const now = ocrNow && byRel.get(ocrNow.rel);
   return dashPanel(
@@ -488,6 +493,20 @@ function leaveDash() {
 }
 
 const TOOL_NAMES = () => (typeof TOOL_LABEL === "object" ? TOOL_LABEL : {});
+// 기록에 대상이 없는 활동은 무엇을 했는지 말로 적는다
+const AI_LOG_PLAIN = { library_overview: "보관함 전체 훑어봄" };
+// 최근 것부터 온 기록 → 같은 활동·같은 대상이 이어지면 한 줄로 (가장 최근 시각, 횟수)
+function aiLogRows(log) {
+  const rows = [];
+  for (const l of log) {
+    const raw = l.change_summary || l.query || l.path || "";
+    const what = raw ? String(raw).split("/").pop() : AI_LOG_PLAIN[l.tool] || "";
+    const last = rows[rows.length - 1];
+    if (last && last.tool === l.tool && last.what === what) last.n++;
+    else rows.push({ tool: l.tool, what, time: l.time, n: 1 });
+  }
+  return rows;
+}
 async function fillTodoAiLog() {
   const box = $("todoAiLog");
   if (!box) return;
@@ -496,13 +515,13 @@ async function fillTodoAiLog() {
     log = await api.aiLog();
   } catch {}
   if (!$("todoAiLog")) return;
-  const rows = log.slice(0, 6); // 최근 것부터 온다
+  const rows = aiLogRows(log).slice(0, 6);
   $("todoAiLog").innerHTML = rows.length
     ? rows
-        .map((l) => {
-          const what = l.change_summary || l.query || l.path || "";
-          return `<li class="ai-row"><span class="t-tool">${esc(TOOL_NAMES()[l.tool] || l.tool)}</span><span class="t-sub">${esc(String(what).split("/").pop())}</span><small>${esc(l.time ? relDate(Date.parse(l.time)) : "")}</small></li>`;
-        })
+        .map(
+          (r) =>
+            `<li class="ai-row"><span class="t-tool">${esc(TOOL_NAMES()[r.tool] || r.tool)}</span><span class="t-sub">${esc(r.what)}</span>${r.n > 1 ? `<span class="ai-n" title="이어서 ${r.n}번">×${r.n}</span>` : ""}<small>${esc(r.time ? relDate(Date.parse(r.time)) : "")}</small></li>`
+        )
         .join("")
     : '<li class="muted small">아직 Claude 가 이 보관함을 쓰지 않았습니다.</li>';
 }

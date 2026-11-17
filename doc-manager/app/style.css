@@ -778,6 +778,7 @@ dialog[open] .move-form { animation: pop 0.16s var(--ease); }
 .todo-list .dday { min-width: 52px; text-align: center; }
 .todo-list .ai-row { padding: 4px 6px; font-size: 12px; gap: 8px; }
 .todo-list .t-tool { font-weight: 600; color: var(--text-2); white-space: nowrap; }
+.todo-list .ai-n { font-size: 11px; font-weight: 600; color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .todo-foot { margin-top: 8px; font-size: 11.5px; color: var(--text-3); }
 .todo-calm { display: flex; align-items: center; gap: 10px; padding: 12px 14px; margin-bottom: 12px; border-radius: var(--r-lg); background: rgba(31, 138, 76, 0.08); color: var(--text-2); font-size: 13px; }
 .todo-calm svg { width: 18px; height: 18px; color: #1f8a4c; }
