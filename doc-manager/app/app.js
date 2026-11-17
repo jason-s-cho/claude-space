@@ -240,7 +240,7 @@ function renderSide() {
 
   // 업무: 할 일 · 지원 현황(사업명별) · 지식재산 대장
   h += `<div class="side-label">업무<button class="side-toggle" id="sideToggle" type="button" title="${isSideRail() ? "메뉴 펼치기" : "메뉴 접기 (아이콘만)"}" aria-label="메뉴 접기·펼치기">${icon("panel")}</button></div>`;
-  h += navItem("todo", "할 일", typeof todoCount === "function" ? todoCount() : 0, { icon: "check" });
+  h += navItem("todo", "대시보드", typeof todoCount === "function" ? todoCount() : 0, { icon: "grid" });
   const appItems = (S.applications && S.applications.items) || [];
   const programs = appProgramCounts(appItems);
   if (programs.length) {
@@ -366,7 +366,7 @@ function viewLabel(view) {
   if (view === "apps") return "지원 현황";
   if (view.startsWith("apps:")) return view.slice(5) || "사업명 없음";
   if (view === "ip") return "지식재산 대장";
-  if (view === "todo") return "할 일";
+  if (view === "todo") return "대시보드";
   if (view === "duplicates") return "중복 파일";
   if (view.startsWith("group:")) return view.slice(6);
   if (view.startsWith("cat:")) return catLabel(view.slice(4));
@@ -436,6 +436,8 @@ function rowHtml(d, opts = {}) {
 
 function renderList() {
   if ($("filterBtn")) renderFilterPop();
+  document.body.classList.toggle("dash-view", filter.view === "todo"); // 대시보드는 오른쪽 칸 없이 넓게
+  if (filter.view !== "todo" && typeof leaveDash === "function") leaveDash(); // home.js (뒤에 읽힌다)
   if (filter.view === "todo") return typeof renderTodoView === "function" ? renderTodoView() : null; // home.js (뒤에 읽힌다)
   if (filter.view === "ip") return renderIpView(); // ip.js
   if (isAppsView()) return renderAppsView();
