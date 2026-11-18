@@ -35,6 +35,7 @@ contextBridge.exposeInMainWorld("docs", {
   search: (q) => ipcRenderer.invoke("search", q),
   getText: (rel) => ipcRenderer.invoke("get-text", rel),
   updateDoc: (rel, patch) => ipcRenderer.invoke("update-doc", rel, patch),
+  updateDocs: (rels, patch) => ipcRenderer.invoke("update-docs", rels, patch),
   openFile: (rel) => ipcRenderer.invoke("open-file", rel),
   showInFolder: (rel) => ipcRenderer.invoke("show-in-folder", rel),
   openRoot: () => ipcRenderer.invoke("open-root"),

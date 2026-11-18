@@ -257,6 +257,12 @@ body.mac .titlebar { padding-left: 84px; }
 @keyframes rowIn { from { opacity: 0; transform: translateY(2px); } }
 .row:hover { background: var(--surface); border-color: var(--line); box-shadow: var(--shadow-sm); }
 .row.sel { background: var(--surface); border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.row.picked { background: var(--accent-soft); border-color: var(--accent); }
+.pick-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 16px 8px; padding: 6px 10px; border: 1px solid var(--accent); border-radius: var(--r-lg); background: var(--accent-soft); font-size: 12.5px; }
+.pick-bar small { color: var(--text-2); }
+.pick-bar label { display: inline-flex; align-items: center; gap: 6px; color: var(--text-2); }
+.pick-bar .select { height: 26px; font-size: 12px; }
+.pick-sep { width: 1px; height: 16px; background: var(--line); }
 .row.child { margin-left: 30px; padding-top: 7px; padding-bottom: 7px; grid-template-columns: 30px minmax(0, 1fr) auto; position: relative; }
 .row.child::before { content: ""; position: absolute; left: -16px; top: -6px; bottom: 50%; width: 12px; border-left: 1.5px solid var(--line-strong); border-bottom: 1.5px solid var(--line-strong); border-bottom-left-radius: 8px; }
 .ficon { width: 38px; height: 44px; border-radius: 9px; position: relative; display: grid; place-items: end center; padding-bottom: 7px; font-size: 9.5px; font-weight: 800; letter-spacing: 0.03em; color: #fff; background: var(--k); box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.12); }

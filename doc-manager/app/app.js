@@ -21,6 +21,8 @@ let lastImported = new Set(); // 방금 넣은 문서
 let selected = "";
 let visible = []; // 걸러진 문서 (버전 묶기 전)
 let rowOrder = []; // 화면에 그려진 순서 (키보드 이동용)
+const picked = new Set(); // Ctrl·Shift 클릭으로 여러 개 고른 문서 (분류 한꺼번에 바꾸기)
+let pickAnchor = "";
 let showAllTags = false;
 let searchSeq = 0;
 const expanded = new Set(); // 버전 목록을 펼친 묶음 (최신본 rel)
@@ -418,7 +420,7 @@ function rowHtml(d, opts = {}) {
     vb = `<button class="vbadge${expanded.has(v.latest) ? " open" : ""}" data-family="${esc(v.latest)}" type="button" title="버전 ${v.size}개 · 눌러서 펼치기">${icon("layers")}${v.size}</button>`;
   } else if (v) vb = isLatest ? '<span class="latest-pill">최신</span>' : '<span class="old-pill">이전 버전</span>';
   const tags = opts.child ? "" : d.tags.slice(0, 5).map((t) => `<span class="tag">${esc(t)}</span>`).join("");
-  return `<li class="row${opts.child ? " child" : ""}${d.rel === selected ? " sel" : ""}" data-rel="${esc(d.rel)}" role="option" aria-selected="${d.rel === selected}">
+  return `<li class="row${opts.child ? " child" : ""}${d.rel === selected ? " sel" : ""}${picked.has(d.rel) ? " picked" : ""}" data-rel="${esc(d.rel)}" role="option" aria-selected="${d.rel === selected}">
     ${fileIcon(d)}
     <div class="row-main">
       <div class="row-title">${d.starred ? icon("star", "star") : ""}<span class="name">${highlight(d.name)}<span class="ext">.${esc(d.ext)}</span></span></div>
@@ -493,6 +495,8 @@ function renderList() {
   listKey = key;
   listRows = rows;
   listShown = Math.min(rows.length, Math.max(PAGE_ROWS, keep, rowOrder.indexOf(selected) + 30));
+  for (const rel of [...picked]) if (!rowOrder.includes(rel)) picked.delete(rel); // 목록에서 빠진 것은 고르기에서도 뺀다
+  renderPickBar();
   list.innerHTML = rows.slice(0, listShown).map(rowItemHtml).join("") + moreRowHtml();
   list.scrollTop = scroll;
   watchMoreRow();
@@ -1678,7 +1682,92 @@ $("list").addEventListener("click", (e) => {
     return;
   }
   const li = e.target.closest(".row");
-  if (li) select(li.dataset.rel);
+  if (!li) return;
+  const rel = li.dataset.rel;
+  // Ctrl(⌘)+클릭: 하나씩 더하거나 빼기 · Shift+클릭: 범위로 고르기
+  if (e.ctrlKey || e.metaKey || e.shiftKey) {
+    e.preventDefault();
+    if (!picked.size && selected && rowOrder.includes(selected)) picked.add(selected);
+    if (e.shiftKey) {
+      const from = rowOrder.indexOf(pickAnchor || selected), to = rowOrder.indexOf(rel);
+      if (from >= 0 && to >= 0) for (let i = Math.min(from, to); i <= Math.max(from, to); i++) picked.add(rowOrder[i]);
+      else picked.add(rel);
+    } else if (picked.has(rel)) picked.delete(rel);
+    else picked.add(rel);
+    pickAnchor = rel;
+    return markPicked();
+  }
+  if (picked.size) clearPicked();
+  pickAnchor = rel;
+  select(rel);
+});
+$("list").addEventListener("mousedown", (e) => {
+  if (e.shiftKey && e.target.closest(".row")) e.preventDefault(); // Shift+클릭이 글자를 긁어 선택하지 않게
+});
+
+// ---- 여러 개 고르기: 위에 'N개 고름 · 분류 바꾸기' 막대 ----
+function markPicked() {
+  for (const li of $("list").querySelectorAll(".row")) li.classList.toggle("picked", picked.has(li.dataset.rel));
+  renderPickBar();
+}
+function clearPicked() {
+  picked.clear();
+  markPicked();
+}
+// 접힌 버전 묶음을 고르면 그 묶음의 모든 버전에 적용한다 (최신본만 바뀌면 옛 버전이 다른 분류에 남는다)
+function pickedWithVersions() {
+  const out = new Set();
+  for (const rel of picked) {
+    out.add(rel);
+    const d = byRel.get(rel);
+    const v = d && d.versions;
+    if (groupVersions && v && !expanded.has(v.latest)) for (const r of (S.families || {})[v.key] || []) out.add(r);
+  }
+  return [...out];
+}
+function renderPickBar() {
+  const bar = $("pickBar");
+  if (!bar) return;
+  if (picked.size < 2) {
+    bar.hidden = true;
+    bar.innerHTML = "";
+    return;
+  }
+  const all = pickedWithVersions().length;
+  const opts = S.categories.map((c) => `<option value="${c.id}">${esc(catLabel(c.id))}</option>`).join("");
+  bar.innerHTML = `<b>${picked.size}개 고름</b>${all > picked.size ? `<small>(버전 포함 ${all}개)</small>` : ""}
+    <span class="pick-sep"></span><label>분류<select id="pickCat" class="select sm"><option value="">바꿀 분류 고르기</option>${opts}<option value="__auto">자동 분류로 되돌리기</option></select></label>
+    <button class="btn xs primary" id="pickApply" type="button" disabled>바꾸기</button>
+    <button class="btn xs ghost" id="pickClear" type="button" title="고르기 풀기 (Esc)">고르기 풀기</button>`;
+  bar.hidden = false;
+}
+$("pickBar").addEventListener("change", (e) => {
+  if (e.target.id === "pickCat") $("pickApply").disabled = !e.target.value;
+});
+$("pickBar").addEventListener("click", async (e) => {
+  const b = e.target.closest("button");
+  if (!b) return;
+  if (b.id === "pickClear") return clearPicked();
+  if (b.id !== "pickApply") return;
+  const v = $("pickCat").value;
+  if (!v) return;
+  const rels = pickedWithVersions();
+  b.disabled = true;
+  const updated = await api.updateDocs(rels, { userCategory: v === "__auto" ? "" : v });
+  for (const u of updated || []) {
+    if (u.versions) u.versions.order = (S.families || {})[u.versions.key] || [u.rel];
+    const i = S.docs.findIndex((d) => d.rel === u.rel);
+    if (i >= 0) S.docs[i] = u;
+    byRel.set(u.rel, u);
+  }
+  picked.clear();
+  toast(v === "__auto" ? `${(updated || []).length}개를 자동 분류로 되돌렸습니다.` : `${(updated || []).length}개를 '${catLabel(v)}'(으)로 바꿨습니다.`);
+  renderSide();
+  renderList();
+  renderDetail();
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && picked.size && !document.querySelector("dialog[open]")) clearPicked();
 });
 $("list").addEventListener("dblclick", (e) => {
   if (e.target.closest("[data-family]")) return;

@@ -1129,6 +1129,30 @@ function registerIpc() {
     return docSummary(e);
   });
 
+  // 여러 문서를 한꺼번에 (목록에서 여러 개 골라 분류 바꾸기). 색인 저장·화면 새로 그리기는 한 번만
+  ipcMain.handle("update-docs", (_e, rels, patch) => {
+    if (!index || !Array.isArray(rels)) return [];
+    const keys = indexer.USER_FIELDS.filter((k) => patch && patch[k] !== undefined);
+    const out = [];
+    for (const rel of rels) {
+      const e = index.files[rel];
+      if (!e) continue;
+      for (const k of keys) {
+        const v = patch[k];
+        if (v === "" || v === false || (Array.isArray(v) && !v.length)) delete e[k];
+        else e[k] = v;
+      }
+      out.push(e);
+    }
+    if (!out.length) return [];
+    persistIndex();
+    if (keys.some((k) => ["issuedAt", "validUntil", "userCategory"].includes(k))) {
+      refreshCerts();
+      send("state", state());
+    }
+    return out.map(docSummary);
+  });
+
   ipcMain.handle("open-file", async (_e, rel) => {
     const err = await shell.openPath(fullPath(rel));
     return err || "";
