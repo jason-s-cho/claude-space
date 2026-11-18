@@ -214,28 +214,34 @@ function dashCardItems(t) {
 function dashCards(t) {
   const items = dashCardItems(t);
   const KIND_SHORT = { topic: "주제", program: "사업", guide: "가이드" };
-  const rows = items
-    .map(
-      (c) => `<li class="dash-card${c.missing ? " missing" : ""}" data-dash-card="${esc((c.name + " " + KIND_SHORT[c.kind]).toLowerCase())}">
+  const row = (c) => `<li class="dash-card${c.missing ? " missing" : ""}" data-dash-card="${esc((c.name + " " + KIND_SHORT[c.kind]).toLowerCase())}">
       <button class="dash-card-main" data-c-edit data-c-kind="${c.kind}" data-c-name="${esc(cardKey(c.name))}" type="button" title="보기·고치기">
         <span class="tag-k k-${c.kind}">${KIND_SHORT[c.kind]}</span><b>${esc(cardKey(c.name))}</b>
         <small>${c.missing ? "아직 없음" : esc(relDate(c.updated))}</small>
       </button>
       <button class="dash-play" data-c-copy="${esc(cardPrompt(c.kind, c.name))}" type="button" title="${c.missing ? "Claude 로 만들기" : "Claude 로 새로 고치기"} — 요청 문장을 복사합니다">${icon("sparkle")}</button>
-    </li>`
-    )
-    .join("");
+    </li>`;
+  const missing = items.filter((c) => c.missing).sort((a, b) => CARD_ORDER[a.kind] - CARD_ORDER[b.kind]); // 한꺼번에 만들기와 같은 순서
+  const made = items.filter((c) => !c.missing);
+  // 만들 카드 / 만든 카드를 나눠 보여 주고, 만들 카드는 한 번에 Claude 에게 맡길 수 있게
+  const head = (label, n, right = "") => `<li class="dash-card-head" data-dash-head><span>${label}</span><small>${n}</small>${right}</li>`;
+  const batch =
+    missing.length > 1
+      ? `<button class="btn xs dash-batch" data-c-copy="${esc(cardsBatchPrompt(missing))}" type="button" title="없는 카드 ${missing.length}장을 차례로 만들어 달라는 요청 문장을 복사합니다">${icon("sparkle")}한꺼번에 만들기</button>`
+      : "";
+  const rows = (missing.length ? head("만들 카드", missing.length, batch) + missing.map(row).join("") : "") + (made.length ? head("만든 카드", made.length) + made.map(row).join("") : "");
   return dashPanel(
     "sparkle",
     "작성 카드",
     `<label class="dash-search">${icon("search")}<input id="dashCardQ" type="search" placeholder="카드 검색" value="${esc(dashCardQ)}" autocomplete="off" spellcheck="false"></label>
      ${items.length ? `<ul class="dash-cards" id="dashCardList">${rows}</ul>` : '<p class="dash-none">지원 현황에 주제·사업명을 적으면 카드를 만들 수 있습니다</p>'}`,
-    { n: cardsOf().length || "", cls: "dash-cards-panel" }
+    { n: missing.length ? `${made.length}/${items.length}` : made.length || "", cls: "dash-cards-panel" }
   );
 }
 function dashFilterCards() {
   const q = dashCardQ.trim().toLowerCase();
   document.querySelectorAll("#dashCardList [data-dash-card]").forEach((li) => (li.hidden = !!q && !li.dataset.dashCard.includes(q)));
+  document.querySelectorAll("#dashCardList [data-dash-head]").forEach((li) => (li.hidden = !!q)); // 검색 중에는 묶음 제목을 감춘다
 }
 
 function renderTodoView() {
