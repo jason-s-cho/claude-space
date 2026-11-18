@@ -106,7 +106,7 @@ test("기술 분야 태그 (끌 수 있음)", () => {
   assert.ok(!classify({ name: "수정사업계획서" }).tags.includes("수정본"));
 });
 
-test("고객사를 등록해도 견적·거래명세표·세금계산서는 구매·견적에 남고 고객사 태그만 붙는다", () => {
+test("고객사를 등록해도 견적·거래명세표·세금계산서는 매입에 남고 고객사 태그만 붙는다 (우리 회사 이름을 안 적었을 때)", () => {
   const partners = [{ name: "중앙대학교", aliases: ["중앙대"] }];
   for (const name of ["260126_견적서_중앙대학교(GOPET 12L).pdf", "20260223 거래명세표-중앙대학교(GoPET 12L).xlsx", "260223_전자세금계산서_중앙대학교.pdf", "가격증빙자료_260123.hwp"]) {
     const r = classify({ rel: name, name, text: "" }, { partners });
@@ -163,4 +163,33 @@ test("회사 증빙 · 인사: 직원 서류, 급여·계약 서류는 기본으
   }
   assert.ok(!r("재직증명서_홍길동").tags.includes("AI제외"));
   assert.strictEqual(r("사업자등록증").category, "cert_basic"); // 다른 증빙은 그대로
+});
+
+test("견적·거래 서류: 우리 회사가 공급자면 매출, 받는 쪽이면 매입", () => {
+  const ownCompany = ["엠씨케이테크", "MCK", "123-45-67890"];
+  const cat = (name, text) => classify({ name, dir: "구매·견적", text }, { ownCompany });
+  // 파일 이름에 우리 회사 (우리 양식으로 낸 견적·거래 서류)
+  assert.strictEqual(cat("MCK-DMT-20261007.xlsx", "거래명세표 품목 수량 단가").category, "sales");
+  // 다른 곳이 귀하, 공급자 칸에 우리 사업자등록번호
+  const kaist = cat("261007_견적서_KAIST(GOC).pdf", "견 적 서\n한국과학기술원 귀하\n공급자 등록번호 123-45-67890 상호 엠씨케이테크\n품명 그래핀");
+  assert.strictEqual(kaist.category, "sales");
+  assert.ok(kaist.reasons.some((r) => /공급자 칸/.test(r)));
+  // 사업자등록번호를 안 적어도: 다른 곳이 귀하이고 우리 이름이 서류에 있으면 매출
+  assert.strictEqual(classify({ name: "260921 견적서_한국표준과학연구원.pdf", text: "견적서 한국표준과학연구원 귀중 공급자 엠씨케이테크" }, { ownCompany: ["엠씨케이테크"] }).category, "sales");
+  // 우리 회사가 귀하 → 받은 견적
+  assert.strictEqual(cat("260911 견적서_ABC_GFS (2EA).pdf", "견적서\n엠씨케이테크 귀하\n공급자 등록번호 222-33-44444 상호 ABC").category, "purchase");
+  // 세금계산서: 표가 두 칸으로 섞여 읽혀도 공급자 번호가 먼저 나온다
+  assert.strictEqual(cat("전자세금계산서_HBC방탄_261002.pdf", "공급자 등록번호 123-45-67890 공급받는자 등록번호 555-66-77777 상호 엠씨케이테크 상호 HBC방탄").category, "sales");
+  assert.strictEqual(cat("260902 전자세금계산서_그래핀랩(GoWafer).pdf", "공급자 등록번호 999-88-77777 공급받는자 등록번호 123-45-67890 상호 그래핀랩 상호 엠씨케이테크").category, "purchase");
+  // 영문 인보이스
+  assert.strictEqual(cat("commercial invoice_Nitinol Sheet.pdf", "COMMERCIAL INVOICE Shipper: Foo Metals Inc. Consignee: MCK Tech Co., Ltd.").category, "purchase");
+  assert.strictEqual(cat("commercial invoice_GO.pdf", "COMMERCIAL INVOICE Shipper: MCK Tech Co., Ltd. Consignee: Foo Inc.").category, "sales");
+  // 글자를 못 읽은 스캔본은 단서가 없으니 매입, 이유를 남긴다
+  const scan = cat("scan_견적서.pdf", "");
+  assert.strictEqual(scan.category, "purchase");
+  assert.ok(scan.reasons.some((r) => /단서가 없어/.test(r)));
+  // 새 폴더(매출·매입/매출)로 옮긴 뒤에도 거래 서류로 본다 (본문 단서가 약해도)
+  assert.strictEqual(classify({ name: "MCK-DMT-20261007.xlsx", dir: "매출·매입/매출", text: "품목 수량 단가" }, { ownCompany }).category, "sales");
+  // 견적 서류가 아니면 건드리지 않는다
+  assert.strictEqual(cat("MCK 회사소개서 2026.pptx", "회사소개 연혁 조직도 비전").category, "company");
 });

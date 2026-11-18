@@ -5,8 +5,8 @@ const $ = (id) => document.getElementById(id);
 
 const KIND_LABEL = { word: "Word", ppt: "PowerPoint", excel: "Excel", pdf: "PDF", hwp: "한글" };
 const KIND_SHORT = { word: "DOC", ppt: "PPT", excel: "XLS", pdf: "PDF", hwp: "HWP" };
-const GROUP_ICON = { "국가과제·지원사업": "landmark", "회사 증빙": "badge", 지식재산: "bulb", 회사소개: "building", 홍보: "megaphone" };
-const CAT_ICON = { analysis: "chart", request: "users", purchase: "cart", other: "question" };
+const GROUP_ICON = { "국가과제·지원사업": "landmark", "회사 증빙": "badge", 지식재산: "bulb", 회사소개: "building", 홍보: "megaphone", "매출·매입": "cart" };
+const CAT_ICON = { analysis: "chart", request: "users", other: "question" };
 const YEAR_RE = /^20\d{2}$/;
 const DAY = 86400000;
 
@@ -1407,6 +1407,7 @@ function openSettings(tab = "general", group) {
   $("techTagsHint").textContent = "붙이는 태그: " + (S.techTags || []).map((t) => t.tag).join(", ") + ". 개별 문서에서 빼거나, '내 태그 규칙'으로 더할 수 있습니다.";
   $("projectsInput").value = namedToLines(st.projects);
   $("partnersInput").value = namedToLines(st.partners);
+  $("ownCompanyInput").value = (st.ownCompany || []).join(", ");
   $("rulesInput").value = rulesToText(st.tagRules);
   kwDraft = JSON.parse(JSON.stringify(st.keywordOverrides || {}));
   if (group) kwGroup = group;
@@ -1830,6 +1831,7 @@ $("settingsDlg").addEventListener("close", async () => {
     techTags: $("techTagsInput").checked,
     projects: linesToNamed($("projectsInput").value),
     partners: linesToNamed($("partnersInput").value),
+    ownCompany: splitList($("ownCompanyInput").value),
     tagRules: textToRules($("rulesInput").value),
     keywordOverrides: kwDraft,
     // Claude 탭을 열지 않았으면 체크 상자가 없으므로 지금 값을 그대로 둔다

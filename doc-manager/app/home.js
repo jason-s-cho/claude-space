@@ -184,6 +184,9 @@ function dashTodoRows(t) {
   for (const c of t.certs) rows.push(`<li><button data-t-doc="${esc(c.rel)}" type="button"><span class="dday ${c.daysLeft < 0 ? "dd-over" : c.daysLeft <= 7 ? "dd-soon" : "dd-near"}">${c.daysLeft < 0 ? "만료됨" : `D-${c.daysLeft}`}</span><span class="t-sub"><b>${esc(c.kind)}</b> 만료</span></button>${hideBtn(todoKey.cert(c))}</li>`);
   for (const x of t.ipSug.slice(0, 3)) rows.push(`<li><button data-t-view="ip" type="button"><span class="tag-k">대장</span><span class="t-sub"><b>${esc(x.appNo)}</b> ${esc(x.title || "")}</span></button>${hideBtn(todoKey.ip(x))}</li>`);
   const tidyKey = (name, n) => `tidy|${name}|${n}`;
+  // 우리 회사 이름이 없으면 견적·거래 서류를 매출·매입으로 나누지 못한다
+  const trade = (S.docs || []).filter((d) => d.category === "purchase" || d.category === "sales").length;
+  if (trade && !((S.settings && S.settings.ownCompany) || []).length && !isHiddenTodo("own-company")) rows.push(`<li><button data-t-act="own-company" type="button"><span class="tag-k">설정</span><span class="t-sub">우리 회사 이름을 적으면 거래 서류 ${trade}개를 매출·매입으로 나눕니다</span></button>${hideBtn("own-company")}</li>`);
   if (t.misplaced.length && !isHiddenTodo(tidyKey("misplaced", t.misplaced.length))) rows.push(`<li><button data-t-view="misplaced" type="button"><span class="tag-k">정리</span><span class="t-sub">제자리가 아닌 문서 ${t.misplaced.length}개</span></button><button class="btn xs" data-t-act="move-all" type="button">옮기기</button>${hideBtn(tidyKey("misplaced", t.misplaced.length))}</li>`);
   if (t.dupGroups.length && !isHiddenTodo(tidyKey("dup", t.dupGroups.length))) rows.push(`<li><button data-t-view="duplicates" type="button"><span class="tag-k">정리</span><span class="t-sub">내용이 똑같은 파일 ${t.dupGroups.length}묶음</span></button><button class="btn xs" data-t-act="dedupe" type="button">정리</button>${hideBtn(tidyKey("dup", t.dupGroups.length))}</li>`);
   if (t.unclassified.length && !isHiddenTodo(tidyKey("other", t.unclassified.length))) rows.push(`<li><button data-t-view="cat:other" type="button"><span class="tag-k">정리</span><span class="t-sub">미분류 문서 ${t.unclassified.length}개</span></button>${hideBtn(tidyKey("other", t.unclassified.length))}</li>`);
@@ -578,6 +581,7 @@ $("appsBoard").addEventListener("click", async (e) => {
     dashMonth += Number(b.dataset.dashMonth);
     return renderTodoView();
   }
+  if (b.dataset.tAct === "own-company") return openSettings("rules");
   if (b.dataset.tAct === "move-all") return openMoveDialog(S.docs.filter((d) => d.misplaced));
   if (b.dataset.tAct === "dedupe") return openDupDialog();
 });

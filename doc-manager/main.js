@@ -90,7 +90,7 @@ const mtimeOf = (file) => {
   }
 };
 
-const DEFAULT_SETTINGS = { root: "", partners: [], tagRules: [], keywordOverrides: {}, savedSearches: [], recentSearches: [], importLayout: "category", projects: [], techTags: true, theme: "system", aiExcludeCategories: [], checkUpdates: true, deadlineAlerts: true, deadlineNotified: {}, ocrAuto: true };
+const DEFAULT_SETTINGS = { root: "", ownCompany: [], partners: [], tagRules: [], keywordOverrides: {}, savedSearches: [], recentSearches: [], importLayout: "category", projects: [], techTags: true, theme: "system", aiExcludeCategories: [], checkUpdates: true, deadlineAlerts: true, deadlineNotified: {}, ocrAuto: true };
 
 function loadSettings() {
   try {
@@ -210,6 +210,7 @@ function syncFromDisk() {
 function classifyOptions() {
   return {
     partners: settings.partners,
+    ownCompany: settings.ownCompany || [],
     projects: settings.projects,
     tagRules: settings.tagRules,
     keywordOverrides: settings.keywordOverrides,
@@ -1151,6 +1152,7 @@ function registerIpc() {
 
   ipcMain.handle("save-settings", (_e, next) => {
     if (Array.isArray(next.partners)) settings.partners = next.partners;
+    if (Array.isArray(next.ownCompany)) settings.ownCompany = next.ownCompany.map((x) => String(x || "").trim()).filter(Boolean).slice(0, 20);
     if (Array.isArray(next.tagRules)) settings.tagRules = next.tagRules;
     if (Array.isArray(next.projects)) settings.projects = next.projects;
     if (typeof next.techTags === "boolean") settings.techTags = next.techTags;

@@ -22,7 +22,7 @@ test("분류별 폴더를 만든다 (고객사 폴더 포함)", () => {
   const root = tmp("docmgr-root-");
   const made = ensureCategoryFolders(root, [{ name: "현대모비스" }], [{ name: "2024 K-방산", aliases: [] }]);
   for (const d of ["국가과제·지원사업/1 공고·수요조사", "국가과제·지원사업/6 정산·증빙", "국가과제·지원사업/2024 K-방산/5 보고서",
-    "회사소개/IR·투자", "홍보/카탈로그·브로셔", "기술·시장 분석", "구매·견적", "고객사·협력사/현대모비스", "미분류"]) {
+    "회사소개/IR·투자", "홍보/카탈로그·브로셔", "기술·시장 분석", "매출·매입/매출", "매출·매입/매입", "고객사·협력사/현대모비스", "미분류"]) {
     assert.ok(fs.statSync(path.join(root, ...d.split("/"))).isDirectory(), d);
   }
   assert.ok(made >= 10);

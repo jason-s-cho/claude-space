@@ -178,6 +178,11 @@
       <div class="tab-panel" data-panel="rules" hidden>
         <h3>고객사 · 태그</h3>
         <label class="field">
+          <span class="field-label">우리 회사 <small>이름 · 별칭 · 사업자등록번호를 쉼표로</small></span>
+          <input id="ownCompanyInput" type="text" spellcheck="false" placeholder="엠씨케이테크, MCK, MCK Tech, 123-45-67890">
+          <small class="hint">견적서·거래명세표·세금계산서에서 우리 회사가 공급자면 '매출', 받는 쪽이면 '매입'으로 나눕니다. 사업자등록번호를 적으면 세금계산서도 정확하게 가립니다.</small>
+        </label>
+        <label class="field">
           <span class="field-label">고객사 · 협력사 <small>한 줄에 하나. 별칭은 = 뒤에 쉼표로</small></span>
           <textarea id="partnersInput" rows="6" spellcheck="false" placeholder="현대모비스 = 모비스, Mobis&#10;KCC&#10;LG에너지솔루션 = LGES"></textarea>
           <small class="hint">파일 이름이나 폴더 이름에 있으면 '고객사·협력사 / 회사 이름' 폴더로, 본문에만 있으면 태그만 붙입니다.</small>

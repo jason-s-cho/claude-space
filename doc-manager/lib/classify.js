@@ -4,7 +4,7 @@
 const { garbledText } = require("./textcheck");
 
 // 분류가 바뀌면 이 숫자를 올린다. 앱을 켤 때 색인의 숫자와 다르면 모든 문서를 다시 분류한다.
-const CLASSIFIER_VERSION = 6;
+const CLASSIFIER_VERSION = 7;
 
 // folder: 문서 폴더 안에서 이 분류가 들어갈 하위 폴더 이름 (group 폴더 아래)
 const CATEGORIES = [
@@ -28,7 +28,9 @@ const CATEGORIES = [
   { id: "catalog", group: "홍보", label: "카탈로그·브로셔", folder: "카탈로그·브로셔", color: "#2f8a5f" },
   { id: "analysis", group: "", label: "기술·시장 분석", folder: "기술·시장 분석", color: "#7a5af0" },
   { id: "request", group: "", label: "고객사·협력사", folder: "고객사·협력사", color: "#c47a12" },
-  { id: "purchase", group: "", label: "구매·견적", folder: "구매·견적", color: "#b4532a" },
+  // 견적서·거래명세표·세금계산서: 우리 회사가 공급자면 매출, 받는 쪽이면 매입 (설정의 '우리 회사'로 가린다)
+  { id: "sales", group: "매출·매입", label: "매출", folder: "매출", color: "#1f7a54" },
+  { id: "purchase", group: "매출·매입", label: "매입", folder: "매입", color: "#b4532a" },
   { id: "other", group: "", label: "미분류", folder: "미분류", color: "#6b7280" },
 ];
 
@@ -157,7 +159,7 @@ const KEYWORDS = {
   purchase: [
     ["견적서", 6], ["견적", 5], ["견적관리", 6], ["quotation", 5], ["quote", 3], ["발주", 5], ["발주서", 6], ["구매", 4],
     ["구매요청", 6], ["구매품의", 6], ["품의서", 5], ["장비", 2], ["purchase order", 6], ["PO", 3], ["입찰", 3],
-    ["거래명세서", 6], ["거래명세표", 6], ["세금계산서", 6], ["계산서", 4], ["가격증빙", 5], ["납품확인서", 5], ["납품", 2], ["단가", 2], ["invoice", 3], ["계약서", 2],
+    ["매출·매입", 4], ["거래명세서", 6], ["거래명세표", 6], ["세금계산서", 6], ["계산서", 4], ["가격증빙", 5], ["납품확인서", 5], ["납품", 2], ["단가", 2], ["invoice", 3], ["계약서", 2],
   ],
 };
 
@@ -174,7 +176,7 @@ for (const key of Object.keys(KEYWORDS)) {
 // 화면의 '분류 키워드' 설정에서 쓰는 이름. gov 는 국가과제 세부 종류 모두에 더해지는 공통 단서다.
 const KEYWORD_GROUPS = [
   { key: "gov", label: "국가과제·지원사업 공통 단서" },
-  ...CATEGORIES.filter((c) => KEYWORDS[c.id]).map((c) => ({ key: c.id, label: c.group ? `${c.group} · ${c.label}` : c.label })),
+  ...CATEGORIES.filter((c) => KEYWORDS[c.id]).map((c) => ({ key: c.id, label: c.id === "purchase" ? "매출·매입 (견적서·거래명세표·세금계산서)" : c.group ? `${c.group} · ${c.label}` : c.label })),
 ];
 
 const normKw = (kw) => kw.replace(/\s+/g, "").toLowerCase();
@@ -339,8 +341,41 @@ function findProject(sec, projects) {
   return best;
 }
 
+// ---- 매출·매입: 견적서·거래명세표·세금계산서를 우리 회사가 냈는지(매출) 받았는지(매입) ----
+const BIZ_NO = /^\d{3}-?\d{2}-?\d{5}$/;
+const digitsOf = (s) => String(s).replace(/\D/g, "");
+// own: 설정의 '우리 회사' (이름·별칭·사업자등록번호). 결과: { side: "sales" | "purchase", why } 또는 null(이름을 안 적음)
+function tradeSide(sec, own) {
+  const list = (own || []).map((x) => String(x || "").trim()).filter(Boolean);
+  if (!list.length) return null;
+  const nums = list.filter((x) => BIZ_NO.test(x)).map(digitsOf);
+  const names = list.filter((x) => !BIZ_NO.test(x));
+  const text = (sec.head + "\n" + sec.body).slice(0, 8000);
+  // 1) 파일 이름에 우리 회사 이름 (우리 양식으로 낸 견적·거래 서류: MCK-DMT-… 등)
+  for (const n of names) if (countIn(sec.name, n, 1)) return { side: "sales", why: `파일 이름에 우리 회사 '${n}'` };
+  // 2) 사업자등록번호 순서: 세금계산서·거래명세표·견적서는 공급자 칸이 먼저 나온다
+  if (nums.length) {
+    const found = [...new Set([...text.matchAll(/(?<!\d)\d{3}-\d{2}-\d{5}(?!\d)/g)].map((m) => digitsOf(m[0])))];
+    const i = found.findIndex((x) => nums.includes(x));
+    if (i === 0) return { side: "sales", why: "공급자 칸에 우리 사업자등록번호" };
+    if (i > 0) return { side: "purchase", why: "공급받는 쪽에 우리 사업자등록번호" };
+  }
+  // 3) 우리 회사가 받는 쪽: '우리회사 귀하/귀중/앞', '수신 · Buyer · Bill to … 우리회사'
+  const esc = (n) => n.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/ /g, "\\s*");
+  for (const n of names) {
+    const N = esc(n);
+    if (new RegExp(`${N}\\s*(?:주식회사|\\(주\\)|㈜)?\\s*(?:대표\\S*\\s*)?(?:귀하|귀중|앞|님)`, "i").test(text)) return { side: "purchase", why: `'${n} 귀하' — 우리 회사가 받은 서류` };
+    if (new RegExp(`(?:수\\s*신|Bill\\s*to|Sold\\s*to|Buyer|Consignee|Messrs)[^\\n]{0,60}${N}`, "i").test(text)) return { side: "purchase", why: `받는 쪽에 우리 회사 '${n}'` };
+    if (new RegExp(`(?:발\\s*신|Seller|Shipper|Exporter)[^\\n]{0,60}${N}`, "i").test(text)) return { side: "sales", why: `보내는 쪽에 우리 회사 '${n}'` };
+  }
+  // 4) 다른 곳이 '귀하/귀중'이고 우리 회사 이름이 서류에 있으면 우리가 보낸 견적이다
+  const ownIn = names.find((n) => countIn(text, n, 1));
+  if (ownIn && /귀\s*(?:하|중)/.test(text)) return { side: "sales", why: `받는 곳은 다른 회사, 보낸 곳이 우리 회사 '${ownIn}'` };
+  return { side: "purchase", why: "우리 회사가 낸 서류라는 단서가 없어 매입으로 봄" };
+}
+
 // doc: { name, dir, text, title }
-// options: { partners, projects: [{name, aliases}], tagRules: [{ tag, keywords }], keywordOverrides, techTags(기본 true) }
+// options: { partners, projects: [{name, aliases}], tagRules: [{ tag, keywords }], keywordOverrides, techTags(기본 true), ownCompany: [이름·별칭·사업자등록번호] }
 // 결과: { category, score, reasons: [문장], tags: [], project: 과제 이름 또는 "" }
 function classify(doc, options = {}) {
   const sec = sections(doc);
@@ -399,8 +434,11 @@ function classify(doc, options = {}) {
   if (best < MIN_SCORE) category = "other";
 
   const reasons = [];
+  // 견적·거래 서류는 우리 회사가 낸 것(매출)과 받은 것(매입)으로 나눈다
+  const side = category === "purchase" ? tradeSide(sec, options.ownCompany) : null;
+  if (side && side.side === "sales") category = "sales";
   if (category !== "other") {
-    const key = category === "gov_etc" ? "gov" : category;
+    const key = category === "gov_etc" ? "gov" : category === "sales" ? "purchase" : category;
     const list = [...hits[key]];
     if (GOV_SUBTYPES.includes(category)) list.push(...hits.gov.slice(0, 2));
     const shown = [];
@@ -410,6 +448,7 @@ function classify(doc, options = {}) {
       shown.push(h);
     }
     for (const h of shown) reasons.push(`${WHERE[h.where]}에 '${h.kw}'`);
+    if (side) reasons.push(side.why);
   }
 
   const tags = new Set(partnerTags);
@@ -491,4 +530,4 @@ function isEnglish(text) {
   return latin > 200 && hangul < latin * 0.05;
 }
 
-module.exports = { classify, CATEGORIES, KEYWORDS, KEYWORD_GROUPS, TECH_TAGS, RENAMED, CLASSIFIER_VERSION, GOV_SUBTYPES, mergedKeywords, migrateOverrides };
+module.exports = { classify, tradeSide, CATEGORIES, KEYWORDS, KEYWORD_GROUPS, TECH_TAGS, RENAMED, CLASSIFIER_VERSION, GOV_SUBTYPES, mergedKeywords, migrateOverrides };

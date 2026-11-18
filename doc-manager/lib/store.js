@@ -9,7 +9,7 @@ const crypto = require("crypto");
 const DIR_NAME = ".docmanager";
 
 // 문서 폴더를 따라가는 설정. 나머지(테마, 마지막 폴더, 최근 검색)는 PC마다 따로 둔다.
-const FOLDER_KEYS = ["partners", "projects", "tagRules", "keywordOverrides", "techTags", "importLayout", "savedSearches", "aiExcludeCategories"];
+const FOLDER_KEYS = ["ownCompany", "partners", "projects", "tagRules", "keywordOverrides", "techTags", "importLayout", "savedSearches", "aiExcludeCategories"];
 
 function paths(root) {
   const dir = path.join(root, DIR_NAME);
